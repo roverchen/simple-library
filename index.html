@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>幼兒園簡易圖書管理系統</title>
+    <style>
+        body {
+            font-family: "微軟正黑體", sans-serif;
+            background-color: #f4f7f6;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            width: 600px;
+            text-align: center;
+        }
+        h2 { color: #333; }
+        .mode-switch {
+            margin-bottom: 20px;
+            padding: 10px;
+            background-color: #eef;
+            border-radius: 8px;
+        }
+        .input-group {
+            margin: 20px 0;
+        }
+        input[type="text"] {
+            padding: 10px;
+            font-size: 18px;
+            width: 70%;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+        }
+        button:hover { background-color: #45a049; }
+        .log-area {
+            margin-top: 20px;
+            text-align: left;
+            border-top: 1px solid #eee;
+            padding-top: 10px;
+        }
+        .log-item {
+            padding: 8px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .status-borrow { color: green; font-weight: bold; }
+        .status-return { color: blue; font-weight: bold; }
+        .highlight { color: #e91e63; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>📚 幼兒園繪本借還系統</h2>
+    
+    <!-- 設定借閱單位：對應來源 -->
+    <div class="mode-switch">
+        <label>借閱單位：</label>
+        <select id="borrowerUnit">
+            <option value="class">班級 (Class)</option>
+            <option value="family">家庭 (Family)</option>
+        </select>
+        <input type="text" id="unitName" placeholder="輸入班級名稱或家長姓名" style="width: 200px; font-size: 14px;">
+    </div>
+
+    <!-- 條碼掃描區：對應來源 -->
+    <div class="input-group">
+        <input type="text" id="barcodeInput" placeholder="請掃描書籍 Bar code" autofocus>
+        <button onclick="handleScan()">確認</button>
+    </div>
+
+    <!-- 操作模式選擇 -->
+    <div style="margin-bottom: 15px;">
+        <label><input type="radio" name="action" value="borrow" checked> 借書</label>
+        <label><input type="radio" name="action" value="return"> 還書</label>
+    </div>
+
+    <!-- 系統記錄顯示區 -->
+    <div class="log-area">
+        <h3>操作紀錄</h3>
+        <div id="logList"></div>
+    </div>
+</div>
+
+<script>
+    // 模擬書籍資料庫
+    const bookDatabase = {
+        "9789861234567": "好餓的毛毛蟲",
+        "9789867654321": "猜猜我有多愛你",
+        "123456": "幼兒園繪本範例"
+    };
+
+    const barcodeInput = document.getElementById('barcodeInput');
+    const logList = document.getElementById('logList');
+
+    // 監聽 Enter 鍵，模擬條碼機掃描後自動送出
+    barcodeInput.addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') {
+            handleScan();
+        }
+    });
+
+    function handleScan() {
+        const barcode = barcodeInput.value.trim();
+        const unitType = document.getElementById('borrowerUnit').value;
+        const unitName = document.getElementById('unitName').value || "未具名";
+        const action = document.querySelector('input[name="action"]:checked').value;
+        
+        if (!barcode) return;
+
+        // 取得書名（如果資料庫沒有，就顯示未知書籍）
+        const bookName = bookDatabase[barcode] || `未知書籍 (${barcode})`;
+        const timestamp = new Date().toLocaleTimeString();
+
+        // 建立顯示訊息
+        const div = document.createElement('div');
+        div.className = 'log-item';
+        
+        let unitDisplay = unitType === 'class' ? `🏫 班級：${unitName}` : `🏠 家庭：${unitName}`;
+        let actionDisplay = action === 'borrow' 
+            ? `<span class="status-borrow">借出</span>` 
+            : `<span class="status-return">歸還</span>`;
+
+        div.innerHTML = `[${timestamp}] ${actionDisplay} <span class="highlight">${bookName}</span> - ${unitDisplay}`;
+        
+        // 插入到列表最上方
+        logList.insertBefore(div, logList.firstChild);
+
+        // 清空輸入框並重新聚焦，方便連續掃描
+        barcodeInput.value = '';
+        barcodeInput.focus();
+    }
+</script>
+
+</body>
+</html>
