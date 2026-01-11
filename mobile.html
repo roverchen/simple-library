@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>幼兒園圖書管理系統 (掃描自動關閉版)</title>
+    <title>幼兒園圖書管理系統 Pro</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
         :root {
@@ -17,6 +17,7 @@
         body { font-family: "微軟正黑體", sans-serif; background-color: var(--bg); margin: 0; padding: 10px; }
         .container { max-width: 800px; margin: 10px auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
         
+        /* 導覽列 */
         .nav { display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 2px solid #eee; padding-bottom: 15px; }
         .nav button { flex: 1; background: #eee; border: none; padding: 12px; cursor: pointer; border-radius: 8px; font-weight: bold; }
         .nav button.active { background: var(--secondary); color: white; }
@@ -24,52 +25,28 @@
         .page { display: none; }
         .page.active { display: block; }
 
-        /* 相機預覽容器 */
-        #reader-wrapper { 
-            display: none; 
-            margin: 20px 0; 
-            text-align: center;
-        }
-        #reader { 
-            width: 100%; 
-            max-width: 450px; 
-            margin: 0 auto; 
-            border-radius: 12px; 
-            overflow: hidden;
-            border: 5px solid #ccc;
-        }
+        /* 相機容器 */
+        #reader-wrapper { display: none; margin: 20px 0; text-align: center; }
+        #reader { width: 100%; max-width: 450px; margin: 0 auto; border-radius: 12px; overflow: hidden; border: 5px solid #ccc; }
 
+        /* 按鈕樣式 */
         .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 15px 0; }
-        .btn-scan { padding: 18px; border: none; border-radius: 10px; color: white; font-size: 1.1rem; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        .btn-main { padding: 20px; border: none; border-radius: 10px; color: white; font-size: 1.2rem; font-weight: bold; cursor: pointer; transition: 0.2s; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
         .btn-borrow { background-color: var(--primary); }
         .btn-return { background-color: var(--secondary); }
-        .btn-stop { background-color: #666; width: 100%; margin-top: 15px; }
+        .btn-add-book { background-color: var(--dark); grid-column: span 2; } /* 管理頁面的大按鈕 */
+        .btn-cancel { background-color: #666; width: 100%; margin-top: 15px; padding: 15px; border: none; border-radius: 10px; color: white; font-weight: bold; }
 
         .input-group { margin: 15px 0; display: flex; flex-direction: column; gap: 10px; }
         input, select { padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; }
 
-        .log-item { 
-            padding: 15px; 
-            margin-bottom: 8px;
-            border-radius: 8px;
-            background: #fff;
-            border: 1px solid #eee;
-            display: flex; 
-            justify-content: space-between; 
-            align-items: center;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
-        }
-        .status-tag { padding: 4px 10px; border-radius: 4px; font-size: 0.85rem; color: white; font-weight: bold; }
-
-        /* 管理表格 */
-        .table-container { overflow-x: auto; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        /* 紀錄與列表 */
+        .log-item { padding: 15px; margin-bottom: 8px; border-radius: 8px; background: #fff; border: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+        .table-container { overflow-x: auto; margin-top: 20px; }
+        table { width: 100%; border-collapse: collapse; }
         th, td { text-align: left; padding: 12px; border-bottom: 1px solid #eee; }
-        th { background: #f8f8f8; }
 
-        @media (min-width: 600px) {
-            .input-group { flex-direction: row; }
-        }
+        @media (min-width: 600px) { .input-group { flex-direction: row; } }
     </style>
 </head>
 <body>
@@ -77,7 +54,7 @@
 <div class="container">
     <div class="nav">
         <button onclick="changeTab('loanPage')" id="btn-loanPage" class="active">📖 借還書</button>
-        <button onclick="changeTab('managePage')" id="btn-managePage">⚙️ 管理</button>
+        <button onclick="changeTab('managePage')" id="btn-managePage">⚙️ 圖書管理</button>
         <button onclick="changeTab('reportPage')" id="btn-reportPage">📊 報表</button>
     </div>
 
@@ -90,29 +67,27 @@
             <input type="text" id="unitName" placeholder="輸入名稱 (如: 小熊班)">
         </div>
 
-        <div id="actionGrid" class="action-grid">
-            <button onclick="initiateScan('borrow')" class="btn-scan btn-borrow">📤 借書掃描</button>
-            <button onclick="initiateScan('return')" class="btn-scan btn-return">📥 還書掃描</button>
+        <div id="loanActionGrid" class="action-grid">
+            <button onclick="initiateScan('borrow')" class="btn-main btn-borrow"><span>📤</span> 借書</button>
+            <button onclick="initiateScan('return')" class="btn-main btn-return"><span>📥</span> 還書</button>
         </div>
 
         <div id="reader-wrapper">
             <h3 id="scanModeTitle">準備掃描...</h3>
             <div id="reader"></div>
-            <button onclick="stopScanner()" class="btn-scan btn-stop">❌ 取消掃描</button>
+            <button onclick="stopScanner()" class="btn-cancel">❌ 取消並返回</button>
         </div>
 
-        <h3 style="margin-top:25px; border-left: 5px solid var(--secondary); padding-left: 10px; font-size: 1.1rem;">最近借還紀錄</h3>
-        <div id="logList"></div>
+        <div id="logList" style="margin-top: 20px;"></div>
     </div>
 
     <div id="managePage" class="page">
-        <h3>⚙️ 圖書資料新增</h3>
-        <div class="input-group" style="background: #f9f9f9; padding: 15px; border-radius: 8px; border: 1px solid #eee;">
-            <input type="text" id="newIsbn" placeholder="條碼編號">
-            <input type="text" id="newTitle" placeholder="書名">
-            <button onclick="addBook()" style="background:var(--primary); color:white; border:none; padding:12px; border-radius:8px; cursor:pointer;">確認新增</button>
+        <div id="manageActionGrid" class="action-grid">
+            <button onclick="initiateScan('add')" class="btn-main btn-add-book"><span>➕</span> 掃描新增圖書</button>
         </div>
+
         <div class="table-container">
+            <h3>目前館藏列表</h3>
             <table id="bookTable">
                 <thead><tr><th>條碼</th><th>書名</th><th>操作</th></tr></thead>
                 <tbody></tbody>
@@ -121,10 +96,10 @@
     </div>
 
     <div id="reportPage" class="page">
-        <h3>📊 借閱統計報表</h3>
+        <h3>📊 借閱統計</h3>
         <div class="table-container">
             <table id="statTable">
-                <thead><tr><th>書名</th><th>目前狀態</th><th>借閱次數</th></tr></thead>
+                <thead><tr><th>書名</th><th>狀態</th><th>次數</th></tr></thead>
                 <tbody></tbody>
             </table>
         </div>
@@ -132,7 +107,6 @@
 </div>
 
 <script>
-    // 資料初始化
     let bookDatabase = JSON.parse(localStorage.getItem('bookDB')) || {
         "123456": { title: "幼兒園繪本範例", count: 0, status: "在館" }
     };
@@ -140,97 +114,79 @@
     let html5QrCode;
     let currentMode = ''; 
 
-    // 啟動相機
     function initiateScan(mode) {
-        const unitName = document.getElementById('unitName').value.trim();
-        if (!unitName) {
-            alert("⚠️ 請先輸入『借閱單位名稱』！");
-            return;
+        if (mode !== 'add') {
+            const unitName = document.getElementById('unitName').value.trim();
+            if (!unitName) return alert("⚠️ 請先輸入名稱！");
         }
 
         currentMode = mode;
-        // 切換 UI 顯示
-        document.getElementById('actionGrid').style.display = 'none';
-        document.getElementById('reader-wrapper').style.display = 'block';
+        // 隱藏所有動作按鈕
+        document.getElementById('loanActionGrid').style.display = 'none';
+        document.getElementById('manageActionGrid').style.display = 'none';
+        
+        // 顯示掃描器 (將掃描器移至當前頁面內部的 wrapper)
+        const wrapper = document.getElementById('reader-wrapper');
+        const activePage = document.querySelector('.page.active');
+        activePage.insertBefore(wrapper, activePage.querySelector('.table-container') || activePage.querySelector('#logList'));
+        wrapper.style.display = 'block';
         
         const modeTitle = document.getElementById('scanModeTitle');
-        const readerElem = document.getElementById('reader');
-        
-        if (mode === 'borrow') {
-            modeTitle.innerHTML = `<span style="color:var(--primary)">📤 借書模式：請掃描書籍條碼</span>`;
-            readerElem.style.borderColor = "var(--primary)";
-        } else {
-            modeTitle.innerHTML = `<span style="color:var(--secondary)">📥 還書模式：請掃描書籍條碼</span>`;
-            readerElem.style.borderColor = "var(--secondary)";
-        }
+        if(mode === 'borrow') modeTitle.innerHTML = `<span style="color:var(--primary)">📤 正在借書掃描...</span>`;
+        else if(mode === 'return') modeTitle.innerHTML = `<span style="color:var(--secondary)">📥 正在還書掃描...</span>`;
+        else modeTitle.innerHTML = `<span style="color:var(--dark)">➕ 正在新增圖書掃描...</span>`;
 
         startScanner();
     }
 
     function startScanner() {
         html5QrCode = new Html5Qrcode("reader");
-        const config = { fps: 15, qrbox: { width: 250, height: 180 } };
-
-        html5QrCode.start(
-            { facingMode: "environment" }, 
-            config, 
-            (decodedText) => {
-                handleScanSuccess(decodedText);
-            }
-        ).catch(err => {
-            alert("無法啟動相機。請確認：\n1. 已授予相機權限\n2. 網址為 https 或 localhost");
-            stopScanner();
-        });
+        html5QrCode.start({ facingMode: "environment" }, { fps: 15, qrbox: 250 }, handleScanSuccess)
+        .catch(err => { alert("相機啟動失敗"); stopScanner(); });
     }
 
-    // 關鍵修改：掃描成功處理邏輯
     function handleScanSuccess(barcode) {
+        if (currentMode === 'add') {
+            stopScanner(); // 新增模式先停止掃描以便輸入
+            setTimeout(() => {
+                const title = prompt(`發現新條碼: ${barcode}\n請輸入書名:`);
+                if (title) {
+                    bookDatabase[barcode] = { title, count: 0, status: "在館" };
+                    saveData();
+                    renderManageTable();
+                    alert(`《${title}》已成功入庫！`);
+                }
+            }, 500);
+            return;
+        }
+
+        // 借還模式邏輯
         if (!bookDatabase[barcode]) {
-            alert(`❌ 找不到此條碼：${barcode}\n請先至管理頁面手動新增。`);
+            alert(`❌ 找不到此書籍：${barcode}\n請先至管理頁面新增。`);
+            stopScanner();
             return;
         }
 
         const book = bookDatabase[barcode];
-        const unitName = document.getElementById('unitName').value;
-        const timestamp = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-
-        // 執行借還邏輯
         if (currentMode === 'borrow') {
-            book.status = `借出 (${unitName})`;
+            book.status = `借出 (${document.getElementById('unitName').value})`;
             book.count++;
         } else {
             book.status = "在館";
         }
 
-        // 新增 UI 紀錄
-        addLogEntry(book.title, barcode, timestamp);
-        
-        // 儲存資料
+        addLogEntry(book.title, barcode);
         saveData();
-
-        // 震動回饋 (手機)
         if (navigator.vibrate) navigator.vibrate(100);
-
-        // 【自動關閉相機】返回主畫面
         stopScanner();
     }
 
-    function addLogEntry(title, barcode, time) {
+    function addLogEntry(title, barcode) {
         const logItem = document.createElement('div');
         logItem.className = 'log-item';
+        const actionText = currentMode === 'borrow' ? '借出' : '歸還';
         const color = currentMode === 'borrow' ? 'var(--primary)' : 'var(--secondary)';
-        const actionLabel = currentMode === 'borrow' ? '借出' : '歸還';
-        
-        logItem.innerHTML = `
-            <div>
-                <div style="font-weight:bold;">${title}</div>
-                <div style="font-size:0.8rem; color:#888;">ID: ${barcode}</div>
-            </div>
-            <div style="text-align:right;">
-                <span class="status-tag" style="background:${color}">${actionLabel}</span>
-                <div style="font-size:0.75rem; color:#aaa; margin-top:5px;">${time}</div>
-            </div>
-        `;
+        logItem.innerHTML = `<div><b>${title}</b></div><div><span style="color:white; background:${color}; padding:2px 8px; border-radius:4px;">${actionText}</span></div>`;
         const logList = document.getElementById('logList');
         logList.insertBefore(logItem, logList.firstChild);
     }
@@ -240,17 +196,12 @@
             html5QrCode.stop().then(() => {
                 html5QrCode = null;
                 document.getElementById('reader-wrapper').style.display = 'none';
-                document.getElementById('actionGrid').style.display = 'grid';
-            }).catch(err => {
-                console.error("停止相機失敗", err);
-                // 強制關閉 UI
-                document.getElementById('reader-wrapper').style.display = 'none';
-                document.getElementById('actionGrid').style.display = 'grid';
+                document.getElementById('loanActionGrid').style.display = 'grid';
+                document.getElementById('manageActionGrid').style.display = 'grid';
             });
         }
     }
 
-    // --- 基礎框架與數據管理 ---
     function changeTab(pageId) {
         if (html5QrCode) stopScanner();
         document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -261,52 +212,28 @@
         if(pageId === 'reportPage') renderReportTable();
     }
 
-    function addBook() {
-        const isbn = document.getElementById('newIsbn').value.trim();
-        const title = document.getElementById('newTitle').value.trim();
-        if (isbn && title) {
-            bookDatabase[isbn] = { title, count: 0, status: "在館" };
-            saveData();
-            renderManageTable();
-            document.getElementById('newIsbn').value = '';
-            document.getElementById('newTitle').value = '';
-            alert("書籍已新增！");
-        }
-    }
-
-    function deleteBook(isbn) {
-        if(confirm(`確定報廢《${bookDatabase[isbn].title}》？`)) { 
-            delete bookDatabase[isbn]; 
-            saveData(); 
-            renderManageTable(); 
-        }
-    }
-
     function renderManageTable() {
         const tbody = document.querySelector('#bookTable tbody');
         tbody.innerHTML = Object.keys(bookDatabase).map(isbn => `
-            <tr>
-                <td>${isbn}</td>
-                <td><b>${bookDatabase[isbn].title}</b></td>
-                <td><button onclick="deleteBook('${isbn}')" style="color:var(--danger); border:none; background:none; cursor:pointer;">報廢</button></td>
-            </tr>
+            <tr><td>${isbn}</td><td>${bookDatabase[isbn].title}</td><td><button onclick="deleteBook('${isbn}')" style="color:red; border:none; background:none; cursor:pointer;">報廢</button></td></tr>
         `).join('');
     }
 
     function renderReportTable() {
         const tbody = document.querySelector('#statTable tbody');
         tbody.innerHTML = Object.keys(bookDatabase).map(isbn => `
-            <tr>
-                <td>${bookDatabase[isbn].title}</td>
-                <td><span style="color:${bookDatabase[isbn].status === '在館' ? 'green' : 'orange'}">${bookDatabase[isbn].status}</span></td>
-                <td>${bookDatabase[isbn].count}次</td>
-            </tr>
+            <tr><td>${bookDatabase[isbn].title}</td><td>${bookDatabase[isbn].status}</td><td>${bookDatabase[isbn].count}</td></tr>
         `).join('');
     }
 
-    function saveData() {
-        localStorage.setItem('bookDB', JSON.stringify(bookDatabase));
+    function deleteBook(isbn) {
+        if(confirm('確定報廢？')) { delete bookDatabase[isbn]; saveData(); renderManageTable(); }
     }
+
+    function saveData() { localStorage.setItem('bookDB', JSON.stringify(bookDatabase)); }
+    
+    // 初始化表格
+    renderManageTable();
 </script>
 
 </body>
