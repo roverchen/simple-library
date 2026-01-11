@@ -143,10 +143,30 @@
 
     function startScanner() {
         html5QrCode = new Html5Qrcode("reader");
+    
+        // 優化後的掃描設定
+        const config = { 
+            fps: 20,                       // 提高偵數讓掃描更流暢
+            qrbox: { width: 280, height: 160 }, // 調整為長方形，更適合 ISBN 條碼
+            aspectRatio: 1.0               // 保持 1:1 的預覽比例
+        };
+
+        html5QrCode.start(
+            { facingMode: "environment" }, 
+            config, 
+            handleScanSuccess
+        ).catch(err => { 
+            alert("相機啟動失敗，請確認權限或嘗試重新整理。"); 
+            stopScanner(); 
+        });
+    }
+/*
+    function startScanner() {
+        html5QrCode = new Html5Qrcode("reader");
         html5QrCode.start({ facingMode: "environment" }, { fps: 15, qrbox: 250 }, handleScanSuccess)
         .catch(err => { alert("相機啟動失敗"); stopScanner(); });
     }
-
+*/
     function handleScanSuccess(barcode) {
         if (currentMode === 'manage') {
             stopScanner();
