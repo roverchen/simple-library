@@ -31,10 +31,10 @@
 
         /* 按鈕樣式 */
         .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 15px 0; }
-        .btn-main { padding: 20px; border: none; border-radius: 10px; color: white; font-size: 1.2rem; font-weight: bold; cursor: pointer; transition: 0.2s; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
+        .btn-main { padding: 20px; border: none; border-radius: 10px; color: white; font-size: 1.2rem; font-weight: bold; cursor: pointer; transition: 0.2s; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-decoration: none; }
         .btn-borrow { background-color: var(--primary); }
         .btn-return { background-color: var(--secondary); }
-        .btn-add-book { background-color: var(--dark); grid-column: span 2; } /* 管理頁面的大按鈕 */
+        .btn-add-book { background-color: var(--dark); grid-column: span 2; }
         .btn-cancel { background-color: #666; width: 100%; margin-top: 15px; padding: 15px; border: none; border-radius: 10px; color: white; font-weight: bold; }
 
         .input-group { margin: 15px 0; display: flex; flex-direction: column; gap: 10px; }
@@ -42,9 +42,13 @@
 
         /* 紀錄與列表 */
         .log-item { padding: 15px; margin-bottom: 8px; border-radius: 8px; background: #fff; border: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+        
+        /* 表格優化 */
         .table-container { overflow-x: auto; margin-top: 20px; }
         table { width: 100%; border-collapse: collapse; }
         th, td { text-align: left; padding: 12px; border-bottom: 1px solid #eee; }
+        .btn-edit { color: var(--secondary); border: 1px solid var(--secondary); background: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-right: 5px; }
+        .btn-del { color: var(--danger); border: 1px solid var(--danger); background: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; }
 
         @media (min-width: 600px) { .input-group { flex-direction: row; } }
     </style>
@@ -83,13 +87,13 @@
 
     <div id="managePage" class="page">
         <div id="manageActionGrid" class="action-grid">
-            <button onclick="initiateScan('add')" class="btn-main btn-add-book"><span>➕</span> 掃描新增圖書</button>
+            <button onclick="initiateScan('manage')" class="btn-main btn-add-book"><span>🔍</span> 掃描新增/修改圖書</button>
         </div>
 
         <div class="table-container">
             <h3>目前館藏列表</h3>
             <table id="bookTable">
-                <thead><tr><th>條碼</th><th>書名</th><th>操作</th></tr></thead>
+                <thead><tr><th>書名</th><th style="text-align:right;">管理操作</th></tr></thead>
                 <tbody></tbody>
             </table>
         </div>
@@ -115,17 +119,15 @@
     let currentMode = ''; 
 
     function initiateScan(mode) {
-        if (mode !== 'add') {
+        if (mode !== 'manage') {
             const unitName = document.getElementById('unitName').value.trim();
-            if (!unitName) return alert("⚠️ 請先輸入名稱！");
+            if (!unitName) return alert("⚠️ 請先輸入單位名稱！");
         }
 
         currentMode = mode;
-        // 隱藏所有動作按鈕
         document.getElementById('loanActionGrid').style.display = 'none';
         document.getElementById('manageActionGrid').style.display = 'none';
         
-        // 顯示掃描器 (將掃描器移至當前頁面內部的 wrapper)
         const wrapper = document.getElementById('reader-wrapper');
         const activePage = document.querySelector('.page.active');
         activePage.insertBefore(wrapper, activePage.querySelector('.table-container') || activePage.querySelector('#logList'));
@@ -134,7 +136,7 @@
         const modeTitle = document.getElementById('scanModeTitle');
         if(mode === 'borrow') modeTitle.innerHTML = `<span style="color:var(--primary)">📤 正在借書掃描...</span>`;
         else if(mode === 'return') modeTitle.innerHTML = `<span style="color:var(--secondary)">📥 正在還書掃描...</span>`;
-        else modeTitle.innerHTML = `<span style="color:var(--dark)">➕ 正在新增圖書掃描...</span>`;
+        else modeTitle.innerHTML = `<span style="color:var(--dark)">🔍 掃描條碼以新增或修改...</span>`;
 
         startScanner();
     }
@@ -146,15 +148,22 @@
     }
 
     function handleScanSuccess(barcode) {
-        if (currentMode === 'add') {
-            stopScanner(); // 新增模式先停止掃描以便輸入
+        if (currentMode === 'manage') {
+            stopScanner();
             setTimeout(() => {
-                const title = prompt(`發現新條碼: ${barcode}\n請輸入書名:`);
-                if (title) {
-                    bookDatabase[barcode] = { title, count: 0, status: "在館" };
+                const existingTitle = bookDatabase[barcode] ? bookDatabase[barcode].title : "";
+                const promptMsg = existingTitle ? `這本書條碼為: ${barcode}\n目前名稱: ${existingTitle}\n請輸入新的書名:` : `發現新條碼: ${barcode}\n請輸入書名:`;
+                
+                const title = prompt(promptMsg, existingTitle);
+                if (title !== null && title.trim() !== "") {
+                    bookDatabase[barcode] = { 
+                        title: title.trim(), 
+                        count: bookDatabase[barcode] ? bookDatabase[barcode].count : 0, 
+                        status: bookDatabase[barcode] ? bookDatabase[barcode].status : "在館" 
+                    };
                     saveData();
                     renderManageTable();
-                    alert(`《${title}》已成功入庫！`);
+                    alert("資料已更新！");
                 }
             }, 500);
             return;
@@ -162,7 +171,7 @@
 
         // 借還模式邏輯
         if (!bookDatabase[barcode]) {
-            alert(`❌ 找不到此書籍：${barcode}\n請先至管理頁面新增。`);
+            alert(`❌ 找不到此書籍：${barcode}\n請至管理頁面掃描入庫。`);
             stopScanner();
             return;
         }
@@ -215,24 +224,43 @@
     function renderManageTable() {
         const tbody = document.querySelector('#bookTable tbody');
         tbody.innerHTML = Object.keys(bookDatabase).map(isbn => `
-            <tr><td>${isbn}</td><td>${bookDatabase[isbn].title}</td><td><button onclick="deleteBook('${isbn}')" style="color:red; border:none; background:none; cursor:pointer;">報廢</button></td></tr>
+            <tr>
+                <td><b>${bookDatabase[isbn].title}</b></td>
+                <td style="text-align:right;">
+                    <button onclick="manualEdit('${isbn}')" class="btn-edit">修改</button>
+                    <button onclick="deleteBook('${isbn}')" class="btn-del">報廢</button>
+                </td>
+            </tr>
         `).join('');
+    }
+
+    function manualEdit(isbn) {
+        const newTitle = prompt("修改書名:", bookDatabase[isbn].title);
+        if (newTitle !== null && newTitle.trim() !== "") {
+            bookDatabase[isbn].title = newTitle.trim();
+            saveData();
+            renderManageTable();
+        }
     }
 
     function renderReportTable() {
         const tbody = document.querySelector('#statTable tbody');
         tbody.innerHTML = Object.keys(bookDatabase).map(isbn => `
-            <tr><td>${bookDatabase[isbn].title}</td><td>${bookDatabase[isbn].status}</td><td>${bookDatabase[isbn].count}</td></tr>
+            <tr><td>${bookDatabase[isbn].title}</td><td>${bookDatabase[isbn].status}</td><td>${bookDatabase[isbn].count}次</td></tr>
         `).join('');
     }
 
     function deleteBook(isbn) {
-        if(confirm('確定報廢？')) { delete bookDatabase[isbn]; saveData(); renderManageTable(); }
+        if(confirm(`確定報廢《${bookDatabase[isbn].title}》？`)) { 
+            delete bookDatabase[isbn]; 
+            saveData(); 
+            renderManageTable(); 
+        }
     }
 
     function saveData() { localStorage.setItem('bookDB', JSON.stringify(bookDatabase)); }
     
-    // 初始化表格
+    // 初始化
     renderManageTable();
 </script>
 
