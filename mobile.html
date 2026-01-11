@@ -144,11 +144,10 @@
     function startScanner() {
         html5QrCode = new Html5Qrcode("reader");
     
-        // 優化後的掃描設定
         const config = { 
-            fps: 20,                       // 提高偵數讓掃描更流暢
-            qrbox: { width: 280, height: 160 }, // 調整為長方形，更適合 ISBN 條碼
-            aspectRatio: 1.0               // 保持 1:1 的預覽比例
+            fps: 20,                       
+            qrbox: { width: 280, height: 160 }, 
+            aspectRatio: 1.0               
         };
 
         html5QrCode.start(
@@ -160,13 +159,7 @@
             stopScanner(); 
         });
     }
-/*
-    function startScanner() {
-        html5QrCode = new Html5Qrcode("reader");
-        html5QrCode.start({ facingMode: "environment" }, { fps: 15, qrbox: 250 }, handleScanSuccess)
-        .catch(err => { alert("相機啟動失敗"); stopScanner(); });
-    }
-*/
+
     function handleScanSuccess(barcode) {
         if (currentMode === 'manage') {
             stopScanner();
@@ -183,13 +176,12 @@
                     };
                     saveData();
                     renderManageTable();
-                    alert("資料已更新！");
+                    // 移除 alert("資料已更新！");
                 }
             }, 500);
             return;
         }
 
-        // 借還模式邏輯
         if (!bookDatabase[barcode]) {
             alert(`❌ 找不到此書籍：${barcode}\n請至管理頁面掃描入庫。`);
             stopScanner();
@@ -260,6 +252,7 @@
             bookDatabase[isbn].title = newTitle.trim();
             saveData();
             renderManageTable();
+            // 此處同樣不顯示 alert
         }
     }
 
@@ -280,7 +273,6 @@
 
     function saveData() { localStorage.setItem('bookDB', JSON.stringify(bookDatabase)); }
     
-    // 初始化
     renderManageTable();
 </script>
 
