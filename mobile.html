@@ -40,8 +40,12 @@
         .input-group { margin: 15px 0; display: flex; flex-direction: column; gap: 10px; }
         input, select { padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; }
 
+        /* 紀錄與列表 */
         .log-item { padding: 15px; margin-bottom: 8px; border-radius: 8px; background: #fff; border: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+        .log-info { display: flex; flex-direction: column; gap: 2px; }
+        .log-unit { font-size: 0.85rem; color: #666; }
         
+        /* 表格優化 */
         .table-container { overflow-x: auto; margin-top: 20px; }
         table { width: 100%; border-collapse: collapse; }
         th, td { text-align: left; padding: 12px; border-bottom: 1px solid #eee; }
@@ -63,8 +67,8 @@
     <div id="loanPage" class="page active">
         <div class="input-group">
             <select id="borrowerUnit">
-                <option value="class">🏫 班級</option>
-                <option value="family">🏠 家庭</option>
+                <option value="班級">🏫 班級</option>
+                <option value="家庭">🏠 家庭</option>
             </select>
             <input type="text" id="unitName" placeholder="輸入名稱 (如: 小熊班)">
         </div>
@@ -77,7 +81,7 @@
         <div id="reader-wrapper">
             <h3 id="scanModeTitle">準備掃描...</h3>
             <div id="reader"></div>
-            <p style="color: #666; font-size: 0.9rem;">提示：請將 ISBN 條碼水平置於框內，保持約 15 公分距離。</p>
+            <p style="color: #666; font-size: 0.9rem;">提示：請將條碼水平置於框內，保持約 15 公分距離。</p>
             <button onclick="stopScanner()" class="btn-cancel">❌ 取消並返回</button>
         </div>
 
@@ -119,8 +123,8 @@
 
     function initiateScan(mode) {
         if (mode !== 'manage') {
-            const unitName = document.getElementById('unitName').value.trim();
-            if (!unitName) return alert("⚠️ 請先輸入單位名稱！");
+            const nameValue = document.getElementById('unitName').value.trim();
+            if (!nameValue) return alert("⚠️ 請先輸入名稱！");
         }
 
         currentMode = mode;
@@ -143,12 +147,10 @@
     function startScanner() {
         html5QrCode = new Html5Qrcode("reader");
     
-        // iPhone 優化設定
         const config = { 
-            fps: 25,                       // 提高偵數
-            qrbox: { width: 300, height: 120 }, // 針對 ISBN 的長形框
+            fps: 25,                       
+            qrbox: { width: 300, height: 120 }, 
             aspectRatio: 1.0,
-            // 強制開啟常用條碼格式支援
             formatsToSupport: [ 
                 Html5QrcodeSupportedFormats.EAN_13, 
                 Html5QrcodeSupportedFormats.EAN_8,
@@ -157,19 +159,22 @@
             ],
             videoConstraints: {
                 facingMode: "environment",
-                width: { min: 640, ideal: 1280, max: 1920 }, // 要求高解析度
+                width: { min: 640, ideal: 1280, max: 1920 },
                 height: { min: 480, ideal: 720, max: 1080 }
             }
         };
 
         html5QrCode.start({ facingMode: "environment" }, config, handleScanSuccess)
         .catch(err => { 
-            alert("相機啟動失敗，請確認是否使用 HTTPS 開啟此頁面。"); 
+            alert("相機啟動失敗，請確認是否使用 HTTPS 開啟。"); 
             stopScanner(); 
         });
     }
 
     function handleScanSuccess(barcode) {
+        const unitType = document.getElementById('borrowerUnit').value;
+        const unitName = document.getElementById('unitName').value.trim();
+
         if (currentMode === 'manage') {
             stopScanner();
             setTimeout(() => {
@@ -197,25 +202,36 @@
         }
 
         const book = bookDatabase[barcode];
+        const displayUnit = `${unitType}: ${unitName}`;
+
         if (currentMode === 'borrow') {
-            book.status = `借出 (${document.getElementById('unitName').value})`;
+            book.status = `借出 (${unitName})`;
             book.count++;
         } else {
             book.status = "在館";
         }
 
-        addLogEntry(book.title, barcode);
+        addLogEntry(book.title, displayUnit);
         saveData();
         if (navigator.vibrate) navigator.vibrate(100);
         stopScanner();
     }
 
-    function addLogEntry(title, barcode) {
+    function addLogEntry(title, unitInfo) {
         const logItem = document.createElement('div');
         logItem.className = 'log-item';
         const actionText = currentMode === 'borrow' ? '借出' : '歸還';
         const color = currentMode === 'borrow' ? 'var(--primary)' : 'var(--secondary)';
-        logItem.innerHTML = `<div><b>${title}</b></div><div><span style="color:white; background:${color}; padding:2px 8px; border-radius:4px;">${actionText}</span></div>`;
+        
+        logItem.innerHTML = `
+            <div class="log-info">
+                <b>${title}</b>
+                <span class="log-unit">${unitInfo}</span>
+            </div>
+            <div>
+                <span style="color:white; background:${color}; padding:4px 10px; border-radius:4px; font-weight:bold;">${actionText}</span>
+            </div>
+        `;
         const logList = document.getElementById('logList');
         logList.insertBefore(logItem, logList.firstChild);
     }
