@@ -145,6 +145,31 @@
         html5QrCode = new Html5Qrcode("reader");
     
         const config = { 
+            fps: 20, 
+            // qrbox 設為長方形更適合 ISBN
+            qrbox: { width: 300, height: 120 }, 
+            // 增加此參數：強制嘗試解讀多種格式（特別是一維條碼）
+            formatsToSupport: [ 
+                Html5QrcodeSupportedFormats.EAN_13, 
+                Html5QrcodeSupportedFormats.EAN_8,
+                Html5QrcodeSupportedFormats.CODE_128 
+            ]
+        };
+
+        html5QrCode.start(
+            { facingMode: "environment" }, 
+            config, 
+            handleScanSuccess
+        ).catch(err => { 
+            alert("相機啟動失敗"); 
+            stopScanner(); 
+        });
+    }
+/*    
+    function startScanner() {
+        html5QrCode = new Html5Qrcode("reader");
+    
+        const config = { 
             fps: 20,                       
             qrbox: { width: 280, height: 160 }, 
             aspectRatio: 1.0               
@@ -159,7 +184,7 @@
             stopScanner(); 
         });
     }
-
+*/
     function handleScanSuccess(barcode) {
         if (currentMode === 'manage') {
             stopScanner();
