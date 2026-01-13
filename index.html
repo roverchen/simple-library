@@ -18,10 +18,6 @@
         body { font-family: "微軟正黑體", sans-serif; background-color: var(--bg); margin: 0; padding: 10px; }
         .container { max-width: 900px; margin: 10px auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
         
-        /* 登入樣式 */
-        #loginPage { text-align: center; padding: 50px 20px; }
-        .login-box { max-width: 350px; margin: auto; }
-
         /* 導覽列 */
         .nav { display: none; gap: 5px; margin-bottom: 20px; border-bottom: 2px solid #eee; padding-bottom: 10px; flex-wrap: wrap; }
         .nav button { flex: 1; min-width: 80px; background: #eee; border: none; padding: 12px 5px; cursor: pointer; border-radius: 8px; font-weight: bold; }
@@ -30,7 +26,7 @@
         .page { display: none; }
         .page.active { display: block; }
 
-        /* 相機容器 - 放大掃描框尺寸 */
+        /* 相機容器 */
         #reader-wrapper { display: none; margin: 20px 0; text-align: center; }
         #reader { width: 100%; max-width: 550px; margin: 0 auto; border-radius: 12px; overflow: hidden; border: 5px solid #ccc; }
 
@@ -44,18 +40,12 @@
         .input-group { margin: 10px 0; display: flex; flex-direction: column; gap: 8px; }
         input, select { padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; width: 100%; }
 
-        .table-container { overflow-x: auto; margin-top: 20px; }
         table { width: 100%; border-collapse: collapse; }
         th, td { text-align: left; padding: 12px; border-bottom: 1px solid #eee; }
-        
-        /* QR Code 列印樣式 */
-        .qr-card { border: 1px solid #ddd; padding: 15px; margin: 10px; display: inline-block; text-align: center; border-radius: 10px; }
-        .qr-title { font-size: 0.8rem; margin-top: 5px; font-weight: bold; }
 
         @media print {
-            .nav, .btn-main, #reader-wrapper, .input-group, .no-print, .btn-edit, .btn-del { display: none !important; }
+            .nav, .btn-main, #reader-wrapper, .input-group, .no-print, .btn-del { display: none !important; }
             .container { box-shadow: none; border: none; width: 100%; max-width: none; }
-            .page { display: block !important; }
         }
     </style>
 </head>
@@ -63,18 +53,19 @@
 
 <div class="container">
     <div id="loginPage" class="page active">
-        <div class="login-box">
+        <div style="text-align: center; max-width: 350px; margin: auto;">
             <h2>🔐 幼兒園圖書系統</h2>
-            <input type="password" id="loginPwd" placeholder="請輸入管理密碼" style="margin-bottom:15px;">
+            <input type="password" id="loginPwd" placeholder="請輸入管理密碼" style="margin-bottom:15px; padding:12px; width:100%; border-radius:8px; border:1px solid #ddd;">
             <button onclick="handleLogin()" class="btn-main btn-return" style="width: 100%; padding: 15px;">登入系統</button>
         </div>
     </div>
 
     <div class="nav no-print" id="mainNav">
-        <button onclick="changeTab('loanPage')" id="btn-loanPage" class="active">借還書</button>
+        <button onclick="changeTab('loanPage')" id="btn-loanPage">借還書</button>
         <button onclick="changeTab('classPage')" id="btn-classPage">班級成員</button>
         <button onclick="changeTab('managePage')" id="btn-managePage">圖書管理</button>
         <button onclick="changeTab('configPage')" id="btn-configPage">系統設定</button>
+        <button onclick="changeTab('reportPage')" id="btn-reportPage">報表</button>
         <button onclick="handleLogout()" style="background:#666; color:white;">登出</button>
     </div>
 
@@ -90,7 +81,7 @@
         <div id="reader-wrapper">
             <h3 id="scanModeTitle">準備掃描 QR Code...</h3>
             <div id="reader"></div>
-            <button onclick="stopScanner()" class="btn-cancel" style="width:100%; padding:15px; margin-top:10px; border-radius:8px; border:none; background:#666; color:white;">❌ 取消</button>
+            <button onclick="stopScanner()" style="width:100%; padding:15px; margin-top:10px; border-radius:8px; border:none; background:#666; color:white;">❌ 取消</button>
         </div>
         <div id="logList"></div>
     </div>
@@ -100,46 +91,40 @@
         <div class="input-group">
             <select id="editClassSelect"></select>
             <input type="text" id="newMemberName" placeholder="輸入幼兒或老師姓名">
-            <button onclick="addMember()" class="btn-main btn-borrow" style="width:100%; padding:10px;">新增至該班</button>
+            <button onclick="addMember()" class="btn-main btn-borrow" style="width:100%; padding:10px;">新增成員</button>
         </div>
-        <div class="table-container">
-            <table id="memberTable">
-                <thead><tr><th>班級</th><th>姓名</th><th>操作</th></tr></thead>
-                <tbody></tbody>
-            </table>
-        </div>
+        <table id="memberTable">
+            <thead><tr><th>班級</th><th>姓名</th><th>操作</th></tr></thead>
+            <tbody></tbody>
+        </table>
     </div>
 
     <div id="managePage" class="page">
         <div id="manageActionGrid" class="action-grid">
             <button onclick="initiateScan('manage')" class="btn-main btn-add-book">🔍 掃描新增/修改圖書 (QR)</button>
         </div>
-        <div class="table-container">
-            <table id="bookTable">
-                <thead><tr><th>書名</th><th>財產編號</th><th>QR列印</th><th>操作</th></tr></thead>
-                <tbody></tbody>
-            </table>
-        </div>
+        <table id="bookTable">
+            <thead><tr><th>書名</th><th>財產編號</th><th>管理</th></tr></thead>
+            <tbody></tbody>
+        </table>
     </div>
 
     <div id="configPage" class="page">
         <h3>⚙️ 系統進階設定</h3>
         <div class="input-group" style="background:#fff3e0; padding:15px; border-radius:8px;">
-            <label>🔑 修改管理密碼</label>
+            <label>🔑 修改密碼</label>
             <input type="text" id="newSystemPwd" placeholder="輸入新密碼">
-            <button onclick="updatePassword()" style="background:var(--dark); color:white; border:none; padding:10px; border-radius:5px;">更新密碼</button>
+            <button onclick="updatePassword()" style="background:var(--dark); color:white; border:none; padding:10px; border-radius:5px;">更新</button>
         </div>
-        <hr>
         <div class="input-group">
-            <label>🏫 班級名稱管理 (以逗號隔開)</label>
-            <input type="text" id="classListInput" placeholder="如: 太陽班,月亮班,星星班">
-            <button onclick="updateClassList()" style="background:var(--secondary); color:white; border:none; padding:10px; border-radius:5px;">更新班級清單</button>
+            <label>🏫 班級清單 (逗號隔開)</label>
+            <input type="text" id="classListInput">
+            <button onclick="updateClassList()" style="background:var(--secondary); color:white; border:none; padding:10px; border-radius:5px;">更新</button>
         </div>
-        <p style="font-size:0.8rem; color:red;">※ 注意：修改班級名稱後，原班級下的成員需重新分配。</p>
     </div>
 
     <div id="reportPage" class="page">
-        <button onclick="window.print()" class="no-print" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px; margin-bottom:15px;">🖨️ 列印報表</button>
+        <button onclick="window.print()" class="no-print" style="padding:10px; background:#607d8b; color:white;">🖨️ 列印報表</button>
         <table id="reportTable">
             <thead><tr><th>時間</th><th>班級</th><th>姓名</th><th>書名</th><th>狀態</th></tr></thead>
             <tbody></tbody>
@@ -148,7 +133,7 @@
 </div>
 
 <script>
-    // --- 核心資料 ---
+    // --- 核心資料儲存 ---
     let config = JSON.parse(localStorage.getItem('libConfig')) || {
         password: "1234",
         classes: ["太陽班", "月亮班", "星星班", "彩虹班", "白雲班", "小草班"]
@@ -160,36 +145,34 @@
     let html5QrCode;
     let currentMode = '';
 
-    // --- 1 & 2. 密碼與班級管理 ---
-    function updatePassword() {
-        const newPwd = document.getElementById('newSystemPwd').value.trim();
-        if(newPwd) {
-            config.password = newPwd;
-            saveConfig();
-            alert("密碼已修改！下回請用新密碼登入。");
-        }
-    }
-
-    function updateClassList() {
-        const listStr = document.getElementById('classListInput').value.trim();
-        if(listStr) {
-            config.classes = listStr.split(',').map(s => s.trim());
-            saveConfig();
+    // --- 1. 登入邏輯 ---
+    function handleLogin() {
+        if(document.getElementById('loginPwd').value === config.password) {
+            document.getElementById('loginPage').classList.remove('active');
+            document.getElementById('mainNav').style.display = 'flex';
             initDropdowns();
-            alert("班級清單已更新！");
-        }
+            changeTab('loanPage');
+        } else { alert("密碼錯誤"); }
     }
 
-    function saveConfig() {
-        localStorage.setItem('libConfig', JSON.stringify(config));
+    // --- 2. 分頁與選單邏輯 ---
+    function changeTab(pageId) {
+        if (html5QrCode) stopScanner();
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        document.querySelectorAll('.nav button').forEach(b => b.classList.remove('active'));
+        document.getElementById(pageId).classList.add('active');
+        document.getElementById('btn-' + pageId).classList.add('active');
+        
+        if(pageId === 'classPage') renderMemberTable();
+        if(pageId === 'managePage') renderBookTable();
+        if(pageId === 'reportPage') renderReportTable();
     }
 
-    // --- 3. 班級成員聯動 ---
     function initDropdowns() {
         const selects = ['loanClass', 'editClassSelect'];
         selects.forEach(id => {
             const el = document.getElementById(id);
-            el.innerHTML = config.classes.map(c => `<option value="${c}">${c}</option>`).join('');
+            if(el) el.innerHTML = config.classes.map(c => `<option value="${c}">${c}</option>`).join('');
         });
         document.getElementById('classListInput').value = config.classes.join(',');
         filterMembers('loanMember', config.classes[0]);
@@ -198,28 +181,52 @@
     function filterMembers(targetId, className) {
         const el = document.getElementById(targetId);
         const list = members[className] || [];
-        el.innerHTML = list.length ? list.map(m => `<option value="${m}">${m}</option>`).join('') : '<option value="">(此班尚無成員)</option>';
+        el.innerHTML = list.length ? list.map(m => `<option value="${m}">${m}</option>`).join('') : '<option value="">(無成員)</option>';
     }
 
-    // --- 掃描功能 (框框放大) ---
+    // --- 3. 掃描核心功能 (修正 initiateScan 未定義問題) ---
+    function initiateScan(mode) {
+        if (mode !== 'manage') {
+            const member = document.getElementById('loanMember').value;
+            if (!member || member === "(無成員)") {
+                alert("⚠️ 請先選擇借閱人！");
+                return;
+            }
+        }
+
+        currentMode = mode;
+        document.getElementById('loanActionGrid').style.display = 'none';
+        document.getElementById('manageActionGrid').style.display = 'none';
+        
+        document.getElementById('reader-wrapper').style.display = 'block';
+        
+        const modeTitle = document.getElementById('scanModeTitle');
+        if(mode === 'borrow') modeTitle.innerHTML = `<span style="color:var(--primary)">📤 正在借書掃描...</span>`;
+        else if(mode === 'return') modeTitle.innerHTML = `<span style="color:var(--secondary)">📥 正在還書掃描...</span>`;
+        else modeTitle.innerHTML = `<span style="color:var(--dark)">🔍 掃描圖書 QR Code...</span>`;
+
+        startScanner();
+    }
+
     function startScanner() {
         html5QrCode = new Html5Qrcode("reader");
-        // 放大 qrbox 尺寸，從原本的 250 放大到 300-350，適合 QR Code
-        const configScan = { 
-            fps: 20, 
-            qrbox: { width: 320, height: 320 } 
-        };
-        html5QrCode.start({ facingMode: "environment" }, configScan, handleScanSuccess);
+        const scanConfig = { fps: 20, qrbox: { width: 320, height: 320 } };
+        html5QrCode.start({ facingMode: "environment" }, scanConfig, handleScanSuccess)
+        .catch(err => {
+            alert("相機開啟失敗，請確保使用 HTTPS 環境");
+            stopScanner();
+        });
     }
 
-    // --- 登入與其他基礎邏輯 ---
-    function handleLogin() {
-        if(document.getElementById('loginPwd').value === config.password) {
-            document.getElementById('loginPage').classList.remove('active');
-            document.getElementById('mainNav').style.display = 'flex';
-            initDropdowns();
-            changeTab('loanPage');
-        } else { alert("密碼錯誤"); }
+    function stopScanner() {
+        if (html5QrCode) {
+            html5QrCode.stop().then(() => {
+                html5QrCode = null;
+                document.getElementById('reader-wrapper').style.display = 'none';
+                document.getElementById('loanActionGrid').style.display = 'grid';
+                document.getElementById('manageActionGrid').style.display = 'grid';
+            });
+        }
     }
 
     function handleScanSuccess(barcode) {
@@ -230,24 +237,23 @@
                 const assetId = prompt("財產編號:", existing.assetId || barcode);
                 const title = prompt("書名:", existing.title);
                 if (title && assetId) {
-                    bookDatabase[barcode] = { title, assetId, count: existing.count || 0, status: "在館" };
+                    bookDatabase[barcode] = { title, assetId, count: 0, status: "在館" };
                     localStorage.setItem('bookDB', JSON.stringify(bookDatabase));
                     renderBookTable();
                 }
-            }, 300);
+            }, 500);
             return;
         }
 
-        if (!bookDatabase[barcode]) { alert("找不到此書"); stopScanner(); return; }
+        if (!bookDatabase[barcode]) { alert("找不到圖書"); stopScanner(); return; }
 
         const book = bookDatabase[barcode];
         const className = document.getElementById('loanClass').value;
         const userName = document.getElementById('loanMember').value;
-        if(!userName) { alert("請先選擇借閱人"); stopScanner(); return; }
-
         const action = currentMode === 'borrow' ? "借書" : "還書";
-        book.status = action === "借書" ? `借出(${userName})` : "在館";
+
         loanLogs.unshift({ date: new Date().toLocaleString(), className, userName, title: book.title, action });
+        book.status = action === "借書" ? `借出(${userName})` : "在館";
 
         localStorage.setItem('bookDB', JSON.stringify(bookDatabase));
         localStorage.setItem('loanLogs', JSON.stringify(loanLogs));
@@ -255,49 +261,7 @@
         alert(`${book.title} ${action}成功`);
     }
 
-    // --- 渲染管理與報表 ---
-    function renderBookTable() {
-        const tbody = document.querySelector('#bookTable tbody');
-        tbody.innerHTML = Object.keys(bookDatabase).map(barcode => `
-            <tr>
-                <td>${bookDatabase[barcode].title}</td>
-                <td>${bookDatabase[barcode].assetId}</td>
-                <td><div id="qr-${barcode}" class="no-print"></div><button class="no-print" onclick="printSingleQR('${barcode}')" style="font-size:0.7rem;">預覽QR</button></td>
-                <td><button onclick="deleteBook('${barcode}')" class="btn-del">報廢</button></td>
-            </tr>
-        `).join('');
-        // 生成迷你預覽 QR
-        Object.keys(bookDatabase).forEach(barcode => {
-            new QRCode(document.getElementById(`qr-${barcode}`), { text: barcode, width: 40, height: 40 });
-        });
-    }
-
-    function printSingleQR(barcode) {
-        const book = bookDatabase[barcode];
-        const win = window.open('', 'PrintQR');
-        win.document.write(`
-            <div style="text-align:center; padding:20px; font-family:sans-serif; border:1px solid #000; display:inline-block;">
-                <div id="printqr"></div>
-                <div style="margin-top:10px; font-weight:bold;">${book.title}</div>
-                <div style="font-size:0.8rem;">財產編號: ${book.assetId}</div>
-            </div>
-            <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script>
-            <script>new QRCode(document.getElementById('printqr'), { text: '${barcode}', width: 150, height: 150 }); setTimeout(()=>window.print(), 500);<\/script>
-        `);
-    }
-
-    function changeTab(pageId) {
-        if (html5QrCode) stopScanner();
-        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-        document.querySelectorAll('.nav button').forEach(b => b.classList.remove('active'));
-        document.getElementById(pageId).classList.add('active');
-        document.getElementById('btn-' + pageId).classList.add('active');
-        if(pageId === 'classPage') renderMemberTable();
-        if(pageId === 'managePage') renderBookTable();
-        if(pageId === 'reportPage') renderReportTable();
-    }
-
-    // 其他輔助函數與之前相同
+    // --- 4. 數據渲染與管理功能 ---
     function addMember() {
         const c = document.getElementById('editClassSelect').value;
         const n = document.getElementById('newMemberName').value.trim();
@@ -308,22 +272,56 @@
         document.getElementById('newMemberName').value = '';
         renderMemberTable();
     }
+
     function renderMemberTable() {
         const tbody = document.querySelector('#memberTable tbody');
         tbody.innerHTML = '';
         for(let c in members) {
             members[c].forEach(m => {
-                tbody.innerHTML += `<tr><td>${c}</td><td>${m}</td><td><button onclick="deleteMember('${c}','${m}')" class="btn-del">刪除</button></td></tr>`;
+                tbody.innerHTML += `<tr><td>${c}</td><td>${m}</td><td><button onclick="deleteMember('${c}','${m}')" style="color:red">刪除</button></td></tr>`;
             });
         }
     }
-    function deleteMember(c, m) { members[c] = members[c].filter(x => x !== m); localStorage.setItem('memberDB', JSON.stringify(members)); renderMemberTable(); }
+
+    function deleteMember(c, m) {
+        members[c] = members[c].filter(x => x !== m);
+        localStorage.setItem('memberDB', JSON.stringify(members));
+        renderMemberTable();
+    }
+
+    function renderBookTable() {
+        const tbody = document.querySelector('#bookTable tbody');
+        tbody.innerHTML = Object.keys(bookDatabase).map(barcode => `
+            <tr>
+                <td>${bookDatabase[barcode].title}</td>
+                <td>${bookDatabase[barcode].assetId}</td>
+                <td><button onclick="deleteBook('${barcode}')">報廢</button></td>
+            </tr>
+        `).join('');
+    }
+
+    function deleteBook(id) {
+        if(confirm("確定報廢？")) { delete bookDatabase[id]; localStorage.setItem('bookDB', JSON.stringify(bookDatabase)); renderBookTable(); }
+    }
+
     function renderReportTable() {
         const tbody = document.querySelector('#reportTable tbody');
         tbody.innerHTML = loanLogs.map(log => `<tr><td>${log.date}</td><td>${log.className}</td><td>${log.userName}</td><td>${log.title}</td><td>${log.action}</td></tr>`).join('');
     }
-    function stopScanner() { if (html5QrCode) html5QrCode.stop().then(() => { html5QrCode = null; document.getElementById('reader-wrapper').style.display = 'none'; }); }
+
+    function updatePassword() {
+        const p = document.getElementById('newSystemPwd').value;
+        if(p) { config.password = p; localStorage.setItem('libConfig', JSON.stringify(config)); alert("密碼已改"); }
+    }
+
+    function updateClassList() {
+        const l = document.getElementById('classListInput').value;
+        if(l) { config.classes = l.split(',').map(s=>s.trim()); localStorage.setItem('libConfig', JSON.stringify(config)); initDropdowns(); alert("班級更新"); }
+    }
+
     function handleLogout() { location.reload(); }
+
+    initDropdowns();
 </script>
 
 </body>
