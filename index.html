@@ -10,6 +10,7 @@
             --primary: #4CAF50;
             --secondary: #2196F3;
             --danger: #f44336;
+            --warning: #ff9800;
             --dark: #333;
             --bg: #f4f7f6;
         }
@@ -29,14 +30,13 @@
         #reader-wrapper { display: none; margin: 20px 0; text-align: center; }
         #reader { width: 100%; max-width: 550px; margin: 0 auto; border-radius: 12px; overflow: hidden; border: 5px solid #ccc; }
 
-        /* 需求2: 掃描時隱藏其他資訊的樣式 */
+        /* 掃描時隱藏其他資訊 */
         .scanning-active .input-group, 
         .scanning-active #logList, 
         .scanning-active .action-grid, 
         .scanning-active .table-container,
         .scanning-active h3 { display: none !important; }
 
-        /* 操作介面 */
         .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 15px 0; }
         .btn-main { padding: 20px; border: none; border-radius: 10px; color: white; font-size: 1.1rem; font-weight: bold; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
         .btn-borrow { background-color: var(--primary); }
@@ -49,8 +49,17 @@
         table { width: 100%; border-collapse: collapse; }
         th, td { text-align: left; padding: 12px; border-bottom: 1px solid #eee; }
         
-        .status-scrap { color: var(--danger); font-weight: bold; }
-        .status-loaned { color: orange; }
+        /* 狀態標籤樣式 */
+        .badge { padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: bold; color: white; }
+        .badge-scrap { background-color: var(--danger); }
+        .badge-loaned { background-color: var(--warning); }
+        .badge-in { background-color: var(--primary); }
+
+        .btn-action { padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; background: white; cursor: pointer; font-size: 0.85rem; margin-right: 4px; transition: 0.2s; }
+        .btn-action:hover { background: #f0f0f0; }
+        .btn-edit { color: var(--secondary); border-color: var(--secondary); }
+        .btn-scrap { color: var(--warning); border-color: var(--warning); }
+        .btn-del { color: var(--danger); border-color: var(--danger); }
 
         @media print {
             .nav, .btn-main, #reader-wrapper, .input-group, .no-print { display: none !important; }
@@ -64,8 +73,8 @@
     <div id="loginPage" class="page active">
         <div style="text-align: center; max-width: 350px; margin: auto;">
             <h2>🔐 幼兒園圖書系統</h2>
-            <input type="password" id="loginPwd" placeholder="請輸入管理密碼" style="margin-bottom:15px;">
-            <button onclick="handleLogin()" class="btn-main btn-return" style="width: 100%; padding: 15px;">登入系統</button>
+            <input type="password" id="loginPwd" placeholder="請輸入管理密碼">
+            <button onclick="handleLogin()" class="btn-main btn-return" style="width: 100%; padding: 15px; margin-top: 10px;">登入系統</button>
         </div>
     </div>
 
@@ -110,7 +119,7 @@
 
     <div id="managePage" class="page">
         <div id="manageActionGrid" class="action-grid">
-            <button onclick="initiateScan('manage')" class="btn-main btn-add-book">🔍 掃描新增/修改圖書 (QR)</button>
+            <button onclick="initiateScan('manage')" class="btn-main btn-add-book">🔍 掃描新增/快速編輯 (QR)</button>
         </div>
         <div class="table-container">
             <table id="bookTable">
@@ -204,20 +213,11 @@
             }
         }
         currentMode = mode;
-        
-        // 需求2: 啟動掃描時增加類別以隱藏資訊
         document.getElementById('mainContainer').classList.add('scanning-active');
-        
         const wrapper = document.getElementById('reader-wrapper');
         const activePage = document.querySelector('.page.active');
         activePage.prepend(wrapper); 
         wrapper.style.display = 'block';
-        
-        const modeTitle = document.getElementById('scanModeTitle');
-        if(mode === 'borrow') modeTitle.innerHTML = `<span style="color:var(--primary)">📤 借書中...</span>`;
-        else if(mode === 'return') modeTitle.innerHTML = `<span style="color:var(--secondary)">📥 還書中...</span>`;
-        else modeTitle.innerHTML = `<span style="color:var(--dark)">🔍 掃描圖書 QR Code...</span>`;
-
         startScanner();
     }
 
@@ -239,52 +239,34 @@
     }
 
     function handleScanSuccess(barcode) {
-        const book = bookDatabase[barcode];
-
         if (currentMode === 'manage') {
             stopScanner();
             setTimeout(() => {
-                const existing = bookDatabase[barcode] || { title: "", assetId: "", isScrapped: false };
-                const assetId = prompt("財產編號:", existing.assetId || barcode);
-                const title = prompt("書名:", existing.title);
-                const scrapConfirm = existing.isScrapped ? true : confirm("是否要將此書設為【報廢】狀態？(取消則為正常)");
-                
-                if (title && assetId) {
-                    bookDatabase[barcode] = { 
-                        title, assetId, 
-                        isScrapped: scrapConfirm,
-                        loanedTo: existing.loanedTo || null,
-                        status: scrapConfirm ? "報廢" : (existing.loanedTo ? `借出(${existing.loanedTo})` : "在館")
-                    };
-                    saveData('bookDB', bookDatabase);
-                    renderBookTable();
-                }
+                editBookInfo(barcode);
             }, 300);
             return;
         }
 
-        // 檢查圖書是否存在
+        const book = bookDatabase[barcode];
         if (!book) { alert("❌ 系統無此圖書資料"); stopScanner(); return; }
         
-        // 需求5: 報廢狀態檢查
-        if (book.isScrapped) { alert(`⚠️ 書籍《${book.title}》已報廢，無法借還！`); stopScanner(); return; }
+        // 報廢狀態檢查
+        if (book.status === "報廢") { alert(`⚠️ 書籍《${book.title}》已報廢，無法進行借還操作！`); stopScanner(); return; }
 
         const userName = document.getElementById('loanMember').value;
         const className = document.getElementById('loanClass').value;
 
         if (currentMode === 'borrow') {
-            // 需求1: 已經借出的書不能再借
             if (book.loanedTo) {
-                alert(`❌ 借閱失敗！\n此書已由【${book.loanedTo}】借閱中。`);
+                alert(`❌ 借閱失敗！此書目前由【${book.loanedTo}】借閱中。`);
             } else {
                 book.loanedTo = userName;
                 book.status = `借出(${userName})`;
                 processLoan(book, className, userName, "借書");
             }
         } else {
-            // 需求3: 已經歸還的書不能再還
             if (!book.loanedTo) {
-                alert(`❌ 還書失敗！\n此書目前在館內，沒有人借閱。`);
+                alert(`❌ 還書失敗！此書目前在館內。`);
             } else {
                 book.loanedTo = null;
                 book.status = "在館";
@@ -301,31 +283,68 @@
         alert(`${book.title} ${action}完成！`);
     }
 
-    // --- 4. 管理功能與確認框 ---
+    // --- 圖書管理核心 ---
+
     function renderBookTable() {
         const tbody = document.querySelector('#bookTable tbody');
         tbody.innerHTML = Object.keys(bookDatabase).map(barcode => {
             const b = bookDatabase[barcode];
+            let statusBadge = '';
+            if(b.status === "報廢") statusBadge = `<span class="badge badge-scrap">報廢</span>`;
+            else if(b.loanedTo) statusBadge = `<span class="badge badge-loaned">借出</span>`;
+            else statusBadge = `<span class="badge badge-in">在館</span>`;
+
+            // 只有報廢狀態才顯示刪除按鈕
+            let actionButtons = `<button onclick="editBookInfo('${barcode}')" class="btn-action btn-edit">編輯</button>`;
+            if(b.status !== "報廢") {
+                actionButtons += `<button onclick="scrapBook('${barcode}')" class="btn-action btn-scrap">報廢</button>`;
+            } else {
+                actionButtons += `<button onclick="deleteBook('${barcode}')" class="btn-action btn-del">永久刪除</button>`;
+            }
+
             return `<tr>
                 <td>${b.title}</td>
                 <td>${b.assetId}</td>
-                <td class="${b.isScrapped ? 'status-scrap' : ''}">${b.status}</td>
-                <td>
-                    <button onclick="deleteBook('${barcode}')" style="color:red; background:none; border:none; cursor:pointer;">報廢/刪除</button>
-                </td>
+                <td>${statusBadge}</td>
+                <td>${actionButtons}</td>
             </tr>`;
         }).join('');
     }
 
+    function editBookInfo(barcode) {
+        const book = bookDatabase[barcode] || { title: "", assetId: "", status: "在館", loanedTo: null };
+        const newAssetId = prompt("請輸入【財產編號】:", book.assetId || barcode);
+        const newTitle = prompt("請輸入【書名】:", book.title);
+        
+        if (newTitle && newAssetId) {
+            bookDatabase[barcode] = { 
+                ...book,
+                title: newTitle, 
+                assetId: newAssetId
+            };
+            saveData('bookDB', bookDatabase);
+            renderBookTable();
+        }
+    }
+
+    function scrapBook(id) {
+        if(confirm(`⚠️ 您確定要將《${bookDatabase[id].title}》標記為【報廢】嗎？\n報廢後將無法進行借還。`)) {
+            bookDatabase[id].status = "報廢";
+            bookDatabase[id].loanedTo = null; // 報廢自動收回
+            saveData('bookDB', bookDatabase);
+            renderBookTable();
+        }
+    }
+
     function deleteBook(id) {
-        // 需求4: 刪除確認對話框
-        if(confirm(`❓ 您確定要永久刪除書籍《${bookDatabase[id].title}》的資料嗎？\n此動作無法復原。`)) { 
+        if(confirm(`🔥 警告：此圖書已處於報廢狀態。\n您確定要從系統中「永久刪除」《${bookDatabase[id].title}》嗎？\n此動作無法恢復。`)) { 
             delete bookDatabase[id]; 
             saveData('bookDB', bookDatabase); 
             renderBookTable(); 
         }
     }
 
+    // --- 成員與設定 ---
     function addMember() {
         const c = document.getElementById('editClassSelect').value;
         const n = document.getElementById('newMemberName').value.trim();
@@ -338,8 +357,7 @@
     }
 
     function deleteMember(c, m) {
-        // 需求4: 成員刪除確認
-        if(confirm(`❓ 確定要移除班級【${c}】的成員【${m}】嗎？`)) {
+        if(confirm(`確定移除班級【${c}】的成員【${m}】？`)) {
             members[c] = members[c].filter(x => x !== m);
             saveData('memberDB', members);
             renderMemberTable();
@@ -351,7 +369,7 @@
         tbody.innerHTML = '';
         for(let c in members) {
             members[c].forEach(m => {
-                tbody.innerHTML += `<tr><td>${c}</td><td>${m}</td><td><button onclick="deleteMember('${c}','${m}')" style="color:red; border:none; background:none; cursor:pointer;">刪除</button></td></tr>`;
+                tbody.innerHTML += `<tr><td>${c}</td><td>${m}</td><td><button onclick="deleteMember('${c}','${m}')" class="btn-action btn-del">刪除</button></td></tr>`;
             });
         }
     }
@@ -368,7 +386,7 @@
 
     function updateClassList() {
         const l = document.getElementById('classListInput').value;
-        if(l) { config.classes = l.split(',').map(s=>s.trim()); saveData('libConfig', config); initDropdowns(); alert("班級更新成功"); }
+        if(l) { config.classes = l.split(',').map(s=>s.trim()); saveData('libConfig', config); initDropdowns(); alert("班級清單更新成功"); }
     }
 
     function saveData(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
