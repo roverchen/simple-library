@@ -184,7 +184,66 @@
         el.innerHTML = list.length ? list.map(m => `<option value="${m}">${m}</option>`).join('') : '<option value="">(無成員)</option>';
     }
 
-    // --- 3. 掃描核心功能 (修正 initiateScan 未定義問題) ---
+    // --- 3. 掃描核心功能 ---
+    function initiateScan(mode) {
+        // 1. 權限檢查
+        if (mode !== 'manage') {
+            const member = document.getElementById('loanMember').value;
+            if (!member || member === "(無成員)") {
+                alert("⚠️ 請先選擇借閱人！");
+                return;
+            }
+        }
+
+        currentMode = mode;
+
+        // 2. UI 切換
+        document.getElementById('loanActionGrid').style.display = 'none';
+        document.getElementById('manageActionGrid').style.display = 'none';
+    
+    // 3. 【關鍵修正】將掃描容器移動到目前的活躍頁面
+    const wrapper = document.getElementById('reader-wrapper');
+    const activePage = document.querySelector('.page.active');
+    
+    // 尋找該頁面適合插入的位置（表格上方或紀錄上方）
+    const targetLocation = activePage.querySelector('.table-container') || activePage.querySelector('#logList') || activePage;
+    activePage.insertBefore(wrapper, targetLocation);
+    
+    wrapper.style.display = 'block';
+    
+    // 4. 設定標題
+    const modeTitle = document.getElementById('scanModeTitle');
+    if(mode === 'borrow') modeTitle.innerHTML = `<span style="color:var(--primary)">📤 正在借書掃描...</span>`;
+    else if(mode === 'return') modeTitle.innerHTML = `<span style="color:var(--secondary)">📥 正在還書掃描...</span>`;
+    else modeTitle.innerHTML = `<span style="color:var(--dark)">🔍 掃描圖書 QR Code...</span>`;
+
+    // 5. 啟動相機
+    startScanner();
+}
+
+function startScanner() {
+    // 確保之前的實例完全清除
+    if (html5QrCode) {
+        html5QrCode.clear();
+    }
+    
+    html5QrCode = new Html5Qrcode("reader");
+    const scanConfig = { 
+        fps: 20, 
+        qrbox: { width: 300, height: 300 } 
+    };
+
+    html5QrCode.start(
+        { facingMode: "environment" }, 
+        scanConfig, 
+        handleScanSuccess
+    ).catch(err => {
+        console.error("相機啟動失敗", err);
+        alert("❌ 無法開啟相機：\n1. 請確認已授權相機權限\n2. 必須使用 HTTPS 安全連線");
+        stopScanner();
+    });
+}
+/*
     function initiateScan(mode) {
         if (mode !== 'manage') {
             const member = document.getElementById('loanMember').value;
@@ -217,7 +276,7 @@
             stopScanner();
         });
     }
-
+*/
     function stopScanner() {
         if (html5QrCode) {
             html5QrCode.stop().then(() => {
