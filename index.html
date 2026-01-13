@@ -197,21 +197,20 @@
 
         currentMode = mode;
 
-        // 2. UI 切換
-        document.getElementById('loanActionGrid').style.display = 'none';
-        document.getElementById('manageActionGrid').style.display = 'none';
+    // 2. 隱藏操作按鈕
+    document.getElementById('loanActionGrid').style.display = 'none';
+    document.getElementById('manageActionGrid').style.display = 'none';
     
-    // 3. 【關鍵修正】將掃描容器移動到目前的活躍頁面
+    // 3. 【關鍵修正】動態移動掃描容器
     const wrapper = document.getElementById('reader-wrapper');
     const activePage = document.querySelector('.page.active');
     
-    // 尋找該頁面適合插入的位置（表格上方或紀錄上方）
-    const targetLocation = activePage.querySelector('.table-container') || activePage.querySelector('#logList') || activePage;
-    activePage.insertBefore(wrapper, targetLocation);
+    // 移除現有的移動邏輯，直接放入活躍頁面的最上方
+    activePage.prepend(wrapper); 
     
     wrapper.style.display = 'block';
     
-    // 4. 設定標題
+    // 4. 設定顯示文字
     const modeTitle = document.getElementById('scanModeTitle');
     if(mode === 'borrow') modeTitle.innerHTML = `<span style="color:var(--primary)">📤 正在借書掃描...</span>`;
     else if(mode === 'return') modeTitle.innerHTML = `<span style="color:var(--secondary)">📥 正在還書掃描...</span>`;
