@@ -3,249 +3,338 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>幼兒園圖書管理系統 Pro</title>
+    <title>幼兒園圖書資訊管理系統 Pro</title>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <style>
         :root {
             --primary: #4CAF50;
             --secondary: #2196F3;
             --danger: #f44336;
             --dark: #333;
+            --bg: #f4f7f6;
         }
-        body { font-family: "微軟正黑體", sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; }
-        .container { max-width: 900px; margin: auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        * { box-sizing: border-box; }
+        body { font-family: "微軟正黑體", sans-serif; background-color: var(--bg); margin: 0; padding: 10px; }
+        .container { max-width: 900px; margin: 10px auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
         
-        /* 導覽列 */
-        .nav { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid #eee; padding-bottom: 10px; }
-        .nav button { background: #eee; color: var(--dark); border: none; padding: 10px 20px; cursor: pointer; border-radius: 5px; }
-        .nav button.active { background: var(--secondary); color: white; }
+        /* 登入樣式 */
+        #loginPage { text-align: center; padding: 50px 20px; }
+        .login-box { max-width: 300px; margin: auto; }
 
-        /* 區塊顯示控制 */
+        /* 導覽列 */
+        .nav { display: none; gap: 5px; margin-bottom: 20px; border-bottom: 2px solid #eee; padding-bottom: 10px; flex-wrap: wrap; }
+        .nav button { flex: 1; min-width: 80px; background: #eee; border: none; padding: 10px 5px; cursor: pointer; border-radius: 8px; font-weight: bold; font-size: 0.9rem; }
+        .nav button.active { background: var(--secondary); color: white; }
+        .btn-logout { background: #666 !important; color: white !important; }
+
         .page { display: none; }
         .page.active { display: block; }
 
-        /* 表單與表格 */
-        .input-group { margin: 15px 0; display: flex; gap: 10px; justify-content: center; align-items: center; }
-        input, select { padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
-        th { background: #f8f8f8; }
+        /* 相機容器 */
+        #reader-wrapper { display: none; margin: 20px 0; text-align: center; }
+        #reader { width: 100%; max-width: 450px; margin: 0 auto; border-radius: 12px; overflow: hidden; border: 5px solid #ccc; }
 
-        /* 條碼樣式 */
-        .barcode-card { display: inline-block; border: 1px solid #000; padding: 10px; margin: 5px; text-align: center; }
-        .barcode-visual { font-family: 'Libre Barcode 39', cursive; font-size: 30px; display: block; height: 40px; border-left: 2px solid #000; border-right: 2px solid #000; background: repeating-linear-gradient(90deg, #000, #000 2px, #fff 2px, #fff 4px); width: 120px; margin: 5px auto; }
+        /* 操作介面 */
+        .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 15px 0; }
+        .btn-main { padding: 20px; border: none; border-radius: 10px; color: white; font-size: 1.1rem; font-weight: bold; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
+        .btn-borrow { background-color: var(--primary); }
+        .btn-return { background-color: var(--secondary); }
+        .btn-add-book { background-color: var(--dark); grid-column: span 2; }
 
-        /* 狀態標籤 */
-        .status-borrow { color: var(--primary); font-weight: bold; }
-        .status-return { color: var(--secondary); font-weight: bold; }
-        .btn-add { background: var(--primary); color: white; }
-        .btn-print { background: #607d8b; color: white; }
-        .btn-danger { background: var(--danger); color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 3px; }
+        .input-group { margin: 10px 0; display: flex; flex-direction: column; gap: 8px; }
+        label { font-weight: bold; color: #555; font-size: 0.9rem; }
+        input, select { padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; width: 100%; }
+
+        /* 列表與報表 */
+        .table-container { overflow-x: auto; margin-top: 20px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        th, td { text-align: left; padding: 10px; border-bottom: 1px solid #eee; }
+        th { background: #f8f8f8; color: #666; }
         
+        .barcode-print { border: 1px solid #333; padding: 10px; margin: 5px; display: inline-block; text-align: center; width: 150px; }
+
         @media print {
-            .nav, .input-group, button, .no-print { display: none !important; }
-            .container { box-shadow: none; width: 100%; }
-            .page { display: block !important; }
+            .nav, .btn-main, #reader-wrapper, .input-group, .no-print { display: none !important; }
+            .container { box-shadow: none; border: none; width: 100%; max-width: none; }
         }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <div class="nav no-print">
-        <button onclick="showPage('loanPage')" id="btn-loanPage" class="active">📖 借還書</button>
-        <button onclick="showPage('managePage')" id="btn-managePage">⚙️ 圖書管理</button>
-        <button onclick="showPage('reportPage')" id="btn-reportPage">📊 報表與列印</button>
+    <div id="loginPage" class="page active">
+        <div class="login-box">
+            <h2>🔐 系統登入</h2>
+            <div class="input-group">
+                <input type="password" id="loginPwd" placeholder="請輸入管理密碼 (預設1234)">
+                <button onclick="handleLogin()" class="btn-main btn-return" style="width: 100%; padding: 12px;">登入</button>
+            </div>
+        </div>
     </div>
 
-    <div id="loanPage" class="page active">
-        <h2>📚 繪本借還登記</h2>
+    <div class="nav no-print" id="mainNav">
+        <button onclick="changeTab('loanPage')" id="btn-loanPage" class="active">借還書</button>
+        <button onclick="changeTab('classPage')" id="btn-classPage">班級管理</button>
+        <button onclick="changeTab('managePage')" id="btn-managePage">圖書管理</button>
+        <button onclick="changeTab('reportPage')" id="btn-reportPage">報表</button>
+        <button onclick="handleLogout()" class="btn-logout">登出</button>
+    </div>
+
+    <div id="loanPage" class="page">
         <div class="input-group">
-            <select id="borrowerUnit">
-                <option value="class">🏫 班級</option>
-                <option value="family">🏠 家庭</option>
-            </select>
-            <input type="text" id="unitName" placeholder="名稱 (如: 小熊班 / 王小明)">
+            <label>選擇班級</label>
+            <select id="loanClass" onchange="updateMemberDropdown('loanMember', this.value)"></select>
+            <label>借閱人 (老師/幼兒)</label>
+            <select id="loanMember"></select>
         </div>
-        <div class="input-group">
-            <input type="text" id="barcodeInput" placeholder="請掃描書籍條碼..." style="width: 60%;">
-            <button onclick="handleScan()" class="btn-add">確認</button>
+
+        <div id="loanActionGrid" class="action-grid">
+            <button onclick="initiateScan('borrow')" class="btn-main btn-borrow"><span>📤</span> 借書</button>
+            <button onclick="initiateScan('return')" class="btn-main btn-return"><span>📥</span> 還書</button>
         </div>
-        <div style="margin-bottom: 20px;">
-            <label><input type="radio" name="action" value="borrow" checked> 借書</label>
-            <label><input type="radio" name="action" value="return"> 還書</label>
+
+        <div id="reader-wrapper">
+            <h3 id="scanModeTitle">準備掃描...</h3>
+            <div id="reader"></div>
+            <button onclick="stopScanner()" class="btn-cancel" style="width:100%; padding:10px; margin-top:10px;">❌ 取消</button>
         </div>
-        <div id="logList"></div>
+
+        <div id="logList" style="margin-top: 20px;"></div>
+    </div>
+
+    <div id="classPage" class="page">
+        <h3>👥 班級與成員設定</h3>
+        <div class="input-group" style="background:#f9f9f9; padding:15px; border-radius:8px;">
+            <label>選擇班級</label>
+            <select id="editClassSelect"></select>
+            <input type="text" id="newMemberName" placeholder="輸入成員姓名 (老師或幼兒)">
+            <button onclick="addMember()" class="btn-main btn-borrow" style="width:100%; padding:10px;">新增成員</button>
+        </div>
+        <div class="table-container">
+            <table id="memberTable">
+                <thead><tr><th>班級</th><th>姓名</th><th>操作</th></tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
     </div>
 
     <div id="managePage" class="page">
-        <h2>⚙️ 圖書資料管理</h2>
-        <div class="input-group" style="background: #f9f9f9; padding: 15px; border-radius: 8px;">
-            <input type="text" id="newIsbn" placeholder="條碼編號">
-            <input type="text" id="newTitle" placeholder="書名">
-            <button onclick="addOrUpdateBook()" class="btn-add">新增/修改書籍</button>
+        <div id="manageActionGrid" class="action-grid">
+            <button onclick="initiateScan('manage')" class="btn-main btn-add-book"><span>🔍</span> 掃描新增/修改圖書</button>
         </div>
-        <table id="bookTable">
-            <thead>
-                <tr>
-                    <th>條碼編號</th>
-                    <th>書名</th>
-                    <th>操作</th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-        </table>
+        <div class="table-container">
+            <table id="bookTable">
+                <thead><tr><th>財產編號</th><th>書名</th><th>操作</th></tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
     </div>
 
     <div id="reportPage" class="page">
-        <h2>📊 系統報表與條碼</h2>
-        <div class="no-print">
-            <button onclick="window.print()" class="btn-print">🖨️ 列印此頁面</button>
+        <div class="no-print" style="margin-bottom:15px;">
+            <button onclick="window.print()" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">🖨️ 列印報表/條碼</button>
         </div>
-        
-        <h3>🏷️ 書籍條碼標籤 (供張貼)</h3>
-        <div id="barcodePrintArea"></div>
-
-        <hr>
-        <h3>📈 借閱統計報表</h3>
-        <table id="statTable">
-            <thead>
-                <tr>
-                    <th>書名</th>
-                    <th>目前狀態</th>
-                    <th>累計借閱次數</th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-        </table>
+        <h3>📊 借閱總報表</h3>
+        <div class="table-container">
+            <table id="reportTable">
+                <thead><tr><th>借閱日期</th><th>班級</th><th>姓名</th><th>書名</th><th>財產編號</th><th>狀態</th></tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
     </div>
 </div>
 
 <script>
-    // 初始資料庫
-    let bookDatabase = JSON.parse(localStorage.getItem('bookDB')) || {
-        "9789861234567": { title: "好餓的毛毛蟲", count: 0, status: "在館" },
-        "9789867654321": { title: "猜猜我有多愛你", count: 0, status: "在館" }
-    };
+    // --- 資料初始化 ---
+    const CLASS_LIST = ["太陽班", "月亮班", "星星班", "彩虹班", "白雲班", "小草班"];
+    let members = JSON.parse(localStorage.getItem('memberDB')) || {}; 
+    let bookDatabase = JSON.parse(localStorage.getItem('bookDB')) || {};
+    let loanLogs = JSON.parse(localStorage.getItem('loanLogs')) || [];
+    
+    let html5QrCode;
+    let currentMode = '';
 
-    // 初始化顯示
-    renderBookTable();
+    // 初始化班級選單
+    function initDropdowns() {
+        const selects = ['loanClass', 'editClassSelect'];
+        selects.forEach(id => {
+            const el = document.getElementById(id);
+            el.innerHTML = CLASS_LIST.map(c => `<option value="${c}">${c}</option>`).join('');
+        });
+        updateMemberDropdown('loanMember', CLASS_LIST[0]);
+    }
 
-    // 分頁切換功能
-    function showPage(pageId) {
+    // 更新成員下拉選單
+    function updateMemberDropdown(targetId, className) {
+        const el = document.getElementById(targetId);
+        const list = members[className] || [];
+        el.innerHTML = list.length ? list.map(m => `<option value="${m}">${m}</option>`).join('') : '<option value="">(無成員)</option>';
+    }
+
+    // --- 登入管理 ---
+    function handleLogin() {
+        const pwd = document.getElementById('loginPwd').value;
+        if(pwd === "1234") { // 預設密碼
+            document.getElementById('loginPage').classList.remove('active');
+            document.getElementById('mainNav').style.display = 'flex';
+            changeTab('loanPage');
+            initDropdowns();
+        } else {
+            alert("密碼錯誤！");
+        }
+    }
+
+    function handleLogout() {
+        location.reload();
+    }
+
+    // --- 頁面切換 ---
+    function changeTab(pageId) {
+        if (html5QrCode) stopScanner();
         document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
         document.querySelectorAll('.nav button').forEach(b => b.classList.remove('active'));
         document.getElementById(pageId).classList.add('active');
         document.getElementById('btn-' + pageId).classList.add('active');
         
-        if(pageId === 'reportPage') renderReports();
+        if(pageId === 'classPage') renderMemberTable();
+        if(pageId === 'managePage') renderBookTable();
+        if(pageId === 'reportPage') renderReportTable();
     }
 
-    // --- 圖書管理功能 ---
-    function addOrUpdateBook() {
-        const isbn = document.getElementById('newIsbn').value.trim();
-        const title = document.getElementById('newTitle').value.trim();
-        if (!isbn || !title) return alert("請填寫完整資訊");
-
-        bookDatabase[isbn] = {
-            title: title,
-            count: bookDatabase[isbn] ? bookDatabase[isbn].count : 0,
-            status: bookDatabase[isbn] ? bookDatabase[isbn].status : "在館"
-        };
-        saveAndRefresh();
-        document.getElementById('newIsbn').value = '';
-        document.getElementById('newTitle').value = '';
+    // --- 班級成員管理 ---
+    function addMember() {
+        const className = document.getElementById('editClassSelect').value;
+        const name = document.getElementById('newMemberName').value.trim();
+        if(!name) return;
+        if(!members[className]) members[className] = [];
+        members[className].push(name);
+        localStorage.setItem('memberDB', JSON.stringify(members));
+        document.getElementById('newMemberName').value = '';
+        renderMemberTable();
     }
 
-    function deleteBook(isbn) {
-        if (confirm(`確定要報廢/刪除《${bookDatabase[isbn].title}》嗎？`)) {
-            delete bookDatabase[isbn];
-            saveAndRefresh();
-        }
+    function deleteMember(className, name) {
+        members[className] = members[className].filter(m => m !== name);
+        localStorage.setItem('memberDB', JSON.stringify(members));
+        renderMemberTable();
     }
 
-    function renderBookTable() {
-        const tbody = document.querySelector('#bookTable tbody');
+    function renderMemberTable() {
+        const tbody = document.querySelector('#memberTable tbody');
         tbody.innerHTML = '';
-        for (let isbn in bookDatabase) {
-            tbody.innerHTML += `
-                <tr>
-                    <td>${isbn}</td>
-                    <td>${bookDatabase[isbn].title}</td>
-                    <td><button onclick="deleteBook('${isbn}')" class="btn-danger">報廢</button></td>
-                </tr>`;
+        for(let c in members) {
+            members[c].forEach(m => {
+                tbody.innerHTML += `<tr><td>${c}</td><td>${m}</td><td><button onclick="deleteMember('${c}','${m}')" class="btn-del">刪除</button></td></tr>`;
+            });
         }
     }
 
-    // --- 借還系統功能 ---
-    function handleScan() {
-        const barcode = document.getElementById('barcodeInput').value.trim();
-        const unitName = document.getElementById('unitName').value || "未具名";
-        const action = document.querySelector('input[name="action"]:checked').value;
-        
-        if (!barcode || !bookDatabase[barcode]) {
-            alert("找不到此書籍，請先至管理頁面新增！");
+    // --- 圖書管理 (財產編號) ---
+    function initiateScan(mode) {
+        currentMode = mode;
+        document.getElementById('loanActionGrid').style.display = 'none';
+        document.getElementById('manageActionGrid').style.display = 'none';
+        const wrapper = document.getElementById('reader-wrapper');
+        const activePage = document.querySelector('.page.active');
+        activePage.insertBefore(wrapper, activePage.querySelector('.table-container') || activePage.querySelector('#logList'));
+        wrapper.style.display = 'block';
+        startScanner();
+    }
+
+    function handleScanSuccess(barcode) {
+        if (currentMode === 'manage') {
+            stopScanner();
+            setTimeout(() => {
+                const existing = bookDatabase[barcode] || { title: "", assetId: "" };
+                const assetId = prompt("請輸入/修改【財產編號】:", existing.assetId || barcode);
+                const title = prompt("請輸入/修改【書名】:", existing.title);
+                
+                if (title && assetId) {
+                    bookDatabase[barcode] = { title, assetId, count: existing.count || 0, status: "在館" };
+                    localStorage.setItem('bookDB', JSON.stringify(bookDatabase));
+                    renderBookTable();
+                }
+            }, 300);
+            return;
+        }
+
+        // 借還書邏輯
+        if (!bookDatabase[barcode]) {
+            alert("找不到此圖書，請先新增圖書資料！");
+            stopScanner();
             return;
         }
 
         const book = bookDatabase[barcode];
-        const timestamp = new Date().toLocaleTimeString();
-        
-        // 更新狀態與統計
-        if (action === 'borrow') {
-            book.status = `借出 (${unitName})`;
+        const className = document.getElementById('loanClass').value;
+        const userName = document.getElementById('loanMember').value;
+        const date = new Date().toLocaleString();
+
+        if (currentMode === 'borrow') {
+            book.status = `借出(${userName})`;
             book.count++;
+            loanLogs.unshift({ date, className, userName, title: book.title, assetId: book.assetId, action: "借書" });
         } else {
             book.status = "在館";
+            loanLogs.unshift({ date, className, userName, title: book.title, assetId: book.assetId, action: "還書" });
         }
 
-        const logItem = document.createElement('div');
-        logItem.style.padding = "10px";
-        logItem.style.borderBottom = "1px solid #eee";
-        logItem.innerHTML = `[${timestamp}] <b>${action === 'borrow' ? '✅ 借出' : '🔙 歸還'}</b> 《${book.title}》 - ${unitName}`;
-        
-        const logList = document.getElementById('logList');
-        logList.insertBefore(logItem, logList.firstChild);
-
-        saveAndRefresh();
-        document.getElementById('barcodeInput').value = '';
-        document.getElementById('barcodeInput').focus();
-    }
-
-    // --- 報表與列印功能 ---
-    function renderReports() {
-        const printArea = document.getElementById('barcodePrintArea');
-        const statBody = document.querySelector('#statTable tbody');
-        printArea.innerHTML = '';
-        statBody.innerHTML = '';
-
-        for (let isbn in bookDatabase) {
-            // 生成列印用條碼卡
-            printArea.innerHTML += `
-                <div class="barcode-card">
-                    <div style="font-size:12px">${bookDatabase[isbn].title}</div>
-                    <div class="barcode-visual"></div>
-                    <div style="font-size:10px">${isbn}</div>
-                </div>`;
-            
-            // 生成統計表
-            statBody.innerHTML += `
-                <tr>
-                    <td>${bookDatabase[isbn].title}</td>
-                    <td>${bookDatabase[isbn].status}</td>
-                    <td>${bookDatabase[isbn].count} 次</td>
-                </tr>`;
-        }
-    }
-
-    function saveAndRefresh() {
         localStorage.setItem('bookDB', JSON.stringify(bookDatabase));
-        renderBookTable();
+        localStorage.setItem('loanLogs', JSON.stringify(loanLogs));
+        stopScanner();
+        alert(`${book.title} - ${currentMode === 'borrow' ? '借書' : '還書'}成功`);
     }
 
-    // 監聽 Enter 鍵
-    document.getElementById('barcodeInput').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') handleScan();
-    });
+    function renderBookTable() {
+        const tbody = document.querySelector('#bookTable tbody');
+        tbody.innerHTML = Object.keys(bookDatabase).map(barcode => `
+            <tr>
+                <td>${bookDatabase[barcode].assetId}</td>
+                <td><b>${bookDatabase[barcode].title}</b></td>
+                <td>
+                    <button onclick="deleteBook('${barcode}')" class="btn-del">報廢</button>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    function deleteBook(barcode) {
+        if(confirm("確定要報廢/刪除此書？")) { delete bookDatabase[barcode]; localStorage.setItem('bookDB', JSON.stringify(bookDatabase)); renderBookTable(); }
+    }
+
+    // --- 報表管理 ---
+    function renderReportTable() {
+        const tbody = document.querySelector('#reportTable tbody');
+        tbody.innerHTML = loanLogs.map(log => `
+            <tr>
+                <td>${log.date}</td>
+                <td>${log.className}</td>
+                <td>${log.userName}</td>
+                <td>${log.title}</td>
+                <td>${log.assetId}</td>
+                <td><span style="color:${log.action==='借書'?'green':'blue'}">${log.action}</span></td>
+            </tr>
+        `).join('');
+    }
+
+    // --- 相機控制 ---
+    function startScanner() {
+        html5QrCode = new Html5Qrcode("reader");
+        html5QrCode.start({ facingMode: "environment" }, { fps: 20, qrbox: { width: 280, height: 150 } }, handleScanSuccess);
+    }
+
+    function stopScanner() {
+        if (html5QrCode) {
+            html5QrCode.stop().then(() => {
+                html5QrCode = null;
+                document.getElementById('reader-wrapper').style.display = 'none';
+                document.getElementById('loanActionGrid').style.display = 'grid';
+                document.getElementById('manageActionGrid').style.display = 'grid';
+            });
+        }
+    }
+
+    renderBookTable();
 </script>
 
 </body>
