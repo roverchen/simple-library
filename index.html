@@ -31,8 +31,20 @@
         #reader-wrapper { display: none; margin: 20px 0; text-align: center; }
         #reader { width: 100%; max-width: 550px; margin: 0 auto; border-radius: 12px; overflow: hidden; border: 5px solid #ccc; }
 
-        /* 掃描時隱藏其他資訊 */
-        .scanning-active .input-group, .scanning-active #logList, .scanning-active .action-grid, .scanning-active .table-container, .scanning-active h3 { display: none !important; }
+        /* 掃描時隱藏其他資訊（保留掃描框與模式標題） */
+        .scanning-active .input-group, .scanning-active #logList, .scanning-active .action-grid, .scanning-active .table-container { display: none !important; }
+        .scanning-active .page h3 { display: none !important; }
+        #scanModeTitle { display: block !important; }
+
+        /* 掃描結果提示：連續掃描時不中斷相機，改以畫面提示 */
+        #scanStatus { margin: 0 auto 12px; padding: 12px 16px; border-radius: 8px; font-weight: bold; font-size: 1rem; text-align: center; }
+        #scanStatus:empty { display: none; }
+        .scan-ok { background: #e8f5e9; color: #2e7d32; border: 1px solid var(--primary); }
+        .scan-warn { background: #fff8e1; color: #e65100; border: 1px solid var(--warning); }
+        .scan-err { background: #ffebee; color: #c62828; border: 1px solid var(--danger); }
+
+        /* 單本標籤列印區：螢幕上永遠不顯示 */
+        #singleLabelArea { display: none; }
 
         .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 15px 0; }
         .btn-main { padding: 20px; border: none; border-radius: 10px; color: white; font-size: 1.1rem; font-weight: bold; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
@@ -51,6 +63,21 @@
         .badge-loaned { background-color: var(--warning); }
         .badge-in { background-color: var(--primary); }
 
+        /* 表格內操作按鈕 */
+        .btn-action { padding: 6px 10px; border-radius: 5px; font-size: 0.85rem; font-weight: bold; cursor: pointer; margin-right: 5px; background: #fff; }
+        .btn-action:last-child { margin-right: 0; }
+        .btn-edit { color: var(--secondary); border: 1px solid var(--secondary); }
+        .btn-scrap { color: var(--warning); border: 1px solid var(--warning); }
+        .btn-restore { color: var(--primary); border: 1px solid var(--primary); }
+        .btn-del { color: var(--danger); border: 1px solid var(--danger); }
+        .btn-action:hover { opacity: .75; }
+
+        /* 報表分頁 */
+        .pager { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+        .pager button { padding: 8px 14px; border: 1px solid var(--secondary); background: #fff; color: var(--secondary); border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
+        .pager button:disabled { opacity: .4; cursor: default; }
+        .pager span { color: #555; font-size: 0.9rem; }
+
         /* QR 標籤排版樣式 */
         .qr-label-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 15px; margin-top: 20px; }
         .qr-card { border: 1px solid #ccc; padding: 10px; text-align: center; background: #fff; page-break-inside: avoid; border-radius: 5px; }
@@ -59,7 +86,14 @@
         @media print {
             .nav, .btn-main, #reader-wrapper, .input-group, .no-print, h2 { display: none !important; }
             .container { box-shadow: none; border: none; width: 100%; max-width: none; margin: 0; padding: 0; }
-            .page { display: block !important; }
+            /* 只列印「當前頁面」，避免連登入畫面與設定頁一起印出 */
+            .page { display: none !important; }
+            .page.active { display: block !important; }
+            #scanStatus { display: none !important; }
+
+            /* 單本標籤列印：只輸出標籤本身，隱藏所有頁面內容 */
+            body.printing-label .page, body.printing-label .nav { display: none !important; }
+            body.printing-label #singleLabelArea { display: block !important; }
             .qr-label-grid { grid-template-columns: repeat(3, 1fr); gap: 10px; } /* 列印時固定三欄 */
         }
     </style>
@@ -84,10 +118,22 @@
         <button onclick="handleLogout()" style="background:#666; color:white;">登出</button>
     </div>
 
+    <div id="scanStatus"></div>
+
     <div id="loanPage" class="page">
         <div class="input-group">
             <select id="loanClass" onchange="filterMembers('loanMember', this.value)"></select>
             <select id="loanMember"></select>
+        </div>
+        <div class="input-group">
+            <div style="display:flex; gap:8px;">
+                <select id="gunMode" style="max-width:130px;">
+                    <option value="borrow">📤 借書</option>
+                    <option value="return">📥 還書</option>
+                </select>
+                <input type="text" id="loanBarcodeInput" placeholder="條碼槍掃描或手動輸入條碼後按 Enter" autocomplete="off">
+            </div>
+            <small style="color:#666;">條碼槍可連續掃描，掃完自動清空並準備下一本。不使用條碼槍時請改用下方相機按鈕。</small>
         </div>
         <div id="loanActionGrid" class="action-grid">
             <button onclick="initiateScan('borrow')" class="btn-main btn-borrow">📤 借書</button>
@@ -96,7 +142,8 @@
         <div id="reader-wrapper">
             <h3 id="scanModeTitle">準備掃描...</h3>
             <div id="reader"></div>
-            <button onclick="stopScanner()" style="width:100%; padding:15px; margin-top:10px; border-radius:8px; border:none; background:#666; color:white;">❌ 取消</button>
+            <p style="color:#666; font-size:0.9rem;">可連續掃描多本，結果會顯示在上方。完成後請按下方按鈕返回。</p>
+            <button onclick="stopScanner()" style="width:100%; padding:15px; margin-top:10px; border-radius:8px; border:none; background:#666; color:white;">❌ 完成並返回</button>
         </div>
         <div id="logList"></div>
     </div>
@@ -115,6 +162,9 @@
     </div>
 
     <div id="managePage" class="page">
+        <div class="input-group">
+            <input type="text" id="manageBarcodeInput" placeholder="條碼槍掃描或手動輸入條碼後按 Enter（新增/編輯圖書）" autocomplete="off">
+        </div>
         <div id="manageActionGrid" class="action-grid">
             <button onclick="initiateScan('manage')" class="btn-main btn-add-book">🔍 掃描新增/快速編輯 (QR)</button>
         </div>
@@ -139,6 +189,20 @@
             <input type="text" id="classListInput">
             <button onclick="updateClassList()" style="background:var(--secondary); color:white; padding:10px; border:none; border-radius:5px;">更新班級</button>
         </div>
+        <hr>
+        <div class="input-group">
+            <label>💾 資料備份與匯出</label>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <button onclick="exportBackup()" style="flex:1; min-width:130px; background:var(--primary); color:white; padding:10px; border:none; border-radius:5px;">⬇️ 匯出完整備份</button>
+                <button onclick="document.getElementById('backupFileInput').click()" style="flex:1; min-width:130px; background:var(--warning); color:white; padding:10px; border:none; border-radius:5px;">⬆️ 匯入備份</button>
+                <button onclick="exportLoanCSV()" style="flex:1; min-width:130px; background:var(--secondary); color:white; padding:10px; border:none; border-radius:5px;">📊 匯出借閱紀錄 CSV</button>
+            </div>
+            <input type="file" id="backupFileInput" accept=".json,application/json" style="display:none;" onchange="importBackup(this)">
+            <small style="color:#666; line-height:1.7;">
+                ⚠️ 資料存在此電腦的瀏覽器中。若清除瀏覽器資料或更換電腦，館藏紀錄將<b>無法復原</b>。建議每月定期匯出備份，並另存至隨身碟或雲端硬碟。<br>
+                匯入備份會覆蓋目前所有資料（管理密碼不會被覆蓋）。
+            </small>
+        </div>
     </div>
 
     <div id="reportPage" class="page">
@@ -153,6 +217,7 @@
                 <thead><tr><th>時間</th><th>班級</th><th>姓名</th><th>書名</th><th>動作</th></tr></thead>
                 <tbody id="reportTableBody"></tbody>
             </table>
+            <div id="reportPager" class="no-print"></div>
         </div>
 
         <div id="tagReportSection" style="display:none;">
@@ -160,6 +225,9 @@
             <div class="qr-label-grid" id="qrLabelContainer"></div>
         </div>
     </div>
+
+    <!-- 單本標籤列印預覽：平時隱藏，僅在列印時輸出 -->
+    <div id="singleLabelArea"></div>
 </div>
 
 <script>
@@ -194,22 +262,17 @@
     function renderQRLabels() {
         const container = document.getElementById('qrLabelContainer');
         container.innerHTML = '';
-        
+
         Object.keys(bookDatabase).forEach(barcode => {
             const book = bookDatabase[barcode];
             if (book.status === "報廢") return; // 報廢不印
 
             const card = document.createElement('div');
             card.className = 'qr-card';
-            
-            const qrBox = document.createElement('div');
-            qrBox.className = 'qr-code-img';
-            qrBox.id = `qr-gen-${barcode}`;
-            
-            card.innerHTML = `<div style="font-size: 13px; font-weight: bold;">${book.title}</div>`;
-            card.prepend(qrBox);
-            card.innerHTML += `<div style="font-size: 11px; color: #555;">財編: ${book.assetId}</div>`;
-            
+            // 一次組出完整結構：先前使用 innerHTML += 會重新解析並摧毀已掛載的 QR 容器
+            card.innerHTML = `<div style="font-size: 13px; font-weight: bold;">${escapeHtml(book.title)}</div>` +
+                             `<div class="qr-code-img" id="qr-gen-${escapeHtml(barcode)}"></div>` +
+                             `<div style="font-size: 11px; color: #555;">財編: ${escapeHtml(book.assetId)}</div>`;
             container.appendChild(card);
 
             // 生成 QR Code
@@ -225,12 +288,70 @@
     }
 
     // --- 基礎框架函數 (登入、分頁、掃描等) ---
+
+    // 所有使用者輸入的內容在寫入 innerHTML 前都必須經過此轉義
+    function escapeHtml(str) {
+        return String(str == null ? '' : str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    // 表格按鈕一律使用 data-* 屬性 + 事件委派，
+    // 避免把資料字串直接塞進 onclick 引號中（引號或反斜線會使程式碼損毀，且可注入）
+    document.addEventListener('click', function (e) {
+        const btn = e.target.closest('[data-act]');
+        if (!btn) return;
+        const d = btn.dataset;
+        if (d.act === 'edit') editBookInfo(d.id);
+        else if (d.act === 'scrap') scrapBook(d.id);
+        else if (d.act === 'restore') restoreBook(d.id);
+        else if (d.act === 'delete') deleteBook(d.id);
+        else if (d.act === 'label') printSingleLabel(d.id);
+        else if (d.act === 'delMember') deleteMember(d.cls, d.member);
+    });
+
+    // 報表分頁：限制單頁列數，避免紀錄累積後一次渲染上萬列而卡住
+    const REPORT_PAGE_SIZE = 100;
+    let reportPage = 1;
+
+    function renderReportTable() {
+        const tbody = document.getElementById('reportTableBody');
+        const total = loanLogs.length;
+        const pages = Math.max(1, Math.ceil(total / REPORT_PAGE_SIZE));
+        reportPage = Math.min(Math.max(reportPage, 1), pages);
+        const start = (reportPage - 1) * REPORT_PAGE_SIZE;
+        tbody.innerHTML = loanLogs.slice(start, start + REPORT_PAGE_SIZE).map(log =>
+            `<tr><td>${escapeHtml(log.date)}</td><td>${escapeHtml(log.className)}</td>` +
+            `<td>${escapeHtml(log.userName)}</td><td>${escapeHtml(log.title)}</td>` +
+            `<td>${escapeHtml(log.action)}</td></tr>`).join('');
+        renderReportPager(total, pages);
+    }
+
+    function renderReportPager(total, pages) {
+        const el = document.getElementById('reportPager');
+        const go = (p, label, disabled) =>
+            `<button onclick="gotoReportPage(${p})" ${disabled ? 'disabled' : ''}>${label}</button>`;
+        el.innerHTML = `<div class="pager">` +
+            go(1, '« 首頁', reportPage === 1) +
+            go(reportPage - 1, '‹ 上一頁', reportPage === 1) +
+            `<span>第 ${reportPage} / ${pages} 頁（共 ${total.toLocaleString()} 筆）</span>` +
+            go(reportPage + 1, '下一頁 ›', reportPage === pages) +
+            go(pages, '末頁 »', reportPage === pages) +
+            `</div>`;
+    }
+
+    function gotoReportPage(p) { reportPage = p; renderReportTable(); }
+
     function handleLogin() {
         if(document.getElementById('loginPwd').value === config.password) {
             document.getElementById('loginPage').classList.remove('active');
             document.getElementById('mainNav').style.display = 'flex';
             initDropdowns();
             changeTab('loanPage');
+            focusGunInput();
         } else { alert("密碼錯誤"); }
     }
 
@@ -242,15 +363,15 @@
         document.getElementById('btn-' + pageId).classList.add('active');
         if(pageId === 'classPage') renderMemberTable();
         if(pageId === 'managePage') renderBookTable();
+        if(pageId === 'loanPage') focusGunInput();
         if(pageId === 'reportPage') {
-            isLabelMode = false; 
-            togglePrintMode(); togglePrintMode(); // 重置回紀錄模式並更新
+            isLabelMode = false;
+            document.getElementById('logReportSection').style.display = 'block';
+            document.getElementById('tagReportSection').style.display = 'none';
+            document.getElementById('printModeBtn').innerText = "切換至：標籤模式";
+            reportPage = 1;
+            renderReportTable();
         }
-    }
-
-    function renderReportTable() {
-        const tbody = document.getElementById('reportTableBody');
-        tbody.innerHTML = loanLogs.map(log => `<tr><td>${log.date}</td><td>${log.className}</td><td>${log.userName}</td><td>${log.title}</td><td>${log.action}</td></tr>`).join('');
     }
 
     // --- 其他原有功能保持不變 ---
@@ -258,7 +379,7 @@
         const selects = ['loanClass', 'editClassSelect'];
         selects.forEach(id => {
             const el = document.getElementById(id);
-            if(el) el.innerHTML = config.classes.map(c => `<option value="${c}">${c}</option>`).join('');
+            if(el) el.innerHTML = config.classes.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
         });
         document.getElementById('classListInput').value = config.classes.join(',');
         filterMembers('loanMember', config.classes[0]);
@@ -267,29 +388,94 @@
     function filterMembers(targetId, className) {
         const el = document.getElementById(targetId);
         const list = members[className] || [];
-        el.innerHTML = list.length ? list.map(m => `<option value="${m}">${m}</option>`).join('') : '<option value="">(無成員)</option>';
+        el.innerHTML = list.length ? list.map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('') : '<option value="">(無成員)</option>';
     }
 
     function initiateScan(mode) {
         if (mode !== 'manage') { if (!document.getElementById('loanMember').value) { alert("⚠️ 請先選擇借閱人！"); return; } }
         currentMode = mode;
+        lastScan = { code: '', time: 0 };
+        clearScanStatus();
+
+        // 條碼槍與相機共用模式，讓老師切換後不必再設定一次
+        const gunMode = document.getElementById('gunMode');
+        if (gunMode && (mode === 'borrow' || mode === 'return')) gunMode.value = mode;
+
+        const title = document.getElementById('scanModeTitle');
+        if (mode === 'borrow') title.innerHTML = `<span style="color:var(--primary)">📤 正在借書掃描...</span>`;
+        else if (mode === 'return') title.innerHTML = `<span style="color:var(--secondary)">📥 正在還書掃描...</span>`;
+        else title.innerHTML = `<span style="color:var(--dark)">🔍 掃描條碼以新增或修改...</span>`;
+
         document.getElementById('mainContainer').classList.add('scanning-active');
         const wrapper = document.getElementById('reader-wrapper');
         const activePage = document.querySelector('.page.active');
-        activePage.prepend(wrapper); 
+        activePage.prepend(wrapper);
         wrapper.style.display = 'block';
         startScanner();
     }
 
-    function startScanner() {
-        if (html5QrCode) html5QrCode.clear();
-        html5QrCode = new Html5Qrcode("reader");
-        html5QrCode.start({ facingMode: "environment" }, { fps: 20, qrbox: 300 }, handleScanSuccess).catch(err => { alert("相機啟動失敗"); stopScanner(); });
+    // 連續掃描時，同一個條碼會在每個影格重複觸發，需去重避免重複處理
+    let lastScan = { code: '', time: 0 };
+    const DEDUPE_MS = 1500;
+    function isDuplicateScan(code) {
+        const now = Date.now();
+        if (lastScan.code === code && now - lastScan.time < DEDUPE_MS) return true;
+        lastScan = { code: code, time: now };
+        return false;
     }
 
-    function stopScanner() { if (html5QrCode) html5QrCode.stop().then(() => { html5QrCode = null; document.getElementById('mainContainer').classList.remove('scanning-active'); document.getElementById('reader-wrapper').style.display = 'none'; }); }
+    function showScanStatus(message, type) {
+        const el = document.getElementById('scanStatus');
+        el.textContent = message;
+        el.className = 'scan-' + type;
+        clearTimeout(scanStatusTimer);
+        scanStatusTimer = setTimeout(clearScanStatus, 2500);
+    }
+    function clearScanStatus() {
+        clearTimeout(scanStatusTimer);
+        const el = document.getElementById('scanStatus');
+        if (el) { el.textContent = ''; el.className = ''; }
+    }
+    let scanStatusTimer;
+
+    function startScanner() {
+        // 先確保前一個掃描器完全停止，避免共用同一個 #reader 元素造成衝突
+        if (html5QrCode) {
+            const prev = html5QrCode;
+            html5QrCode = null;
+            prev.stop().catch(() => {}).then(launchScanner);
+        } else {
+            launchScanner();
+        }
+    }
+
+    function launchScanner() {
+        html5QrCode = new Html5Qrcode("reader");
+        html5QrCode.start({ facingMode: "environment" }, { fps: 20, qrbox: 320, aspectRatio: 1.0 }, handleScanSuccess)
+            .catch(() => {
+                alert("📷 相機啟動失敗\n\n請確認：\n1. 瀏覽器是否已允許此網頁使用相機\n2. 是否透過 https:// 或 localhost 開啟（直接雙擊 HTML 檔會被瀏覽器阻擋）\n3. 是否有其他程式正在佔用相機");
+                stopScanner();
+            });
+    }
+
+    function stopScanner() {
+        const finish = () => {
+            html5QrCode = null;
+            lastScan = { code: '', time: 0 };
+            clearScanStatus();
+            document.getElementById('mainContainer').classList.remove('scanning-active');
+            document.getElementById('reader-wrapper').style.display = 'none';
+            focusGunInput();
+        };
+        if (!html5QrCode) { finish(); return; } // 確保無論成敗都會還原畫面
+        const instance = html5QrCode;
+        html5QrCode = null;
+        instance.stop().then(finish).catch(finish);
+    }
 
     function handleScanSuccess(barcode) {
+        if (isDuplicateScan(barcode)) return;
+
         if (currentMode === 'manage') {
             stopScanner();
             setTimeout(() => {
@@ -299,25 +485,35 @@
             }, 300);
             return;
         }
+
         const book = bookDatabase[barcode];
-        if (!book) { alert("❌ 無此圖書"); stopScanner(); return; }
-        if (book.status === "報廢") { alert(`⚠️ 《${book.title}》已報廢，不可借還！`); stopScanner(); return; }
+        if (!book) { showScanStatus("❌ 無此圖書，請先至「圖書管理」建檔", 'err'); return; }
+        if (book.status === "報廢") { showScanStatus(`⚠️ 《${book.title}》已報廢，不可借還`, 'warn'); return; }
+
         const userName = document.getElementById('loanMember').value;
         const className = document.getElementById('loanClass').value;
+
         if (currentMode === 'borrow') {
-            if (book.loanedTo) alert(`❌ 【${book.loanedTo}】借閱中。`);
-            else { book.loanedTo = userName; book.status = `借出(${userName})`; processLoan(book, className, userName, "借書"); }
+            if (book.loanedTo) { showScanStatus(`❌ 《${book.title}》已被 ${book.loanedTo} 借閱中`, 'warn'); return; }
+            book.loanedTo = userName;
+            book.status = `借出(${userName})`;
+            processLoan(barcode, book, className, userName, "借書");
+            showScanStatus(`✅ 已借出《${book.title}》→ ${userName}`, 'ok');
         } else {
-            if (!book.loanedTo) alert(`❌ 此書目前在館內。`);
-            else { book.loanedTo = null; book.status = "在館"; processLoan(book, className, userName, "還書"); }
+            if (!book.loanedTo) { showScanStatus(`❌ 《${book.title}》目前在館內，無需歸還`, 'warn'); return; }
+            book.loanedTo = null;
+            book.status = "在館";
+            processLoan(barcode, book, className, userName, "還書");
+            showScanStatus(`✅ 已歸還《${book.title}》`, 'ok');
         }
-        stopScanner();
+        if (navigator.vibrate) navigator.vibrate(80);
     }
 
-    function processLoan(book, className, userName, action) {
-        loanLogs.unshift({ date: new Date().toLocaleString(), className, userName, title: book.title, action });
+    function processLoan(barcode, book, className, userName, action) {
+        loanLogs.unshift({ date: new Date().toLocaleString(), barcode: barcode, className, userName, title: book.title, assetId: book.assetId || "", action });
         saveData('bookDB', bookDatabase); saveData('loanLogs', loanLogs);
-        renderReportTable();
+        // 掃描發生時報表頁不可能是前景，無須每次都重繪報表
+        if (document.getElementById('reportPage').classList.contains('active') && !isLabelMode) renderReportTable();
     }
 
     function renderBookTable() {
@@ -327,12 +523,15 @@
             let statusBadge = '', actionButtons = '';
             if(b.status === "報廢") {
                 statusBadge = `<span class="badge badge-scrap">報廢</span>`;
-                actionButtons = `<button onclick="restoreBook('${barcode}')" class="btn-action btn-restore">取消報廢</button><button onclick="deleteBook('${barcode}')" class="btn-action btn-del">永久刪除</button>`;
+                actionButtons = `<button class="btn-action btn-restore" data-act="restore" data-id="${escapeHtml(barcode)}">取消報廢</button>` +
+                                `<button class="btn-action btn-del" data-act="delete" data-id="${escapeHtml(barcode)}">永久刪除</button>`;
             } else {
                 statusBadge = b.loanedTo ? `<span class="badge badge-loaned">借出</span>` : `<span class="badge badge-in">在館</span>`;
-                actionButtons = `<button onclick="editBookInfo('${barcode}')" class="btn-action btn-edit">編輯</button><button onclick="scrapBook('${barcode}')" class="btn-action btn-scrap">報廢</button>`;
+                actionButtons = `<button class="btn-action btn-edit" data-act="edit" data-id="${escapeHtml(barcode)}">編輯</button>` +
+                                `<button class="btn-action btn-scrap" data-act="scrap" data-id="${escapeHtml(barcode)}">報廢</button>` +
+                                `<button class="btn-action" style="color:var(--dark); border:1px solid var(--dark);" data-act="label" data-id="${escapeHtml(barcode)}">🏷️ 標籤</button>`;
             }
-            return `<tr><td>${b.title}</td><td>${b.assetId}</td><td>${statusBadge}</td><td>${actionButtons}</td></tr>`;
+            return `<tr><td>${escapeHtml(b.title)}</td><td>${escapeHtml(b.assetId)}</td><td>${statusBadge}</td><td>${actionButtons}</td></tr>`;
         }).join('');
     }
 
@@ -341,19 +540,200 @@
         const newAssetId = prompt("財產編號:", book.assetId || barcode);
         const newTitle = prompt("書名:", book.title);
         if (newTitle && newAssetId) { bookDatabase[barcode] = { ...book, title: newTitle, assetId: newAssetId }; saveData('bookDB', bookDatabase); renderBookTable(); }
+        refocusActiveInput();
+    }
+
+    // 對話框關閉後把焦點還給條碼輸入框，讓條碼槍能繼續掃下一本
+    function refocusActiveInput() {
+        const page = document.querySelector('.page.active');
+        if (!page) return;
+        const el = page.querySelector('input[id$="BarcodeInput"]');
+        if (el) setTimeout(() => el.focus(), 50);
     }
 
     function scrapBook(id) { if(confirm(`⚠️ 確定要將《${bookDatabase[id].title}》標記為報廢？`)) { bookDatabase[id].status = "報廢"; bookDatabase[id].loanedTo = null; saveData('bookDB', bookDatabase); renderBookTable(); } }
     function restoreBook(id) { if(confirm(`💡 確定要恢復《${bookDatabase[id].title}》？`)) { bookDatabase[id].status = "在館"; saveData('bookDB', bookDatabase); renderBookTable(); } }
     function deleteBook(id) { if(confirm(`🔥 確定要「永久刪除」？`)) { delete bookDatabase[id]; saveData('bookDB', bookDatabase); renderBookTable(); } }
     function addMember() { const c = document.getElementById('editClassSelect').value, n = document.getElementById('newMemberName').value.trim(); if(!n) return; if(!members[c]) members[c] = []; members[c].push(n); saveData('memberDB', members); document.getElementById('newMemberName').value = ''; renderMemberTable(); }
-    function renderMemberTable() { const tbody = document.querySelector('#memberTable tbody'); tbody.innerHTML = ''; for(let c in members) members[c].forEach(m => { tbody.innerHTML += `<tr><td>${c}</td><td>${m}</td><td><button onclick="deleteMember('${c}','${m}')" class="btn-action btn-del">刪除</button></td></tr>`; }); }
+    function renderMemberTable() { const tbody = document.querySelector('#memberTable tbody'); tbody.innerHTML = ''; for(let c in members) members[c].forEach(m => { tbody.innerHTML += `<tr><td>${escapeHtml(c)}</td><td>${escapeHtml(m)}</td><td><button class="btn-action btn-del" data-act="delMember" data-cls="${escapeHtml(c)}" data-member="${escapeHtml(m)}">刪除</button></td></tr>`; }); }
     function deleteMember(c, m) { if(confirm(`移除【${c}】的成員【${m}】？`)) { members[c] = members[c].filter(x => x !== m); saveData('memberDB', members); renderMemberTable(); } }
     function updatePassword() { const p = document.getElementById('newSystemPwd').value; if(p) { config.password = p; saveData('libConfig', config); alert("密碼成功"); } }
     function updateClassList() { const l = document.getElementById('classListInput').value; if(l) { config.classes = l.split(',').map(s=>s.trim()); saveData('libConfig', config); initDropdowns(); alert("更新成功"); } }
+
+    // --- 資料備份與匯出 ---
+    const APP_ID = '幼兒園圖書資訊管理系統';
+    const BACKUP_VERSION = 1;
+
+    // 產生檔名用時間戳，例如 20260116-1530
+    function fileStamp() {
+        const d = new Date(), p = n => String(n).padStart(2, '0');
+        return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+    }
+
+    // 觸發瀏覽器下載
+    function downloadFile(filename, content, mimeType) {
+        const url = URL.createObjectURL(new Blob([content], { type: mimeType }));
+        const a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    function countMembers(db) {
+        return Object.values(db || {}).reduce((sum, list) => sum + (Array.isArray(list) ? list.length : 0), 0);
+    }
+
+    // 匯出全部資料為單一 JSON 備份檔
+    function exportBackup() {
+        const payload = {
+            app: APP_ID,
+            version: BACKUP_VERSION,
+            exportedAt: new Date().toISOString(),
+            data: { libConfig: config, memberDB: members, bookDB: bookDatabase, loanLogs: loanLogs }
+        };
+        downloadFile(`圖書系統備份-${fileStamp()}.json`, JSON.stringify(payload, null, 2), 'application/json');
+        alert(`✅ 已匯出備份檔\n\n館藏: ${Object.keys(bookDatabase).length} 本\n成員: ${countMembers(members)} 人\n借閱紀錄: ${loanLogs.length} 筆\n\n請將檔案另存至隨身碟或雲端硬碟。`);
+    }
+
+    // 讀取並還原備份檔
+    function importBackup(input) {
+        const file = input.files && input.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = e => {
+            input.value = ''; // 讓連續選同一個檔案也能再次觸發
+
+            let payload;
+            try { payload = JSON.parse(e.target.result); }
+            catch (err) { alert("❌ 檔案格式錯誤，無法解析 JSON。"); return; }
+
+            if (!payload || payload.app !== APP_ID || typeof payload.data !== 'object' || payload.data === null) {
+                alert("❌ 這不是本系統的備份檔。請選擇由「匯出完整備份」產生的 .json 檔案。");
+                return;
+            }
+
+            const d = payload.data;
+            const bookCount = Object.keys(d.bookDB || {}).length;
+            const memberCount = countMembers(d.memberDB);
+            const logCount = Array.isArray(d.loanLogs) ? d.loanLogs.length : 0;
+
+            if (!confirm(
+                `⚠️ 匯入將「覆蓋」目前所有資料，且無法復原！\n\n` +
+                `即將載入：\n` +
+                `　館藏: ${bookCount} 本\n` +
+                `　成員: ${memberCount} 人\n` +
+                `　借閱紀錄: ${logCount} 筆\n\n` +
+                `確定要繼續嗎？`
+            )) return;
+
+            // 密碼保留現有值，避免匯入舊備份後被鎖在門外
+            const newConfig = d.libConfig || {};
+            config = {
+                password: config.password,
+                classes: Array.isArray(newConfig.classes) ? newConfig.classes : config.classes
+            };
+            members = d.memberDB || {};
+            bookDatabase = d.bookDB || {};
+            loanLogs = Array.isArray(d.loanLogs) ? d.loanLogs : [];
+
+            saveData('libConfig', config);
+            saveData('memberDB', members);
+            saveData('bookDB', bookDatabase);
+            saveData('loanLogs', loanLogs);
+
+            alert("✅ 匯入完成，系統將重新載入。");
+            location.reload();
+        };
+        reader.onerror = () => { alert("❌ 讀取檔案失敗。"); input.value = ''; };
+        reader.readAsText(file, 'utf-8');
+    }
+
+    // CSV 欄位跳脫：含逗號、引號、換行者加引號
+    function csvEscape(value) {
+        const s = String(value == null ? '' : value);
+        return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    }
+
+    // 匯出借閱紀錄為 CSV（Excel 可直接開啟）
+    function exportLoanCSV() {
+        if (!loanLogs.length) { alert("⚠️ 目前沒有借閱紀錄可匯出。"); return; }
+
+        const header = ['時間', '班級', '姓名', '書名', '財產編號', '條碼', '動作'];
+        const rows = loanLogs.map(log => [
+            log.date, log.className, log.userName, log.title,
+            log.assetId || '', log.barcode || '', log.action
+        ]);
+        const csv = [header].concat(rows).map(r => r.map(csvEscape).join(',')).join('\r\n');
+
+        // 前置 UTF-8 BOM，避免 Excel 開啟時中文變亂碼
+        downloadFile(`借閱紀錄-${fileStamp()}.csv`, '\ufeff' + csv, 'text/csv;charset=utf-8');
+        alert(`✅ 已匯出 ${loanLogs.length} 筆借閱紀錄。`);
+    }
+
+    // --- 條碼槍 / 手動條碼輸入 ---
+    // 條碼槍在鍵盤上等同「輸入文字 + Enter」，因此監聽 Enter 即可連續掃描
+    function initBarcodeInputs() {
+        const bind = (inputId, resolveMode) => {
+            const el = document.getElementById(inputId);
+            if (!el) return;
+            el.addEventListener('keydown', function (e) {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                const code = el.value.trim();
+                if (!code) return;
+                currentMode = resolveMode();
+                el.value = '';
+                handleScanSuccess(code);   // 與相機掃描共用同一套流程
+                el.focus();                 // 準備下一次掃描
+            });
+        };
+        bind('loanBarcodeInput', () => document.getElementById('gunMode').value);
+        bind('manageBarcodeInput', () => 'manage');
+    }
+
+    function focusGunInput() {
+        const el = document.getElementById('loanBarcodeInput');
+        if (!el) return;
+        setTimeout(() => {
+            // 僅在借還書頁且未開啟相機時取得焦點，避免與掃描互相干擾
+            if (document.getElementById('loanPage').classList.contains('active') && !html5QrCode) el.focus();
+        }, 120);
+    }
+
+    // --- 單本標籤列印預覽 ---
+    function printSingleLabel(barcode) {
+        const book = bookDatabase[barcode];
+        if (!book) { alert("❌ 找不到此圖書。"); return; }
+        if (book.status === "報廢") { alert("⚠️ 此書已報廢，不會列入標籤列印。"); return; }
+
+        const area = document.getElementById('singleLabelArea');
+        area.innerHTML = `<div class="qr-card" style="max-width:200px; margin:0 auto; padding:12px;">` +
+                         `<div style="font-size:14px; font-weight:bold;">${escapeHtml(book.title)}</div>` +
+                         `<div class="qr-code-img" id="qr-single"></div>` +
+                         `<div style="font-size:11px; color:#555;">財編: ${escapeHtml(book.assetId)}</div>` +
+                         `</div>`;
+
+        new QRCode(document.getElementById('qr-single'), {
+            text: barcode, width: 200, height: 200,
+            colorDark: "#000000", colorLight: "#ffffff",
+            correctLevel: QRCode.CorrectLevel.H
+        });
+
+        document.body.classList.add('printing-label');
+        const cleanup = () => {
+            document.body.classList.remove('printing-label');
+            area.innerHTML = '';
+            window.removeEventListener('afterprint', cleanup);
+        };
+        window.addEventListener('afterprint', cleanup);
+        window.print();
+    }
+
     function saveData(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
     function handleLogout() { location.reload(); }
     initDropdowns();
+    initBarcodeInputs();
 </script>
 
 </body>

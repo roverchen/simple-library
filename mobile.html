@@ -51,6 +51,13 @@
         th, td { text-align: left; padding: 12px; border-bottom: 1px solid #eee; }
         .btn-edit { color: var(--secondary); border: 1px solid var(--secondary); background: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-right: 5px; }
         .btn-del { color: var(--danger); border: 1px solid var(--danger); background: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; }
+        .btn-restore { color: var(--primary); border: 1px solid var(--primary); background: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; }
+
+        /* 狀態標記 */
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.72rem; font-weight: bold; color: white; }
+        .badge-scrap { background-color: var(--danger); }
+        .badge-loaned { background-color: var(--warning); }
+        .badge-in { background-color: var(--primary); }
 
         @media (min-width: 600px) { .input-group { flex-direction: row; } }
     </style>
@@ -115,9 +122,42 @@
 
 <script>
     let bookDatabase = JSON.parse(localStorage.getItem('bookDB')) || {
-        "123456": { title: "幼兒園繪本範例", count: 0, status: "在館" }
+        "123456": { title: "幼兒園繪本範例", assetId: "", count: 0, status: "在館", loanedTo: null }
     };
+
+    // 資料正規化：補齊欄位，並從 status 字串回推借閱人。
+    // 讓本頁與 index.html 讀寫同一份 bookDB 時資料結構一致，不會互相污染。
+    Object.keys(bookDatabase).forEach(code => {
+        const b = bookDatabase[code];
+        b.assetId = b.assetId || "";
+        b.count = b.count || 0;
+        if (b.loanedTo === undefined) {
+            const m = /^借出\s*\((.+)\)$/.exec(b.status || "");
+            b.loanedTo = m ? m[1] : null;
+        }
+    });
+    saveData();
     
+    // 所有使用者輸入的內容在寫入 innerHTML 前都必須經過此轉義
+    function escapeHtml(str) {
+        return String(str == null ? '' : str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    // 表格按鈕使用 data-* 屬性 + 事件委派，避免資料字串直接塞進 onclick 引號
+    document.addEventListener('click', function (e) {
+        const btn = e.target.closest('[data-act]');
+        if (!btn) return;
+        const d = btn.dataset;
+        if (d.act === 'edit') manualEdit(d.id);
+        else if (d.act === 'scrap') deleteBook(d.id);
+        else if (d.act === 'restore') restoreBook(d.id);
+    });
+
     let html5QrCode;
     let currentMode = ''; 
 
@@ -178,15 +218,17 @@
         if (currentMode === 'manage') {
             stopScanner();
             setTimeout(() => {
-                const existingTitle = bookDatabase[barcode] ? bookDatabase[barcode].title : "";
-                const promptMsg = existingTitle ? `條碼: ${barcode}\n目前名稱: ${existingTitle}\n請輸入新書名:` : `發現新條碼: ${barcode}\n請輸入書名:`;
+                const existing = bookDatabase[barcode] || null;
+                const promptMsg = existing ? `條碼: ${barcode}\n目前名稱: ${existing.title}\n請輸入新書名:` : `發現新條碼: ${barcode}\n請輸入書名:`;
                 
-                const title = prompt(promptMsg, existingTitle);
+                const title = prompt(promptMsg, existing ? existing.title : "");
                 if (title !== null && title.trim() !== "") {
                     bookDatabase[barcode] = { 
                         title: title.trim(), 
-                        count: bookDatabase[barcode] ? bookDatabase[barcode].count : 0, 
-                        status: bookDatabase[barcode] ? bookDatabase[barcode].status : "在館" 
+                        assetId: existing ? existing.assetId : "",
+                        count: existing ? existing.count : 0, 
+                        status: existing ? existing.status : "在館",
+                        loanedTo: existing ? existing.loanedTo : null
                     };
                     saveData();
                     renderManageTable();
@@ -202,12 +244,22 @@
         }
 
         const book = bookDatabase[barcode];
+
+        if (book.status === "報廢") {
+            alert(`⚠️ 《${book.title}》已報廢，不可借還！`);
+            return;
+        }
+
         const displayUnit = `${unitType}: ${unitName}`;
 
         if (currentMode === 'borrow') {
-            book.status = `借出 (${unitName})`;
+            if (book.loanedTo) { alert(`❌ 《${book.title}》已被 ${book.loanedTo} 借閱中。`); return; }
+            book.loanedTo = unitName;
+            book.status = `借出(${unitName})`;
             book.count++;
         } else {
+            if (!book.loanedTo) { alert(`❌ 《${book.title}》目前在館內，無需歸還。`); return; }
+            book.loanedTo = null;
             book.status = "在館";
         }
 
@@ -261,15 +313,20 @@
 
     function renderManageTable() {
         const tbody = document.querySelector('#bookTable tbody');
-        tbody.innerHTML = Object.keys(bookDatabase).map(isbn => `
-            <tr>
-                <td><b>${bookDatabase[isbn].title}</b></td>
-                <td style="text-align:right;">
-                    <button onclick="manualEdit('${isbn}')" class="btn-edit">修改</button>
-                    <button onclick="deleteBook('${isbn}')" class="btn-del">報廢</button>
-                </td>
-            </tr>
-        `).join('');
+        tbody.innerHTML = Object.keys(bookDatabase).map(isbn => {
+            const b = bookDatabase[isbn];
+            const scrapped = b.status === '報廢';
+            const badge = scrapped
+                ? '<span class="badge badge-scrap">報廢</span>'
+                : (b.loanedTo ? '<span class="badge badge-loaned">借出</span>' : '<span class="badge badge-in">在館</span>');
+            const actions = scrapped
+                ? `<button class="btn-restore" data-act="restore" data-id="${escapeHtml(isbn)}">取消報廢</button>`
+                : `<button class="btn-edit" data-act="edit" data-id="${escapeHtml(isbn)}">修改</button><button class="btn-del" data-act="scrap" data-id="${escapeHtml(isbn)}">報廢</button>`;
+            return `<tr>
+                <td><b${scrapped ? ' style="color:var(--danger)"' : ''}>${escapeHtml(b.title)}</b><br><small style="color:#666">${badge}${b.loanedTo ? ' - ' + escapeHtml(b.loanedTo) : ''}</small></td>
+                <td style="text-align:right;">${actions}</td>
+            </tr>`;
+        }).join('');
     }
 
     function manualEdit(isbn) {
@@ -284,15 +341,28 @@
     function renderReportTable() {
         const tbody = document.querySelector('#statTable tbody');
         tbody.innerHTML = Object.keys(bookDatabase).map(isbn => `
-            <tr><td>${bookDatabase[isbn].title}</td><td>${bookDatabase[isbn].status}</td><td>${bookDatabase[isbn].count}次</td></tr>
+            <tr><td>${escapeHtml(bookDatabase[isbn].title)}</td><td>${escapeHtml(bookDatabase[isbn].status)}</td><td>${bookDatabase[isbn].count || 0}次</td></tr>
         `).join('');
     }
 
+    // 報廢為狀態變更（非刪除），資料保留、可還原
     function deleteBook(isbn) {
-        if(confirm(`確定報廢《${bookDatabase[isbn].title}》？`)) { 
-            delete bookDatabase[isbn]; 
-            saveData(); 
-            renderManageTable(); 
+        const b = bookDatabase[isbn];
+        if(confirm(`⚠️ 確定要將《${b.title}》標記為報廢？\n（報廢後不可借還，資料仍會保留）`)) {
+            b.status = "報廢";
+            b.loanedTo = null;
+            saveData();
+            renderManageTable();
+        }
+    }
+
+    function restoreBook(isbn) {
+        const b = bookDatabase[isbn];
+        if(confirm(`💡 確定要取消《${b.title}》的報廢狀態？`)) {
+            b.status = "在館";
+            b.loanedTo = null;
+            saveData();
+            renderManageTable();
         }
     }
 
