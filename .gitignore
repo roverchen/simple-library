@@ -2,6 +2,13 @@
 # 報價單含聯絡人姓名、手機、地址、統一編號與報價金額
 *.pdf
 
+# 需求附件與名冊（含幼兒／員工姓名，不進版控）
+docs/*.docx
+docs/*.xlsx
+docs/*.jpg
+docs/*.jpeg
+docs/*.png
+
 # 若日後要將「功能彙整.pdf」納入版控（該檔不含個資），請在此處加註解除忽略：
 # !幼兒園圖書管理系統功能彙整.pdf
 
@@ -9,6 +16,16 @@
 圖書系統備份-*.json
 借閱紀錄-*.csv
 
+# 後端資料庫（含幼兒姓名，不應進版控）
+data/
+*.db
+*.db-wal
+*.db-shm
+
 # 作業系統
 .DS_Store
 Thumbs.db
+
+# Python
+__pycache__/
+*.pyc

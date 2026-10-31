@@ -1,0 +1,117 @@
+-- 幼兒園圖書資訊管理系統 — SQLite 資料庫結構
+--
+-- 設計原則：
+--   1. 以「條碼」作為館藏主鍵，符合條碼槍掃描流程。
+--   2. 班級、成員各自成表；成員姓名只要求在「同班」內不重複。
+--   3. 借閱狀態存在 books，借還歷史存在 loan_logs（歷史不隨刪書消失）。
+--   4. 所有時間以伺服器本機時間儲存，與原本系統顯示格式一致。
+--   5. 密碼只存 PBKDF2 雜湊，不存明碼。
+
+PRAGMA journal_mode = WAL;
+PRAGMA foreign_keys = ON;
+
+-- 系統設定（鍵值對）
+-- admin_password : pbkdf2_sha256$迭代次數$salt$hash
+CREATE TABLE IF NOT EXISTS settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL
+);
+
+-- 班級。active = 0 表示已從班級清單移除，但成員資料保留，重新加入即可恢復。
+CREATE TABLE IF NOT EXISTS classes (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT    NOT NULL UNIQUE,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    active     INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1))
+);
+
+-- 班級成員。同一班級內姓名不可重複。
+CREATE TABLE IF NOT EXISTS members (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    class_id   INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+    name       TEXT    NOT NULL,
+    created_at TEXT    NOT NULL DEFAULT (datetime('now', 'localtime')),
+    UNIQUE (class_id, name)
+);
+
+-- 館藏。barcode 為條碼槍讀到的值，也是主鍵。
+-- status：在館 / 借出 / 遺失 / 修繕中 / 爭議中 / 報廢
+--   遺失、修繕中、爭議中：設定為無法借出（客製化需求清單 v2.1 4.1）。
+--   修繕中：老師進行膠帶修補，暫時下架，修補完成後恢復為「在館」。
+--   爭議中：既非在館，也無法證實遺失，暫停計算逾期。
+--   遺失為「報廢」前的緩衝狀態；買回則於備註註銷。
+-- loaned_to / loan_class 只在借出時有值，歸還後清空。
+CREATE TABLE IF NOT EXISTS books (
+    barcode      TEXT    PRIMARY KEY,
+    title        TEXT    NOT NULL,
+    asset_id     TEXT    NOT NULL DEFAULT '',
+    status       TEXT    NOT NULL DEFAULT '在館'
+                 CHECK (status IN ('在館', '借出', '遺失', '修繕中', '爭議中', '報廢')),
+    loaned_to    TEXT,
+    loan_class   TEXT,
+    borrow_count INTEGER NOT NULL DEFAULT 0,
+    remarks      TEXT    NOT NULL DEFAULT '',
+    due_at       TEXT,
+    call_no      TEXT    NOT NULL DEFAULT '',   -- 索書號：館藏分類編號（客製化需求 v2.1 4.5）
+    created_at   TEXT    NOT NULL DEFAULT (datetime('now', 'localtime')),
+    updated_at   TEXT    NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_books_status ON books (status);
+CREATE INDEX IF NOT EXISTS idx_books_loaned_to ON books (loaned_to);
+
+-- 借還歷史。刻意不設 FOREIGN KEY：永久刪除館藏後，歷史仍須保留。
+CREATE TABLE IF NOT EXISTS loan_logs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    occurred_at TEXT    NOT NULL,              -- 顯示用：2026/10/20 下午 04:45:00
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now', 'localtime')),
+    barcode     TEXT    NOT NULL,
+    title       TEXT    NOT NULL,
+    asset_id    TEXT    NOT NULL DEFAULT '',
+    class_name  TEXT    NOT NULL,
+    user_name   TEXT    NOT NULL,
+    action      TEXT    NOT NULL CHECK (action IN ('借書', '還書'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_loan_logs_created ON loan_logs (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_loan_logs_barcode ON loan_logs (barcode);
+
+-- 預約。成員在書被借走後可預約，借出歸還後由借閱流程自動履約。
+CREATE TABLE IF NOT EXISTS reservations (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    expires_at TEXT,
+    barcode     TEXT NOT NULL,
+    title       TEXT NOT NULL,
+    asset_id    TEXT NOT NULL DEFAULT '',
+    class_name  TEXT NOT NULL,
+    user_name   TEXT NOT NULL,
+    member_type TEXT NOT NULL DEFAULT 'student',
+    status      TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'cancelled', 'fulfilled'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_reservations_barcode ON reservations (barcode, status);
+CREATE INDEX IF NOT EXISTS idx_reservations_user ON reservations (user_name, status);
+
+-- 登入工作階段。token 為隨機字串，存於 HttpOnly Cookie。
+CREATE TABLE IF NOT EXISTS sessions (
+    token      TEXT PRIMARY KEY,
+    user_id    INTEGER,
+    created_at REAL NOT NULL,
+    expires_at REAL NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- 系統帳號（多帳號基礎：系統管理員、老師、學生）。
+CREATE TABLE IF NOT EXISTS users (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    username   TEXT    NOT NULL UNIQUE,
+    password   TEXT    NOT NULL,
+    role       TEXT    NOT NULL DEFAULT 'teacher',
+    class_id   INTEGER REFERENCES classes(id) ON DELETE SET NULL,
+    active     INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions (expires_at);
