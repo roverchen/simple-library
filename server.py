@@ -150,6 +150,11 @@ def init_db(db_path):
         except Exception:
             pass
 
+        try:
+            conn.execute("ALTER TABLE books ADD COLUMN isbn TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass
+
         row = conn.execute(
             "SELECT value FROM settings WHERE key = 'admin_password'"
         ).fetchone()
@@ -206,6 +211,7 @@ def book_json(row):
         "count": row["borrow_count"],
         "remarks": row["remarks"],
         "callNo": row["call_no"] or "",
+        "isbn": row["isbn"] or "",
     }
 
 
@@ -383,6 +389,7 @@ def validate_import(payload):
             raise ApiError(400, "館藏資料格式錯誤：{}".format(code))
         title = _clean_text(book.get("title"), "書名", 200, required=True)
         asset = _clean_text(book.get("assetId", ""), "財產編號", 64)
+        isbn = _clean_text(book.get("isbn") or book.get("ISBN") or "", "ISBN", 32)
         raw_status = book.get("status") or "在館"
         if not isinstance(raw_status, str):
             raw_status = "在館"
@@ -405,6 +412,7 @@ def validate_import(payload):
         books[code] = {
             "title": title,
             "asset_id": asset,
+            "isbn": isbn,
             "status": status,
             "loaned_to": loaned_to,
             "count": int(book.get("count") or 0),
@@ -1450,6 +1458,12 @@ class Handler(SimpleHTTPRequestHandler):
         }
 
     def api_reservations(self, conn, query):
+        # 過期預約自動失效，避免清單累積永遠不會成立的「進行中」預約
+        conn.execute(
+            "UPDATE reservations SET status = 'cancelled' "
+            "WHERE status = 'pending' AND expires_at IS NOT NULL AND expires_at < ?",
+            (now_display(),),
+        )
         status_filter = (query.get("status") or [""])[0].strip()
         conditions = []
         params = []
@@ -1481,8 +1495,10 @@ class Handler(SimpleHTTPRequestHandler):
             row = conn.execute("SELECT * FROM books WHERE barcode = ?", (barcode,)).fetchone()
             if not row:
                 raise ApiError(404, "館藏中查不到這本書")
-            if row["status"] == "報廤":
-                raise ApiError(409, "《{}》已報廤，不可預約".format(row["title"]))
+            if row["status"] == "報廢":
+                raise ApiError(409, "《{}》已報廢，不可預約".format(row["title"]))
+            if row["status"] != "借出" or not row["loaned_to"]:
+                raise ApiError(409, "《{}》目前在館，無需預約".format(row["title"]))
             dup = conn.execute(
                 "SELECT id FROM reservations WHERE barcode = ? AND user_name = ? AND status = 'pending'",
                 (barcode, user_name),
@@ -1574,6 +1590,7 @@ class Handler(SimpleHTTPRequestHandler):
         asset = _clean_text(data.get("assetId", ""), "財產編號", 64)
         remarks = _clean_text(data.get("remarks") or "", "備註", 500)
         call_no = _clean_text(data.get("callNo") or data.get("call_no") or "", "索書號", 50)
+        isbn = _clean_text(data.get("isbn") or data.get("ISBN") or "", "ISBN", 32)
         status = None
         raw_status = data.get("status")
         if isinstance(raw_status, str) and raw_status.strip():
@@ -1588,9 +1605,9 @@ class Handler(SimpleHTTPRequestHandler):
             ).fetchone()
             if row:
                 conn.execute(
-                    "UPDATE books SET title = ?, asset_id = ?, call_no = ?, remarks = ?, updated_at = ? "
+                    "UPDATE books SET title = ?, asset_id = ?, call_no = ?, isbn = ?, remarks = ?, updated_at = ? "
                     "WHERE barcode = ?",
-                    (title, asset, call_no, remarks, now_display(), barcode),
+                    (title, asset, call_no, isbn, remarks, now_display(), barcode),
                 )
                 if status:
                     conn.execute(
@@ -1599,9 +1616,9 @@ class Handler(SimpleHTTPRequestHandler):
                     )
             else:
                 conn.execute(
-                    "INSERT INTO books (barcode, title, asset_id, status, remarks, call_no, created_at, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (barcode, title, asset, status or "在館", remarks, call_no, now_display(), now_display()),
+                    "INSERT INTO books (barcode, title, asset_id, status, remarks, call_no, isbn, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (barcode, title, asset, status or "在館", remarks, call_no, isbn, now_display(), now_display()),
                 )
             conn.execute("COMMIT")
         except Exception:
@@ -1662,9 +1679,9 @@ class Handler(SimpleHTTPRequestHandler):
         conditions = []
         params = []
         if keyword:
-            conditions.append("(title LIKE ? OR asset_id LIKE ? OR barcode LIKE ? OR remarks LIKE ?)")
+            conditions.append("(title LIKE ? OR asset_id LIKE ? OR barcode LIKE ? OR isbn LIKE ? OR remarks LIKE ?)")
             like = "%" + keyword + "%"
-            params.extend([like, like, like, like])
+            params.extend([like, like, like, like, like])
         where_sql = (" WHERE " + " AND ".join(conditions)) if conditions else ""
         rows = conn.execute(
             "SELECT * FROM books" + where_sql + " ORDER BY barcode",
@@ -1674,7 +1691,7 @@ class Handler(SimpleHTTPRequestHandler):
         for r in rows:
             key = (r["title"], r["asset_id"])
             if key not in groups:
-                groups[key] = {"title": r["title"], "assetId": r["asset_id"], "callNo": r["call_no"] or "", "copies": []}
+                groups[key] = {"title": r["title"], "assetId": r["asset_id"], "callNo": r["call_no"] or "", "isbn": r["isbn"] or "", "copies": []}
             groups[key]["copies"].append({
                 "barcode": r["barcode"],
                 "status": r["status"],
@@ -1691,6 +1708,7 @@ class Handler(SimpleHTTPRequestHandler):
                 "title": g["title"],
                 "assetId": g["assetId"],
                 "callNo": g["callNo"],
+                "isbn": g["isbn"],
                 "copyCount": len(copies),
                 "available": sum(1 for c in copies if c["status"] == "在館"),
                 "copies": copies,
@@ -1758,14 +1776,15 @@ class Handler(SimpleHTTPRequestHandler):
             barcode = _clean_text(item.get("barcode"), "條碼", 128)
             title = _clean_text(item.get("title"), "書名", 200)
             asset_id = _clean_text(item.get("assetId") or item.get("財產編號") or "", "財產編號", 64)
+            isbn = _clean_text(item.get("isbn") or item.get("ISBN") or item.get("國際書號") or "", "ISBN", 32)
             status = _clean_text(item.get("status") or "在館", "狀態", 20) or "在館"
             if not barcode or not title:
                 continue
             conn.execute(
-                "INSERT INTO books (barcode, title, asset_id, status, remarks, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?) "
-                "ON CONFLICT(barcode) DO UPDATE SET title = excluded.title, asset_id = excluded.asset_id, status = excluded.status, updated_at = excluded.updated_at",
-                (barcode, title, asset_id, status, "", now_display(), now_display()),
+                "INSERT INTO books (barcode, title, asset_id, status, remarks, isbn, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(barcode) DO UPDATE SET title = excluded.title, asset_id = excluded.asset_id, isbn = excluded.isbn, status = excluded.status, updated_at = excluded.updated_at",
+                (barcode, title, asset_id, status, "", isbn, now_display(), now_display()),
             )
             imported += 1
         return self.send_json({"ok": True, "imported": imported, "total": len(raw)})
@@ -1898,11 +1917,11 @@ class Handler(SimpleHTTPRequestHandler):
 
             for barcode, book in books.items():
                 conn.execute(
-                    "INSERT INTO books (barcode, title, asset_id, status, loaned_to, "
+                    "INSERT INTO books (barcode, title, asset_id, isbn, status, loaned_to, "
                     "borrow_count, created_at, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
-                        barcode, book["title"], book["asset_id"], book["status"],
+                        barcode, book["title"], book["asset_id"], book["isbn"], book["status"],
                         book["loaned_to"], book["count"], now_display(), now_display(),
                     ),
                 )

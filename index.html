@@ -146,21 +146,20 @@
                 <select id="gunMode" style="max-width:130px;">
                     <option value="borrow">📤 借書</option>
                     <option value="return">📥 還書</option>
+                    <option value="reserve">📌 預約</option>
                 </select>
                 <input type="text" id="loanBarcodeInput" placeholder="條碼槍掃描或手動輸入條碼後按 Enter" autocomplete="off">
             </div>
-            <small style="color:#666;">條碼槍可連續掃描，掃完自動清空並準備下一本。不使用條碼槍時請改用下方相機按鈕。</small>
+            <small style="color:#666;">條碼槍可連續掃描，掃完自動清空並準備下一本。選「📌 預約」時掃描只會建立預約；否則掃描會直接借書／還書。不使用條碼槍時請改用下方相機按鈕。</small>
         </div>
         <div id="loanActionGrid" class="action-grid">
             <button onclick="initiateScan('borrow')" class="btn-main btn-borrow">📤 借書</button>
             <button onclick="initiateScan('return')" class="btn-main btn-return">📥 還書</button>
             <button onclick="batchReturnBooks()" class="btn-main" style="background:#666; color:white;">📥 批次還書</button>
+            <button onclick="reserveCurrentBook()" class="btn-main" style="background:#8e24aa; color:white;">📌 預約此書</button>
         </div>
         <div id="reservationSection" style="margin-top:16px;">
-            <div style="display:flex; align-items:center; gap:8px;">
-                <h3 style="margin:0;">📌 進行中預約</h3>
-                <button onclick="reserveCurrentBook()" style="margin-left:auto; padding:8px 12px; background:var(--secondary); color:white; border:none; border-radius:5px;">📌 預約此書</button>
-            </div>
+            <h3 style="margin:0;">📌 進行中預約</h3>
             <div id="reservationList" style="color:#666;">載入中…</div>
         </div>
         <div id="commandQRSection" style="margin-top:16px;">
@@ -213,7 +212,7 @@
         </div>
         <div class="table-container">
             <table id="bookTable">
-                <thead><tr><th>書名</th><th>財產編號</th><th>索書號</th><th>狀態</th><th>管理操作</th></tr></thead>
+                <thead><tr><th>書名</th><th>財產編號</th><th>索書號</th><th>ISBN</th><th>狀態</th><th>管理操作</th></tr></thead>
                 <tbody></tbody>
             </table>
         </div>
@@ -224,7 +223,7 @@
                 <button onclick="searchBooks()" style="padding:10px; background:var(--secondary); color:white; border:none; border-radius:5px;">🔍 搜尋</button>
             </div>
             <table>
-                <thead><tr><th>書名</th><th>財產編號</th><th>複本數</th><th>可借數</th></tr></thead>
+                <thead><tr><th>書名</th><th>財產編號</th><th>ISBN</th><th>複本數</th><th>可借數</th></tr></thead>
                 <tbody id="bookSearchResults"></tbody>
             </table>
         </div>
@@ -265,7 +264,7 @@
             <input type="file" id="memberImportFile" accept=".json,.csv" style="display:none;">
             <input type="file" id="bookImportFile" accept=".json,.csv" style="display:none;">
             <small style="color:#666; line-height:1.7;">
-                ⚠️ 批次匯入會依來源寫入資料庫；圖書欄位：條碼、書名、財產編號、狀態；名單欄位：姓名、班級、類型（學生／老師）。
+                ⚠️ 批次匯入會依來源寫入資料庫；圖書欄位：條碼、書名、財產編號、狀態、ISBN（選填）；名單欄位：姓名、班級、類型（學生／老師）。
             </small>
         </div>
         <hr>
@@ -1163,6 +1162,12 @@
             return;
         }
 
+        if (mode === 'reserve') {
+            // 預約模式：掃描或輸入後只建立預約，不會誤觸借書／還書
+            await reserveBook(barcode);
+            return;
+        }
+
         const book = bookDatabase[barcode];
         if (!book) { showScanStatus("❌ 無此圖書，請先至「圖書管理」建檔", 'err'); return; }
         if (book.status === "報廢") { showScanStatus(`⚠️ 《${book.title}》已報廢，不可借還`, 'warn'); return; }
@@ -1213,20 +1218,21 @@
                                 `<button class="btn-action btn-scrap" data-act="scrap" data-id="${escapeHtml(barcode)}">報廢</button>` +
                                 `<button class="btn-action" style="color:var(--dark); border:1px solid var(--dark);" data-act="label" data-id="${escapeHtml(barcode)}">🏷️ 標籤</button>`;
             }
-            return `<tr><td>${escapeHtml(b.title)}</td><td>${escapeHtml(b.assetId)}</td><td>${escapeHtml(b.callNo || '')}</td><td>${statusBadge}</td><td>${actionButtons}</td></tr>`;
+            return `<tr><td>${escapeHtml(b.title)}</td><td>${escapeHtml(b.assetId)}</td><td>${escapeHtml(b.callNo || '')}</td><td>${escapeHtml(b.isbn || '')}</td><td>${statusBadge}</td><td>${actionButtons}</td></tr>`;
         }).join('');
     }
 
     async function editBookInfo(barcode) {
-        const book = bookDatabase[barcode] || { title: "", assetId: "", status: "在館", loanedTo: null, callNo: "" };
+        const book = bookDatabase[barcode] || { title: "", assetId: "", status: "在館", loanedTo: null, callNo: "", isbn: "" };
         const newAssetId = prompt("財產編號:", book.assetId || barcode);
         if (newAssetId === null) { refocusActiveInput(); return; }
         const newTitle = prompt("書名:", book.title);
         const newCallNo = prompt("索書號（call_no）:", book.callNo || "");
+        const newIsbn = prompt("ISBN:", book.isbn || "");
         if (newTitle && newAssetId) {
             try {
                 const res = await api('PUT', '/api/books/' + encodeURIComponent(barcode), {
-                    title: newTitle, assetId: newAssetId, callNo: newCallNo || ''
+                    title: newTitle, assetId: newAssetId, callNo: newCallNo || '', isbn: newIsbn || ''
                 });
                 bookDatabase[barcode] = res.book;
                 renderBookTable();
@@ -1357,7 +1363,7 @@
             if (!list.length) { box.innerHTML = '<div style="color:#666;">目前沒有進行中的預約。</div>'; return; }
             box.innerHTML = list.map(r => `
                 <div style="display:flex; align-items:center; gap:8px; padding:8px; border:1px solid #ddd; border-radius:6px; margin-bottom:6px;">
-                    <span>📌 <strong>${escapeHtml(r.userName)}</strong> → 《${escapeHtml(r.title)}》（${escapeHtml(r.className || '')}）</span>
+                    <span>📌 <strong>${escapeHtml(r.userName)}</strong> → 《${escapeHtml(r.title)}》（${escapeHtml(r.className || '')}）${r.expiresAt ? `<br><small style="color:#888;">有效至 ${escapeHtml(r.expiresAt)}</small>` : ''}</span>
                     <button onclick="cancelReservation(${r.id})" style="margin-left:auto; padding:6px; background:#c62828; color:white; border:none; border-radius:4px;">取消預約</button>
                 </div>`).join('');
         } catch (err) { box.innerHTML = `<div style="color:#c62828;">載入預約失敗：${escapeHtml(err.message)}</div>`; }
@@ -1370,19 +1376,31 @@
         } catch (err) { alert("❌ 取消預約失敗：" + err.message); }
     }
 
-    async function reserveCurrentBook() {
-        const barcodeInput = document.getElementById('loanBarcodeInput');
-        const barcode = (barcodeInput && barcodeInput.value) || '';
-        if (!barcode) { alert('❌ 請先輸入或掃描欲預約的條碼'); return; }
+    async function reserveBook(barcode) {
+        barcode = (barcode || '').trim();
+        if (!barcode) { alert('❌ 請先輸入或掃描欲預約的條碼'); return false; }
         const className = document.getElementById('loanClass') ? document.getElementById('loanClass').value : '';
         const memberType = (document.getElementById('loanMemberType') || { value: 'student' }).value || 'student';
         const userName = (document.getElementById('loanMember') || { value: '' }).value || '';
-        if (!userName) { alert('❌ 請先選擇成員'); return; }
+        if (!userName) { alert('❌ 請先選擇成員'); return false; }
         try {
             const res = await api('POST', '/api/reservations', { barcode, className, userName, memberType });
             showScanStatus(`✅ 已為 ${userName} 預約《${res.reservation.title}》`, 'ok');
             await loadReservations();
-        } catch (err) { showScanStatus(`❌ 預約失敗：${err.message}`, 'warn'); }
+            if (navigator.vibrate) navigator.vibrate(60);
+            return true;
+        } catch (err) {
+            showScanStatus(`❌ 預約失敗：${err.message}`, 'warn');
+            return false;
+        }
+    }
+
+    async function reserveCurrentBook() {
+        const barcodeInput = document.getElementById('loanBarcodeInput');
+        const barcode = (barcodeInput && barcodeInput.value) || '';
+        if (!barcode.trim()) { alert('❌ 請先在上方條碼框輸入或掃描欲預約的條碼'); return; }
+        const ok = await reserveBook(barcode);
+        if (ok && barcodeInput) { barcodeInput.value = ''; barcodeInput.focus(); }
     }
 
     async function batchReturnBooks() {
@@ -1630,14 +1648,14 @@
     async function searchBooks() {
         const tbody = document.getElementById('bookSearchResults');
         const keyword = (document.getElementById('bookSearchKeyword') ? document.getElementById('bookSearchKeyword').value : '') || '';
-        tbody.innerHTML = '<tr><td colspan="4" style="color:#666;">載入中…</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" style="color:#666;">載入中…</td></tr>';
         try {
             const data = await api('GET', '/api/books/search?keyword=' + encodeURIComponent(keyword));
             const list = data.books || [];
             tbody.innerHTML = list.length
-                ? list.map(b => `<tr><td>${escapeHtml(b.title)}</td><td>${escapeHtml(b.assetId)}</td><td>${escapeHtml(String(b.copyCount))}</td><td>${escapeHtml(String(b.available))}</td></tr>`).join('')
-                : '<tr><td colspan="4" style="color:#666;">查無結果</td></tr>';
-        } catch (err) { tbody.innerHTML = `<tr><td colspan="4" style="color:#c62828;">搜尋失敗：${escapeHtml(err.message)}</td></tr>`; }
+                ? list.map(b => `<tr><td>${escapeHtml(b.title)}</td><td>${escapeHtml(b.assetId)}</td><td>${escapeHtml(b.isbn || '')}</td><td>${escapeHtml(String(b.copyCount))}</td><td>${escapeHtml(String(b.available))}</td></tr>`).join('')
+                : '<tr><td colspan="5" style="color:#666;">查無結果</td></tr>';
+        } catch (err) { tbody.innerHTML = `<tr><td colspan="5" style="color:#c62828;">搜尋失敗：${escapeHtml(err.message)}</td></tr>`; }
     }
 
     // 啟動：先向後端取得資料；未登入則停留在登入頁
@@ -1699,7 +1717,8 @@
                         barcode: parts[0],
                         title: parts[1],
                         assetId: parts[2] || '',
-                        status: parts[3] || '在館'
+                        status: parts[3] || '在館',
+                        isbn: parts[4] || ''
                     });
                 }
             }

@@ -427,11 +427,13 @@
 
     async function manualEdit(isbn) {
         const newTitle = prompt("修改書名:", bookDatabase[isbn].title);
+        const newIsbn = prompt("ISBN（選填）:", bookDatabase[isbn].isbn || "");
         if (newTitle !== null && newTitle.trim() !== "") {
             try {
                 const res = await api('PUT', '/api/books/' + encodeURIComponent(isbn), {
                     title: newTitle.trim(),
-                    assetId: bookDatabase[isbn].assetId || ''
+                    assetId: bookDatabase[isbn].assetId || '',
+                    isbn: newIsbn || ''
                 });
                 bookDatabase[isbn] = res.book;
                 renderManageTable();

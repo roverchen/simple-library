@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS books (
     remarks      TEXT    NOT NULL DEFAULT '',
     due_at       TEXT,
     call_no      TEXT    NOT NULL DEFAULT '',   -- 索書號：館藏分類編號（客製化需求 v2.1 4.5）
+    isbn         TEXT    NOT NULL DEFAULT '',   -- ISBN：國際標準書號（版本身分，非館藏條碼）
     created_at   TEXT    NOT NULL DEFAULT (datetime('now', 'localtime')),
     updated_at   TEXT    NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
@@ -76,7 +77,7 @@ CREATE TABLE IF NOT EXISTS loan_logs (
 CREATE INDEX IF NOT EXISTS idx_loan_logs_created ON loan_logs (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_loan_logs_barcode ON loan_logs (barcode);
 
--- 預約。成員在書被借走後可預約，借出歸還後由借閱流程自動履約。
+-- 預約。成員在書被借走後可預約，同一成員日後借到該書時自動履約。
 CREATE TABLE IF NOT EXISTS reservations (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
