@@ -201,6 +201,8 @@ def book_json(row):
             "借出" if row["loaned_to"] else "在館"
         ),
         "loanedTo": row["loaned_to"],
+        "loanClass": row["loan_class"],
+        "dueAt": row["due_at"],
         "count": row["borrow_count"],
         "remarks": row["remarks"],
         "callNo": row["call_no"] or "",
@@ -1344,7 +1346,12 @@ class Handler(SimpleHTTPRequestHandler):
         member_type = (data.get("memberType") or "student").strip()
         if member_type not in ("student", "teacher"):
             raise ApiError(400, "memberType must be student or teacher")
-        limit = int(get_setting(conn, "loan_limit_teacher" if member_type == "teacher" else "loan_limit_student", "3"))
+        if member_type == "teacher":
+            limit = int(get_setting(conn, "loan_limit_teacher", "90"))
+            loan_days = int(get_setting(conn, "loan_days_teacher", "180"))
+        else:
+            limit = int(get_setting(conn, "loan_limit_student", "3"))
+            loan_days = int(get_setting(conn, "loan_days_student", "7"))
 
         try:
             conn.execute("BEGIN IMMEDIATE")
@@ -1376,7 +1383,7 @@ class Handler(SimpleHTTPRequestHandler):
                 conn.execute(
                     "UPDATE books SET status = '借出', loaned_to = ?, loan_class = ?, "
                     "due_at = ?, borrow_count = borrow_count + 1, updated_at = ? WHERE barcode = ?",
-                    (user_name, class_name, (datetime.now() + timedelta(days=int(limit))).strftime("%Y/%m/%d %H:%M:%S"), now_display(), barcode),
+                    (user_name, class_name, (datetime.now() + timedelta(days=loan_days)).strftime("%Y/%m/%d %H:%M:%S"), now_display(), barcode),
                 )
                 action_text = "借書"
             else:
