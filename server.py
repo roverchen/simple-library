@@ -23,7 +23,9 @@ import io
 import json
 import math
 import os
+import re
 import secrets
+import smtplib
 import socket
 import sqlite3
 import ssl
@@ -32,6 +34,7 @@ import threading
 import time
 import traceback
 from datetime import datetime, timedelta
+from email.message import EmailMessage
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -55,12 +58,19 @@ MAX_BOOKS = 100_000
 MAX_LOGS = 500_000
 MAX_MEMBERS_PER_CLASS = 2_000
 
+# 忘記密碼
+RESET_CODE_TTL = 10 * 60            # 驗證碼 10 分鐘內有效
+RESET_MAX_ATTEMPTS = 5              # 同一組驗證碼最多嘗試 5 次
+RECOVERY_RATE_WINDOW = 15 * 60      # 限流視窗（秒）
+RECOVERY_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
 # 靜態檔案不允許存取的目錄／檔案
 DENY_PREFIXES = ("data",)
 DENY_FILES = {"server.py", "schema.sql", "pdf_report.py"}
 
 _lock = threading.Lock()
 _login_attempts = {}                # ip -> [count, window_start]
+_recovery_attempts = {}             # bucket -> {key: [count, window_start]}
 
 
 class ApiError(Exception):
@@ -119,6 +129,269 @@ def get_setting(conn, key, default):
         return default
 
 
+# --------------------------------------------------------------------------
+# 忘記密碼：限流、Email、本機復原碼
+# --------------------------------------------------------------------------
+
+def rate_limit(bucket, key, limit, window=RECOVERY_RATE_WINDOW):
+    """簡單的記憶體限流；達上限時回 429。成功後可用 clear_rate_limit 清除。"""
+    now = time.time()
+    with _lock:
+        entries = _recovery_attempts.setdefault(bucket, {})
+        entry = entries.get(key)
+        if not entry or now - entry[1] > window:
+            entry = [0, now]
+        entry[0] += 1
+        entries[key] = entry
+        # 偶爾清掉過期紀錄，避免長期執行時無限成長
+        if len(entries) > 500:
+            for k, v in list(entries.items()):
+                if now - v[1] > window:
+                    entries.pop(k, None)
+        if entry[0] > limit:
+            raise ApiError(429, "嘗試次數過多，請 15 分鐘後再試")
+
+
+def clear_rate_limit(bucket, key):
+    with _lock:
+        _recovery_attempts.get(bucket, {}).pop(key, None)
+
+
+def valid_email(value):
+    return bool(value) and bool(RECOVERY_EMAIL_RE.match(value)) and len(value) <= 254
+
+
+def mask_email(email):
+    if not email or "@" not in email:
+        return ""
+    name, domain = email.split("@", 1)
+    if len(name) <= 1:
+        shown = "*"
+    else:
+        shown = name[0] + "*" * (len(name) - 1)
+    return "{}@{}".format(shown, domain)
+
+
+def recovery_code_path(db_path=None):
+    base = db_path or DB_PATH
+    return os.path.join(os.path.dirname(os.path.abspath(base)), "recovery_code.txt")
+
+
+def ensure_recovery_code(db_path=None):
+    """確保本機復原碼存在；回傳檔案路徑。內容只寫入 data/，不會被靜態服務讀取。"""
+    path = recovery_code_path(db_path)
+    if not os.path.exists(path):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        code = secrets.token_hex(8)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(code + "\n")
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
+    return path
+
+
+def read_recovery_code():
+    try:
+        with open(recovery_code_path(), "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def regenerate_recovery_code():
+    path = ensure_recovery_code()
+    code = secrets.token_hex(8)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(code + "\n")
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+    return code
+
+
+def smtp_config(conn):
+    try:
+        port = int(get_setting(conn, "smtp_port", "587") or 587)
+    except ValueError:
+        port = 587
+    return {
+        "host": get_setting(conn, "smtp_host", ""),
+        "port": port,
+        "security": get_setting(conn, "smtp_security", "starttls"),
+        "username": get_setting(conn, "smtp_username", ""),
+        "password": get_setting(conn, "smtp_password", ""),
+        "from": get_setting(conn, "smtp_from", ""),
+    }
+
+
+def smtp_configured(conn):
+    cfg = smtp_config(conn)
+    return bool(cfg["host"] and cfg["from"])
+
+
+def send_recovery_email(conn, to_addr, code, username_label):
+    cfg = smtp_config(conn)
+    if not cfg["host"] or not cfg["from"]:
+        raise ApiError(503, "尚未設定 SMTP 寄件服務，請管理員至「系統設定 → 密碼救援」填寫，或改用本機復原碼")
+
+    msg = EmailMessage()
+    msg["Subject"] = "【幼兒園圖書系統】密碼重設驗證碼"
+    msg["From"] = cfg["from"]
+    msg["To"] = to_addr
+    msg.set_content(
+        "您好：\n\n"
+        "有人要求重設「{}」的密碼。\n"
+        "驗證碼：{}\n\n"
+        "驗證碼將在 {} 分鐘後失效，最多可嘗試 {} 次。\n"
+        "如果這不是您本人的操作，請忽略本信，您的密碼不會被變更。\n\n"
+        "幼兒園圖書資訊管理系統\n".format(
+            username_label or "共用管理員",
+            code,
+            RESET_CODE_TTL // 60,
+            RESET_MAX_ATTEMPTS,
+        )
+    )
+
+    try:
+        if cfg["security"] == "ssl":
+            client = smtplib.SMTP_SSL(cfg["host"], cfg["port"], timeout=10)
+        else:
+            client = smtplib.SMTP(cfg["host"], cfg["port"], timeout=10)
+        with client as smtp:
+            smtp.ehlo()
+            if cfg["security"] == "starttls":
+                smtp.starttls()
+                smtp.ehlo()
+            if cfg["username"]:
+                smtp.login(cfg["username"], cfg["password"])
+            smtp.send_message(msg)
+    except (smtplib.SMTPException, OSError) as exc:
+        raise ApiError(502, "寄送驗證信失敗：{}".format(exc))
+
+
+def target_email(conn, username):
+    """回傳 (target_key, target_id, email, label)。共用管理員使用 settings 的救援信箱。"""
+    if username:
+        user = find_login_user(conn, username)
+        if not user:
+            return None
+        label = (user["name"] or "").strip() or user["username"]
+        return ("user:{}".format(user["id"]), user["id"], (user["email"] or "").strip(), label)
+    email = get_setting(conn, "admin_recovery_email", "").strip()
+    return ("admin", None, email, "共用管理員")
+
+
+def require_admin(conn, token):
+    """限制救援設定與帳號管理只能由系統管理員／Root（或共用管理員）操作。"""
+    row = conn.execute(
+        "SELECT s.user_id, u.role FROM sessions s "
+        "LEFT JOIN users u ON u.id = s.user_id WHERE s.token = ?",
+        (token,),
+    ).fetchone()
+    if not row or row["user_id"] is None:
+        return
+    if (row["role"] or "") not in ("admin", "root"):
+        raise ApiError(403, "需要系統管理員權限")
+
+
+def require_staff(conn, token):
+    """班級成員與帳號維護限教職員；學生帳號只能查看自己的資料。"""
+    row = conn.execute(
+        "SELECT s.user_id, u.role FROM sessions s "
+        "LEFT JOIN users u ON u.id = s.user_id WHERE s.token = ?",
+        (token,),
+    ).fetchone()
+    if not row or row["user_id"] is None:
+        return
+    if (row["role"] or "") not in ("admin", "root", "teacher"):
+        raise ApiError(403, "需要教職員權限")
+
+
+def next_username(conn):
+    """產生下一個未被使用的數字帳號（例如 026）。"""
+    max_num = 0
+    for row in conn.execute("SELECT username FROM users"):
+        value = (row["username"] or "").strip()
+        if value.isdigit():
+            max_num = max(max_num, int(value))
+    num = max_num + 1
+    while True:
+        candidate = "{:03d}".format(num)
+        if not conn.execute("SELECT 1 FROM users WHERE username = ?", (candidate,)).fetchone():
+            return candidate
+        num += 1
+
+
+def ensure_member_user(conn, class_id, name):
+    """確保班級成員有對應的 users 資料列；回傳 user id。
+
+    成員與帳號已整併到 users 表：class_id 有值即為班級成員，
+    老師／管理員則為 class_id IS NULL。
+    """
+    row = conn.execute(
+        "SELECT id FROM users WHERE class_id = ? AND name = ? ORDER BY active DESC, id LIMIT 1",
+        (class_id, name),
+    ).fetchone()
+    if row:
+        conn.execute(
+            "UPDATE users SET active = 1, role = 'student', "
+            "updated_at = datetime('now', 'localtime') WHERE id = ?",
+            (row["id"],),
+        )
+        return row["id"]
+
+    username = next_username(conn)
+    cursor = conn.execute(
+        "INSERT INTO users (username, name, password, role, class_id, email, active) "
+        "VALUES (?, ?, ?, 'student', ?, '', 1)",
+        (username, name, hash_password(DEFAULT_PASSWORD), class_id),
+    )
+    return cursor.lastrowid
+
+
+def migrate_members_to_users(conn):
+    """把舊版 members 資料整併進 users，之後 members 表不再使用。"""
+    exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'members'"
+    ).fetchone()
+    if not exists:
+        return
+    rows = conn.execute("SELECT class_id, name FROM members ORDER BY id").fetchall()
+    for row in rows:
+        ensure_member_user(conn, row["class_id"], row["name"])
+    conn.execute("DROP TABLE IF EXISTS members")
+
+
+def find_login_user(conn, identifier):
+    """以帳號、Email（不分大小寫）或姓名找出啟用中的帳號。"""
+    user = conn.execute(
+        "SELECT * FROM users WHERE username = ? AND active = 1",
+        (identifier,),
+    ).fetchone()
+    if user:
+        return user
+
+    matches = conn.execute(
+        "SELECT * FROM users WHERE email <> '' AND lower(email) = lower(?) AND active = 1",
+        (identifier,),
+    ).fetchall()
+    if len(matches) > 1:
+        raise ApiError(409, "此 Email 對應多個帳號，請改用帳號登入")
+    if matches:
+        return matches[0]
+
+    matches = conn.execute(
+        "SELECT * FROM users WHERE name <> '' AND name = ? AND active = 1",
+        (identifier,),
+    ).fetchall()
+    if len(matches) > 1:
+        raise ApiError(409, "此姓名對應多個帳號，請改用帳號或 Email 登入")
+    return matches[0] if matches else None
+
+
 def init_db(db_path):
     os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
     schema_path = os.path.join(BASE_DIR, "schema.sql")
@@ -155,6 +428,24 @@ def init_db(db_path):
         except Exception:
             pass
 
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass
+
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN name TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass
+
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL")
+        except Exception:
+            pass
+
+        # 把舊版 members 整併進 users（班級成員＝class_id 有值的帳號）。
+        migrate_members_to_users(conn)
+
         row = conn.execute(
             "SELECT value FROM settings WHERE key = 'admin_password'"
         ).fetchone()
@@ -184,6 +475,9 @@ def init_db(db_path):
                 )
     finally:
         conn.close()
+
+    # 首次啟動即建立本機復原碼（檔案權限 600），供 Email 無法使用時救援。
+    ensure_recovery_code(db_path)
 
 
 def now_display():
@@ -239,9 +533,10 @@ def build_state(conn):
     # 成員名單包含「已停用班級」的成員，避免調整班級清單時資料消失。
     member_db = {}
     for r in conn.execute(
-        "SELECT c.name AS cls, m.name AS member "
-        "FROM members m JOIN classes c ON c.id = m.class_id "
-        "ORDER BY c.sort_order, c.id, m.id"
+        "SELECT c.name AS cls, u.name AS member "
+        "FROM users u JOIN classes c ON c.id = u.class_id "
+        "WHERE u.active = 1 "
+        "ORDER BY c.sort_order, c.id, u.id"
     ):
         member_db.setdefault(r["cls"], []).append(r["member"])
     for r in conn.execute("SELECT name FROM classes ORDER BY sort_order, id"):
@@ -698,7 +993,7 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json({"authenticated": authenticated})
 
         if path == "/api/password/reset":
-            # 密碼自救：公開端點，本體驗以「目前管理密碼」驗證，成功後全端失效
+            # 舊版：以「目前管理密碼」驗證後換新密碼（保留相容）
             if method != "POST":
                 raise ApiError(405, "方法不允許")
             reset_conn = connect()
@@ -706,6 +1001,35 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.api_password_reset(reset_conn)
             finally:
                 reset_conn.close()
+
+        # 忘記密碼：以下為公開端點，不需登入
+        if path == "/api/password/recovery-info" and method == "GET":
+            public_conn = connect()
+            try:
+                return self.api_recovery_info(public_conn, query)
+            finally:
+                public_conn.close()
+
+        if path == "/api/password/forgot/request" and method == "POST":
+            public_conn = connect()
+            try:
+                return self.api_forgot_request(public_conn)
+            finally:
+                public_conn.close()
+
+        if path == "/api/password/forgot/verify" and method == "POST":
+            public_conn = connect()
+            try:
+                return self.api_forgot_verify(public_conn)
+            finally:
+                public_conn.close()
+
+        if path == "/api/password/recovery-code" and method == "POST":
+            public_conn = connect()
+            try:
+                return self.api_recovery_code(public_conn)
+            finally:
+                public_conn.close()
 
         conn = connect()
         try:
@@ -720,6 +1044,7 @@ class Handler(SimpleHTTPRequestHandler):
                 })
 
             if path == "/api/loan-rules" and method == "PUT":
+                require_admin(conn, token)
                 data = self.read_json()
                 student_limit = int(data.get("student_limit") or 0)
                 teacher_limit = int(data.get("teacher_limit") or 0)
@@ -736,6 +1061,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json(build_state(conn))
 
             if method == "GET" and path == "/api/backup":
+                require_admin(conn, token)
                 payload = build_backup(conn)
                 filename = "圖書系統備份-{}.json".format(
                     datetime.now().strftime("%Y%m%d-%H%M")
@@ -756,6 +1082,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return
 
             if method == "POST" and path == "/api/backup/run":
+                require_admin(conn, token)
                 return self.send_json({"ok": True, "filename": run_auto_backup()})
 
             if method == "GET" and path == "/api/logs":
@@ -816,18 +1143,77 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.api_logs_csv(conn)
 
             if method == "POST" and path == "/api/import":
+                require_admin(conn, token)
                 return self.api_import(conn, token)
 
+            if path == "/api/settings/recovery":
+                require_admin(conn, token)
+                if method == "GET":
+                    return self.api_recovery_settings_get(conn)
+                if method == "PUT":
+                    return self.api_recovery_settings_put(conn)
+
+            if path == "/api/accounts":
+                require_admin(conn, token)
+                if method == "GET":
+                    return self.api_accounts_list(conn)
+                if method == "POST":
+                    return self.api_account_upsert(conn, None)
+
+            if path.startswith("/api/accounts/"):
+                require_admin(conn, token)
+                rest = path[len("/api/accounts/"):].rstrip("/")
+                if rest.endswith("/reset-password"):
+                    account_id = unquote(rest[: -len("/reset-password")].rstrip("/")).strip()
+                    if method != "POST" or not account_id.isdigit():
+                        raise ApiError(400, "帳號編號不合法")
+                    return self.api_account_reset_password(conn, int(account_id))
+                account_id = unquote(rest).strip()
+                if method == "PUT" and account_id.isdigit():
+                    return self.api_account_upsert(conn, int(account_id))
+                raise ApiError(404, "找不到帳號 API")
+
+            if method == "POST" and path == "/api/recovery-code/regenerate":
+                require_admin(conn, token)
+                return self.api_recovery_code_regenerate()
+
             if method == "PUT" and path == "/api/password":
+                require_admin(conn, token)
                 return self.api_password(conn, token)
 
             if method == "PUT" and path == "/api/classes":
+                require_admin(conn, token)
                 return self.api_classes(conn)
 
+            if path == "/api/member-accounts":
+                require_staff(conn, token)
+                if method != "GET":
+                    raise ApiError(405, "方法不允許")
+                return self.api_member_accounts_list(conn)
+
+            if path.startswith("/api/member-accounts/"):
+                require_staff(conn, token)
+                rest = path[len("/api/member-accounts/"):].rstrip("/")
+                if rest.endswith("/reset-password"):
+                    account_id = unquote(rest[: -len("/reset-password")].rstrip("/")).strip()
+                    if method != "POST" or not account_id.isdigit():
+                        raise ApiError(400, "成員編號不合法")
+                    return self.api_member_account_reset_password(conn, int(account_id), token)
+                account_id = unquote(rest).strip()
+                if not account_id.isdigit():
+                    raise ApiError(400, "成員編號不合法")
+                if method == "PUT":
+                    return self.api_member_account_update(conn, int(account_id), token)
+                if method == "DELETE":
+                    return self.api_member_account_delete(conn, int(account_id), token)
+                raise ApiError(404, "找不到成員帳號 API")
+
             if method == "POST" and path == "/api/members":
-                return self.api_member_add(conn)
+                require_staff(conn, token)
+                return self.api_member_add(conn, token)
 
             if method == "DELETE" and path == "/api/members":
+                require_staff(conn, token)
                 return self.api_member_delete(conn, query)
 
             if path == "/api/loan" and method == "POST":
@@ -850,6 +1236,7 @@ class Handler(SimpleHTTPRequestHandler):
                     return self.api_book_delete(conn, barcode)
 
             if method == "POST" and path == "/api/members/import":
+                require_staff(conn, token)
                 return self.api_members_import(conn, token)
 
             if method == "POST" and path == "/api/books/import":
@@ -893,10 +1280,8 @@ class Handler(SimpleHTTPRequestHandler):
             user = None
             role = "admin"
             if username:
-                user = conn.execute(
-                    "SELECT * FROM users WHERE username = ? AND active = 1",
-                    (username,),
-                ).fetchone()
+                # 登入識別碼依序比對：帳號（完全相符）→ Email（不分大小寫）→ 姓名（完全相符）
+                user = find_login_user(conn, username)
                 if not user or not verify_password(password, user["password"]):
                     raise ApiError(401, "帳號或密碼錯誤")
                 role = user["role"] or "teacher"
@@ -920,7 +1305,14 @@ class Handler(SimpleHTTPRequestHandler):
                 (token, user_id, now, now + SESSION_TTL),
             )
             return self.send_json(
-                {"ok": True, "user": {"username": username or "admin", "role": role}},
+                {
+                    "ok": True,
+                    "user": {
+                        "username": (user["username"] if user else "admin"),
+                        "name": (user["name"] if user else "") or "",
+                        "role": role,
+                    },
+                },
                 headers={
                     "Set-Cookie": "sid={}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}".format(
                         token, SESSION_TTL
@@ -1737,29 +2129,55 @@ class Handler(SimpleHTTPRequestHandler):
             ).fetchone()
             if not row:
                 continue
-            cur = conn.execute(
-                "INSERT OR IGNORE INTO members (class_id, name) VALUES (?, ?)",
+            exists = conn.execute(
+                "SELECT 1 FROM users WHERE class_id = ? AND name = ?",
                 (row["id"], name),
-            )
-            if cur.rowcount:
+            ).fetchone()
+            ensure_member_user(conn, row["id"], name)
+            if not exists:
                 imported += 1
         return self.send_json({"ok": True, "imported": imported, "total": len(raw)})
 
-    def api_member_add(self, conn):
+    def api_member_add(self, conn, token):
         data = self.read_json()
-        class_name = _clean_text(data.get("className"), "班級", 50, required=True)
         name = _clean_text(data.get("name"), "姓名", 50, required=True)
 
+        raw_role = _clean_text(data.get("role") or "", "角色", 20)
+        if raw_role and raw_role not in ("admin", "root", "teacher", "student"):
+            raise ApiError(400, "角色不合法")
+
+        if data.get("staff"):
+            require_admin(conn, token)
+            username = next_username(conn)
+            email = _clean_text(data.get("email") or "", "Email", 254)
+            cursor = conn.execute(
+                "INSERT INTO users (username, name, password, role, class_id, email, active) "
+                "VALUES (?, ?, ?, ?, NULL, ?, 1)",
+                (username, name, hash_password(DEFAULT_PASSWORD), raw_role or "teacher", email),
+            )
+            return self.send_json({
+                "ok": True,
+                "memberDB": build_state(conn)["memberDB"],
+                "account": {"id": cursor.lastrowid, "username": username},
+            })
+
+        class_name = _clean_text(data.get("className"), "班級", 50, required=True)
         row = conn.execute(
             "SELECT id FROM classes WHERE name = ? AND active = 1", (class_name,)
         ).fetchone()
         if not row:
             raise ApiError(404, "找不到班級：{}".format(class_name))
-        conn.execute(
-            "INSERT OR IGNORE INTO members (class_id, name) VALUES (?, ?)",
-            (row["id"], name),
-        )
-        return self.send_json({"ok": True, "memberDB": build_state(conn)["memberDB"]})
+        user_id = ensure_member_user(conn, row["id"], name)
+        if raw_role and raw_role != "student":
+            conn.execute("UPDATE users SET role = ? WHERE id = ?", (raw_role, user_id))
+        account = conn.execute(
+            "SELECT username FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+        return self.send_json({
+            "ok": True,
+            "memberDB": build_state(conn)["memberDB"],
+            "account": {"id": user_id, "username": account["username"] if account else ""},
+        })
 
     def api_books_import(self, conn, token):
         data = self.read_json()
@@ -1792,9 +2210,21 @@ class Handler(SimpleHTTPRequestHandler):
     def api_member_delete(self, conn, query):
         class_name = _clean_text(query.get("className", [""])[0], "班級", 50, required=True)
         name = _clean_text(query.get("name", [""])[0], "姓名", 50, required=True)
+        # 不直接刪除帳號：改為停用，保留密碼、Email 與歷史；日後重新加入可恢復。
+        ids = [
+            r["id"]
+            for r in conn.execute(
+                "SELECT u.id FROM users u JOIN classes c ON c.id = u.class_id "
+                "WHERE u.name = ? AND c.name = ?",
+                (name, class_name),
+            )
+        ]
+        for user_id in ids:
+            conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
         conn.execute(
-            "DELETE FROM members WHERE name = ? AND class_id IN "
-            "(SELECT id FROM classes WHERE name = ?)",
+            "UPDATE users SET active = 0, updated_at = datetime('now', 'localtime') "
+            "WHERE id IN (SELECT u.id FROM users u JOIN classes c ON c.id = u.class_id "
+            "WHERE u.name = ? AND c.name = ?)",
             (name, class_name),
         )
         return self.send_json({"ok": True, "memberDB": build_state(conn)["memberDB"]})
@@ -1852,12 +2282,29 @@ class Handler(SimpleHTTPRequestHandler):
         if len(password) > 128:
             raise ApiError(400, "密碼過長")
 
-        conn.execute(
-            "UPDATE settings SET value = ? WHERE key = 'admin_password'",
-            (hash_password(password),),
-        )
-        # 讓其他裝置的舊工作階段失效，目前這台維持登入
-        conn.execute("DELETE FROM sessions WHERE token != ?", (token,))
+        session = conn.execute(
+            "SELECT user_id FROM sessions WHERE token = ?", (token,)
+        ).fetchone()
+        if not session:
+            raise ApiError(401, "請先登入")
+        hashed = hash_password(password)
+        if session["user_id"] is None:
+            # 共用管理員：改 settings 的管理密碼
+            conn.execute(
+                "UPDATE settings SET value = ? WHERE key = 'admin_password'",
+                (hashed,),
+            )
+            conn.execute("DELETE FROM sessions WHERE token != ?", (token,))
+        else:
+            # 個別帳號：只改自己的密碼，不影響共用管理員
+            conn.execute(
+                "UPDATE users SET password = ?, updated_at = datetime('now', 'localtime') WHERE id = ?",
+                (hashed, session["user_id"]),
+            )
+            conn.execute(
+                "DELETE FROM sessions WHERE user_id = ? AND token != ?",
+                (session["user_id"], token),
+            )
         return self.send_json({"ok": True})
 
     def api_password_reset(self, conn):
@@ -1875,6 +2322,423 @@ class Handler(SimpleHTTPRequestHandler):
         conn.execute("DELETE FROM sessions")
         return self.send_json({"ok": True})
 
+    # ------------------------------------------------------------------
+    # 忘記密碼／救援
+    # ------------------------------------------------------------------
+
+    def api_recovery_info(self, conn, query):
+        username = (query.get("username") or [""])[0].strip()
+        target = target_email(conn, username)
+        email = target[2] if target else ""
+        return self.send_json({
+            "hasEmail": bool(email),
+            "maskedEmail": mask_email(email),
+            "smtpConfigured": smtp_configured(conn),
+            "localRecoveryAvailable": bool(read_recovery_code()),
+        })
+
+    def api_forgot_request(self, conn):
+        ip = self.client_address[0]
+        rate_limit("forgot-request", ip, 5)
+        data = self.read_json()
+        username = _clean_text(data.get("username") or "", "帳號", 50)
+        target = target_email(conn, username)
+        if not target:
+            raise ApiError(400, "查無此帳號，或帳號已停用")
+        target_key, _target_id, email, label = target
+        if not valid_email(email):
+            raise ApiError(400, "此帳號尚未設定 Email，請聯絡管理員設定，或改用本機復原碼")
+        if not smtp_configured(conn):
+            raise ApiError(503, "尚未設定 SMTP 寄件服務，請管理員至「系統設定 → 密碼救援」填寫，或改用本機復原碼")
+
+        code = "{:06d}".format(secrets.randbelow(1_000_000))
+        now = time.time()
+        conn.execute(
+            "UPDATE password_resets SET used = 1 WHERE target_key = ? AND used = 0",
+            (target_key,),
+        )
+        cursor = conn.execute(
+            "INSERT INTO password_resets "
+            "(target_key, target_email, code_hash, created_at, expires_at, requester_ip) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                target_key,
+                email,
+                hash_password(code),
+                now,
+                now + RESET_CODE_TTL,
+                ip,
+            ),
+        )
+        try:
+            send_recovery_email(conn, email, code, label)
+        except Exception:
+            conn.execute("DELETE FROM password_resets WHERE id = ?", (cursor.lastrowid,))
+            raise
+
+        return self.send_json({
+            "ok": True,
+            "maskedEmail": mask_email(email),
+            "expiresIn": RESET_CODE_TTL,
+        })
+
+    def api_forgot_verify(self, conn):
+        ip = self.client_address[0]
+        rate_limit("forgot-verify", ip, 10)
+        data = self.read_json()
+        username = _clean_text(data.get("username") or "", "帳號", 50)
+        code = str(data.get("code") or "").strip()
+        new_password = data.get("newPassword") or data.get("password")
+        if len(code) != 6 or not code.isdigit():
+            raise ApiError(400, "請輸入 6 位數驗證碼")
+        if not isinstance(new_password, str) or len(new_password) < 4:
+            raise ApiError(400, "新密碼至少需 4 個字元")
+        if len(new_password) > 128:
+            raise ApiError(400, "新密碼過長")
+
+        target = target_email(conn, username)
+        if not target:
+            raise ApiError(400, "驗證碼錯誤或已失效，請重新取得")
+        target_key, target_id, _email, _label = target
+        now = time.time()
+        row = conn.execute(
+            "SELECT * FROM password_resets WHERE target_key = ? AND used = 0 "
+            "ORDER BY id DESC LIMIT 1",
+            (target_key,),
+        ).fetchone()
+        if not row or row["expires_at"] < now:
+            raise ApiError(400, "驗證碼已失效，請重新取得")
+        if row["attempts"] >= RESET_MAX_ATTEMPTS:
+            conn.execute("UPDATE password_resets SET used = 1 WHERE id = ?", (row["id"],))
+            raise ApiError(429, "驗證碼嘗試次數過多，請重新取得")
+
+        conn.execute("UPDATE password_resets SET attempts = attempts + 1 WHERE id = ?", (row["id"],))
+        if not verify_password(code, row["code_hash"]):
+            raise ApiError(400, "驗證碼錯誤")
+
+        hashed = hash_password(new_password)
+        if target_key == "admin":
+            conn.execute(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES ('admin_password', ?)",
+                (hashed,),
+            )
+        else:
+            conn.execute(
+                "UPDATE users SET password = ?, updated_at = datetime('now', 'localtime') WHERE id = ?",
+                (hashed, target_id),
+            )
+        conn.execute("UPDATE password_resets SET used = 1 WHERE target_key = ? AND used = 0", (target_key,))
+        conn.execute("DELETE FROM sessions")
+        clear_rate_limit("forgot-verify", ip)
+        return self.send_json({"ok": True})
+
+    def api_recovery_code(self, conn):
+        ip = self.client_address[0]
+        rate_limit("recovery-code", ip, 10)
+        data = self.read_json()
+        code = str(data.get("code") or "").strip()
+        new_password = data.get("newPassword") or data.get("password")
+        if not code:
+            raise ApiError(400, "請輸入本機復原碼")
+        if not isinstance(new_password, str) or len(new_password) < 4:
+            raise ApiError(400, "新密碼至少需 4 個字元")
+        if len(new_password) > 128:
+            raise ApiError(400, "新密碼過長")
+        expected = read_recovery_code()
+        if not expected:
+            raise ApiError(503, "本機復原碼尚未建立，請管理員重新產生")
+        if not hmac.compare_digest(code, expected):
+            raise ApiError(401, "復原碼錯誤")
+
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES ('admin_password', ?)",
+            (hash_password(new_password),),
+        )
+        conn.execute("DELETE FROM sessions")
+        clear_rate_limit("recovery-code", ip)
+        return self.send_json({"ok": True})
+
+    def api_recovery_settings_get(self, conn):
+        cfg = smtp_config(conn)
+        return self.send_json({
+            "adminRecoveryEmail": get_setting(conn, "admin_recovery_email", ""),
+            "smtp": {
+                "host": cfg["host"],
+                "port": cfg["port"],
+                "security": cfg["security"],
+                "username": cfg["username"],
+                "from": cfg["from"],
+                "hasPassword": bool(cfg["password"]),
+            },
+            "localRecoveryAvailable": bool(read_recovery_code()),
+        })
+
+    def api_recovery_settings_put(self, conn):
+        data = self.read_json()
+        email = _clean_text(data.get("adminRecoveryEmail") or "", "管理員救援信箱", 254)
+        if email and not valid_email(email):
+            raise ApiError(400, "管理員救援信箱格式錯誤")
+
+        smtp = data.get("smtp") or {}
+        if not isinstance(smtp, dict):
+            raise ApiError(400, "SMTP 設定格式錯誤")
+        host = _clean_text(smtp.get("host") or "", "SMTP 主機", 255)
+        try:
+            port = int(smtp.get("port") or 587)
+        except (TypeError, ValueError):
+            raise ApiError(400, "SMTP 連接埠格式錯誤")
+        if port < 1 or port > 65535:
+            raise ApiError(400, "SMTP 連接埠需介於 1–65535")
+        security = smtp.get("security") or "starttls"
+        if security not in ("starttls", "ssl", "none"):
+            raise ApiError(400, "SMTP 加密方式不合法")
+        smtp_user = _clean_text(smtp.get("username") or "", "SMTP 帳號", 255)
+        from_addr = _clean_text(smtp.get("from") or "", "寄件者信箱", 254)
+        if from_addr and not valid_email(from_addr):
+            raise ApiError(400, "寄件者信箱格式錯誤")
+
+        password = smtp.get("password")
+        if isinstance(password, str) and len(password) > 512:
+            raise ApiError(400, "SMTP 密碼過長")
+
+        values = {
+            "admin_recovery_email": email,
+            "smtp_host": host,
+            "smtp_port": str(port),
+            "smtp_security": security,
+            "smtp_username": smtp_user,
+            "smtp_from": from_addr,
+        }
+        for key, value in values.items():
+            conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
+
+        password = smtp.get("password")
+        if smtp.get("clearPassword"):
+            conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('smtp_password', '')")
+        elif isinstance(password, str) and password:
+            conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('smtp_password', ?)", (password,))
+
+        return self.send_json({"ok": True})
+
+    def api_recovery_code_regenerate(self):
+        code = regenerate_recovery_code()
+        return self.send_json({"ok": True, "code": code, "filename": "data/recovery_code.txt"})
+
+    def api_accounts_list(self, conn):
+        rows = conn.execute(
+            "SELECT u.id, u.username, u.name, u.role, u.email, u.active, u.class_id, "
+            "c.name AS class_name "
+            "FROM users u LEFT JOIN classes c ON c.id = u.class_id ORDER BY u.id"
+        ).fetchall()
+        return self.send_json({
+            "accounts": [
+                {
+                    "id": r["id"],
+                    "username": r["username"],
+                    "name": r["name"] or "",
+                    "role": r["role"],
+                    "email": r["email"] or "",
+                    "active": bool(r["active"]),
+                    "classId": r["class_id"],
+                    "className": r["class_name"] or "",
+                }
+                for r in rows
+            ]
+        })
+
+    def api_account_upsert(self, conn, account_id):
+        data = self.read_json()
+        role = data.get("role") or "teacher"
+        if role not in ("admin", "root", "teacher", "student"):
+            raise ApiError(400, "角色不合法")
+        email = _clean_text(data.get("email") or "", "Email", 254)
+        if email and not valid_email(email):
+            raise ApiError(400, "Email 格式錯誤")
+        password = data.get("password")
+        if password is not None and (not isinstance(password, str) or len(password) < 4 or len(password) > 128):
+            raise ApiError(400, "密碼需為 4–128 個字元")
+        active = 1 if data.get("active", True) else 0
+
+        if account_id is None:
+            username = _clean_text(data.get("username") or "", "帳號", 50, required=True)
+            name = _clean_text(data.get("name") or "", "姓名", 50)
+            if not isinstance(password, str) or not password:
+                raise ApiError(400, "新增帳號需設定密碼")
+            exists = conn.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
+            if exists:
+                raise ApiError(409, "帳號已存在")
+            cursor = conn.execute(
+                "INSERT INTO users (username, name, password, role, email, active) VALUES (?, ?, ?, ?, ?, ?)",
+                (username, name, hash_password(password), role, email, active),
+            )
+            return self.send_json({"ok": True, "id": cursor.lastrowid})
+
+        row = conn.execute("SELECT id, name FROM users WHERE id = ?", (account_id,)).fetchone()
+        if not row:
+            raise ApiError(404, "找不到帳號")
+        if "name" in data:
+            name = _clean_text(data.get("name") or "", "姓名", 50)
+        else:
+            name = row["name"] or ""
+        conn.execute(
+            "UPDATE users SET name = ?, role = ?, email = ?, active = ?, updated_at = datetime('now', 'localtime') WHERE id = ?",
+            (name, role, email, active, account_id),
+        )
+        if isinstance(password, str) and password:
+            conn.execute(
+                "UPDATE users SET password = ?, updated_at = datetime('now', 'localtime') WHERE id = ?",
+                (hash_password(password), account_id),
+            )
+            conn.execute("DELETE FROM sessions WHERE user_id = ?", (account_id,))
+        if not active:
+            conn.execute("DELETE FROM sessions WHERE user_id = ?", (account_id,))
+        return self.send_json({"ok": True, "id": account_id})
+
+    def api_account_reset_password(self, conn, account_id):
+        data = self.read_json()
+        password = data.get("password")
+        if not isinstance(password, str) or len(password) < 4 or len(password) > 128:
+            raise ApiError(400, "密碼需為 4–128 個字元")
+        row = conn.execute("SELECT id FROM users WHERE id = ?", (account_id,)).fetchone()
+        if not row:
+            raise ApiError(404, "找不到帳號")
+        conn.execute(
+            "UPDATE users SET password = ?, updated_at = datetime('now', 'localtime') WHERE id = ?",
+            (hash_password(password), account_id),
+        )
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (account_id,))
+        return self.send_json({"ok": True})
+
+    def api_member_accounts_list(self, conn):
+        rows = conn.execute(
+            "SELECT u.id, u.username, u.name, u.role, u.email, u.active, u.class_id, "
+            "CASE WHEN u.password <> '' THEN 1 ELSE 0 END AS has_password, "
+            "c.name AS class_name "
+            "FROM users u LEFT JOIN classes c ON c.id = u.class_id "
+            "WHERE u.active = 1 "
+            "ORDER BY CASE WHEN u.class_id IS NULL THEN 1 ELSE 0 END, "
+            "c.sort_order, c.id, u.id"
+        ).fetchall()
+        return self.send_json({
+            "accounts": [
+                {
+                    "id": r["id"],
+                    "username": r["username"],
+                    "name": r["name"] or "",
+                    "role": r["role"],
+                    "email": r["email"] or "",
+                    "classId": r["class_id"],
+                    "className": r["class_name"] or "",
+                    "hasPassword": bool(r["has_password"]),
+                }
+                for r in rows
+            ]
+        })
+
+    def _member_account_row(self, conn, account_id):
+        row = conn.execute("SELECT * FROM users WHERE id = ?", (account_id,)).fetchone()
+        if not row:
+            raise ApiError(404, "找不到成員帳號")
+        return row
+
+    def _require_account_manager(self, conn, token, row):
+        """班級成員由教職員管理；未分班教職員與管理員帳號僅限系統管理員。"""
+        if row["class_id"] is None or (row["role"] or "") in ("admin", "root"):
+            require_admin(conn, token)
+
+    def api_member_account_update(self, conn, account_id, token):
+        row = self._member_account_row(conn, account_id)
+        self._require_account_manager(conn, token, row)
+        data = self.read_json()
+
+        username = row["username"]
+        if "username" in data:
+            username = _clean_text(data.get("username") or "", "帳號", 50, required=True)
+            duplicate = conn.execute(
+                "SELECT id FROM users WHERE username = ? AND id <> ?",
+                (username, account_id),
+            ).fetchone()
+            if duplicate:
+                raise ApiError(409, "帳號已存在")
+
+        name = row["name"] or ""
+        if "name" in data:
+            name = _clean_text(data.get("name") or "", "姓名", 50, required=True)
+            if row["class_id"] is not None:
+                duplicate_name = conn.execute(
+                    "SELECT id FROM users WHERE class_id = ? AND name = ? AND active = 1 AND id <> ?",
+                    (row["class_id"], name, account_id),
+                ).fetchone()
+                if duplicate_name:
+                    raise ApiError(409, "同班級已有同名成員")
+
+        email = row["email"] or ""
+        if "email" in data:
+            email = _clean_text(data.get("email") or "", "Email", 254)
+            if email and not valid_email(email):
+                raise ApiError(400, "Email 格式錯誤")
+
+        new_class_id = row["class_id"]
+        if "classId" in data or "className" in data:
+            raw_class = data.get("classId")
+            if raw_class is None and "className" in data:
+                raw_name = _clean_text(data.get("className") or "", "班級", 50)
+                raw_class = "__staff__" if not raw_name else raw_name
+            if isinstance(raw_class, str) and raw_class.strip() == "__staff__":
+                new_class_id = None
+            elif isinstance(raw_class, int):
+                new_class_id = raw_class
+            else:
+                new_name = _clean_text(str(raw_class or ""), "班級", 50)
+                if new_name:
+                    class_row = conn.execute("SELECT id FROM classes WHERE name = ?", (new_name,)).fetchone()
+                    if not class_row:
+                        raise ApiError(400, "找不到班級：{}".format(new_name))
+                    new_class_id = class_row["id"]
+                else:
+                    new_class_id = None
+            new_class_id = new_class_id if new_class_id is not None else None
+
+        new_role = row["role"] or "teacher"
+        if "role" in data:
+            new_role = _clean_text(data.get("role") or "", "角色", 20)
+            if new_role not in ("admin", "root", "teacher", "student"):
+                raise ApiError(400, "角色不合法")
+
+        password = data.get("password")
+        if password is not None and (
+            not isinstance(password, str) or len(password) < 4 or len(password) > 128
+        ):
+            raise ApiError(400, "密碼需為 4–128 個字元")
+
+        conn.execute(
+            "UPDATE users SET class_id = ?, role = ?, name = ?, email = ?, "
+            "updated_at = datetime('now', 'localtime') WHERE id = ?",
+            (new_class_id, new_role, name, email, account_id),
+        )
+        if isinstance(password, str) and password:
+            conn.execute(
+                "UPDATE users SET password = ?, updated_at = datetime('now', 'localtime') WHERE id = ?",
+                (hash_password(password), account_id),
+            )
+            conn.execute("DELETE FROM sessions WHERE user_id = ?", (account_id,))
+        return self.send_json({"ok": True, "id": account_id})
+
+    def api_member_account_reset_password(self, conn, account_id, token):
+        row = self._member_account_row(conn, account_id)
+        self._require_account_manager(conn, token, row)
+        return self.api_account_reset_password(conn, account_id)
+
+    def api_member_account_delete(self, conn, account_id, token):
+        row = self._member_account_row(conn, account_id)
+        self._require_account_manager(conn, token, row)
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (account_id,))
+        conn.execute(
+            "UPDATE users SET active = 0, updated_at = datetime('now', 'localtime') WHERE id = ?",
+            (account_id,),
+        )
+        return self.send_json({"ok": True, "memberDB": build_state(conn)["memberDB"]})
+
     def api_import(self, conn, token):
         data = self.read_json(limit=MAX_BODY)
         payload = data.get("data") if isinstance(data.get("data"), dict) else data
@@ -1882,20 +2746,35 @@ class Handler(SimpleHTTPRequestHandler):
 
         conn.execute("BEGIN IMMEDIATE")
         try:
-            conn.execute("DELETE FROM members")
-            conn.execute("DELETE FROM classes")
             conn.execute("DELETE FROM books")
             conn.execute("DELETE FROM loan_logs")
 
+            # 不刪除 users / classes，避免遺失帳號密碼與 Email。
+            # 先全部停用，再依匯入資料恢復；未出現在匯入資料的成員會保持停用。
+            conn.execute("UPDATE users SET active = 0 WHERE class_id IS NOT NULL")
+            conn.execute("UPDATE classes SET active = 0")
+
             active = set(classes)
-            for cls in classes:
-                conn.execute(
-                    "INSERT INTO classes (name, sort_order, active) VALUES (?, ?, 1)",
-                    (cls, classes.index(cls)),
-                )
+            for index, cls in enumerate(classes):
+                row = conn.execute("SELECT id FROM classes WHERE name = ?", (cls,)).fetchone()
+                if row:
+                    conn.execute(
+                        "UPDATE classes SET sort_order = ?, active = 1 WHERE id = ?",
+                        (index, row["id"]),
+                    )
+                else:
+                    conn.execute(
+                        "INSERT INTO classes (name, sort_order, active) VALUES (?, ?, 1)",
+                        (cls, index),
+                    )
             # 只有成員、但不在班級清單的班級，以停用方式保留
             for cls in member_db:
-                if cls not in active:
+                if cls in active:
+                    continue
+                row = conn.execute("SELECT id FROM classes WHERE name = ?", (cls,)).fetchone()
+                if row:
+                    conn.execute("UPDATE classes SET active = 0 WHERE id = ?", (row["id"],))
+                else:
                     conn.execute(
                         "INSERT INTO classes (name, sort_order, active) VALUES (?, ?, 0)",
                         (cls, len(classes)),
@@ -1910,10 +2789,7 @@ class Handler(SimpleHTTPRequestHandler):
                 if not class_id:
                     continue
                 for name in names:
-                    conn.execute(
-                        "INSERT OR IGNORE INTO members (class_id, name) VALUES (?, ?)",
-                        (class_id, name),
-                    )
+                    ensure_member_user(conn, class_id, name)
 
             for barcode, book in books.items():
                 conn.execute(
@@ -2001,6 +2877,7 @@ def main():
             print("  注意：  其他電腦以 http://IP 開啟時，瀏覽器會封鎖相機；")
             print("          相機掃碼請用本機 localhost，或改用條碼槍／HTTPS。")
     print("  預設密碼：{}（請登入後立即修改）".format(DEFAULT_PASSWORD))
+    print("  救援復原碼：{}（請妥善保管，勿公開）".format(recovery_code_path()))
     print("  按 Ctrl+C 停止")
     print("=" * 56)
 

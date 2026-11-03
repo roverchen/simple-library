@@ -47,6 +47,26 @@
         /* 單本標籤列印區：螢幕上永遠不顯示 */
         #singleLabelArea { display: none; }
 
+        /* 忘記密碼／救援 modal */
+        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 1000; padding: 16px; align-items: center; justify-content: center; }
+        .modal-overlay.open { display: flex; }
+        .modal-box { background: #fff; border-radius: 12px; padding: 22px; width: 100%; max-width: 440px; max-height: 92vh; overflow: auto; box-shadow: 0 10px 40px rgba(0,0,0,.25); }
+        .modal-box h3 { margin: 0; }
+        .modal-close { background: none; border: none; font-size: 1.4rem; cursor: pointer; color: #666; line-height: 1; }
+        .modal-tabs { display: flex; gap: 8px; margin: 14px 0; }
+        .modal-tabs button { flex: 1; padding: 10px; border: 1px solid #ddd; background: #f7f7f7; border-radius: 8px; cursor: pointer; font-weight: bold; color: #555; }
+        .modal-tabs button.active { background: var(--secondary); border-color: var(--secondary); color: #fff; }
+        .modal-box label { display: block; margin: 12px 0 6px; font-weight: bold; font-size: .92rem; }
+        .modal-box select { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; background: #fff; font-family: inherit; }
+        .modal-box textarea { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; font-family: inherit; resize: vertical; }
+        .modal-box input[readonly] { background: #f5f5f5; font-family: monospace; letter-spacing: .04em; }
+        .modal-box .btn-primary { width: 100%; margin-top: 16px; padding: 13px; background: var(--primary); color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: bold; cursor: pointer; }
+        .modal-box .btn-secondary { width: 100%; margin-top: 8px; padding: 11px; background: #eee; color: #444; border: none; border-radius: 8px; cursor: pointer; }
+        .modal-hint { color: #666; font-size: .85rem; line-height: 1.6; white-space: pre-line; }
+        .modal-error { color: #c62828; font-size: .9rem; line-height: 1.5; min-height: 1.2em; }
+        .settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
+        .settings-grid label { font-size: .85rem; color: #555; }
+
         .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 15px 0; }
         .btn-main { padding: 20px; border: none; border-radius: 10px; color: white; font-size: 1.1rem; font-weight: bold; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
         .btn-borrow { background-color: var(--primary); }
@@ -54,6 +74,10 @@
         .btn-add-book { background-color: var(--dark); grid-column: span 2; }
 
         .input-group { margin: 10px 0; display: flex; flex-direction: column; gap: 8px; }
+        #memberTable tbody tr { cursor: pointer; }
+        #memberTable tbody tr:hover { background: #eef3fb; }
+        #bookTable tbody tr { cursor: pointer; }
+        #bookTable tbody tr:hover { background: #eef3fb; }
         input, select { padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; width: 100%; }
 
         table { width: 100%; border-collapse: collapse; }
@@ -80,9 +104,10 @@
         .pager span { color: #555; font-size: 0.9rem; }
 
         /* QR 標籤排版樣式 */
-        .qr-label-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 15px; margin-top: 20px; }
-        .qr-card { border: 1px solid #ccc; padding: 10px; text-align: center; background: #fff; page-break-inside: avoid; border-radius: 5px; }
-        .qr-code-img { display: flex; justify-content: center; margin: 5px 0; }
+        .qr-label-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-top: 20px; }
+        .qr-card { border: 1px solid #ccc; padding: 6px; text-align: center; background: #fff; page-break-inside: avoid; border-radius: 5px; width: 52mm; margin: 0 auto; }
+        .qr-code-img { display: flex; justify-content: center; margin: 4px 0; }
+        .qr-code-img canvas, .qr-code-img img { max-width: 110px; height: auto; }
 
         /* 清冊列印（財產清冊／報廢清冊） */
         .print-sheet-title { font-size: 18px; font-weight: bold; text-align: center; margin-bottom: 6px; }
@@ -104,7 +129,9 @@
             /* 單本標籤列印：只輸出標籤本身，隱藏所有頁面內容 */
             body.printing-label .page, body.printing-label .nav { display: none !important; }
             body.printing-label #singleLabelArea { display: block !important; }
-            .qr-label-grid { grid-template-columns: repeat(3, 1fr); gap: 10px; } /* 列印時固定三欄 */
+            .qr-label-grid { grid-template-columns: repeat(3, 1fr); gap: 6mm; } /* A4 3 欄 */
+            .qr-card { width: auto; padding: 4px; }
+            .qr-code-img canvas, .qr-code-img img { max-width: 90px; }
         }
     </style>
 </head>
@@ -114,10 +141,10 @@
     <div id="loginPage" class="page active">
         <div style="text-align: center; max-width: 350px; margin: auto;">
             <h2>🔐 幼兒園圖書系統</h2>
-            <input type="text" id="loginUsername" placeholder="帳號（留空=系統管理員）">
+            <input type="text" id="loginUsername" placeholder="帳號／姓名／Email（留空=系統管理員）" autocomplete="username">
             <input type="password" id="loginPwd" placeholder="管理密碼">
             <button onclick="handleLogin()" class="btn-main btn-return" style="width: 100%; padding: 15px; margin-top: 10px;">登入</button>
-            <button onclick="resetAdminPassword()" class="btn-action" style="width: 100%; margin-top: 10px; padding: 10px; background:#666; color:white; border:none; border-radius:5px;">🔑 忘記密碼？管理員重置</button>
+            <button onclick="openForgotModal()" class="btn-action" style="width: 100%; margin-top: 10px; padding: 10px; background:#666; color:white; border:none; border-radius:5px;">🔑 忘記密碼？</button>
         </div>
     </div>
 
@@ -134,12 +161,8 @@
 
     <div id="loanPage" class="page">
         <div class="input-group">
-            <select id="loanClass" onchange="filterMembers('loanMember', this.value)"></select>
-            <select id="loanMember"></select>
-            <select id="loanMemberType">
-                <option value="student">🎒 學生</option>
-                <option value="teacher">🧑‍🏫 老師</option>
-            </select>
+            <input type="text" id="loanMemberInput" placeholder="👤 輸入成員條碼／姓名／帳號／Email" autocomplete="off" oninput="onLoanMemberInput(this.value)">
+            <div id="loanMemberInfo" style="color:#666; font-size:0.9rem; margin-top:4px;"></div>
         </div>
         <div class="input-group">
             <div style="display:flex; gap:8px;">
@@ -162,25 +185,6 @@
             <h3 style="margin:0;">📌 進行中預約</h3>
             <div id="reservationList" style="color:#666;">載入中…</div>
         </div>
-        <div id="commandQRSection" style="margin-top:16px;">
-            <h3>🔀 功能指令 QR（5.2）</h3>
-            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-                <select id="cmdQRMode" style="max-width:150px;">
-                    <option value="borrow">啟動借書</option>
-                    <option value="return">啟動還書</option>
-                </select>
-                <input type="text" id="cmdQRBarcode" placeholder="條碼">
-                <button onclick="generateCommandQR()" style="padding:10px; background:var(--secondary); color:white; border:none; border-radius:5px;">📱 產生指令 QR</button>
-            </div>
-            <div id="commandQRPreview" style="margin-top:12px; text-align:center; color:#666;">尚未產生</div>
-        </div>
-        <div id="memberQRSection" style="margin-top:16px;">
-            <h3>📇 名冊列印／成員條碼（5.1）</h3>
-            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-                <select id="memberQRClass"></select>
-                <button onclick="printMemberQRList()" style="padding:10px; background:var(--secondary); color:white; border:none; border-radius:5px;">🖨️ 列印此班級名冊 QR</button>
-            </div>
-        </div>
         <div id="reader-wrapper">
             <h3 id="scanModeTitle">準備掃描...</h3>
             <div id="reader"></div>
@@ -193,14 +197,23 @@
     <div id="classPage" class="page">
         <h3>👥 班級成員管理</h3>
         <div class="input-group">
-            <select id="editClassSelect"></select>
-            <input type="text" id="newMemberName" placeholder="輸入姓名">
-            <button onclick="addMember()" class="btn-main btn-borrow" style="width:100%; padding:10px;">新增</button>
+            <button onclick="openMemberModalAdd()" class="btn-main btn-borrow" style="width:100%; padding:10px;">➜ 新增成員</button>
+        </div>
+        <small style="color:#666; line-height:1.7;">點擊「➜ 新增成員」開啟新增成員對話框（可選班級與教職員）。清單為唯讀：滑鼠移動到該筆資料會反白，點擊該筆會開啟維護對話框（可修改／儲存／重設／刪除）。學生可用帳號、姓名或 Email 登入。</small>
+        <div class="input-group">
+            <input type="text" id="memberSearchInput" placeholder="🔍 搜尋姓名／帳號／Email" oninput="memberSearchText = this.value.trim(); renderMemberTable();" style="padding:10px; border:1px solid #ccc; border-radius:8px; font-size:1rem; width:100%;">
         </div>
         <table id="memberTable">
-            <thead><tr><th>班級</th><th>姓名</th><th>操作</th></tr></thead>
+            <thead><tr><th>班級</th><th>姓名</th><th>帳號</th><th>Email</th><th>角色</th></tr></thead>
             <tbody></tbody>
         </table>
+        <div id="memberQRSection" style="margin-top:16px;">
+            <h3>📇 名冊列印／成員條碼（5.1）</h3>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <select id="memberQRClass"></select>
+                <button onclick="printMemberQRList()" style="padding:10px; background:var(--secondary); color:white; border:none; border-radius:5px;">🖨️ 列印此班級名冊 QR</button>
+            </div>
+        </div>
     </div>
 
     <div id="managePage" class="page">
@@ -210,22 +223,22 @@
         <div id="manageActionGrid" class="action-grid">
             <button onclick="initiateScan('manage')" class="btn-main btn-add-book">🔍 掃描新增/快速編輯 (QR)</button>
         </div>
+        <div class="input-group">
+            <input type="text" id="bookManageSearchInput" placeholder="🔍 搜尋書名／財產編號／索書號／ISBN 關鍵字" oninput="searchBooks();" style="padding:10px; border:1px solid #ccc; border-radius:8px; font-size:1rem; width:100%;">
+        </div>
         <div class="table-container">
             <table id="bookTable">
-                <thead><tr><th>書名</th><th>財產編號</th><th>索書號</th><th>ISBN</th><th>狀態</th><th>管理操作</th></tr></thead>
-                <tbody></tbody>
+                <thead><tr><th>書名</th><th>財產編號</th><th>ISBN</th><th>狀態</th></tr></thead>
+                <tbody id="bookManageResults"></tbody>
             </table>
         </div>
-        <div id="bookSearchSection" style="margin-top:20px;">
-            <h3>🔍 館藏查詢（F06）</h3>
-            <div style="display:flex; gap:8px;">
-                <input type="text" id="bookSearchKeyword" placeholder="書名 / 財產編號 / 條碼 / ISBN 關鍵字">
-                <button onclick="searchBooks()" style="padding:10px; background:var(--secondary); color:white; border:none; border-radius:5px;">🔍 搜尋</button>
+        <div id="commandQRSection" style="margin-top:16px;">
+            <h3>🔀 功能指令 QR（5.2）</h3>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <input type="text" id="cmdQRBarcode" placeholder="borrow:條碼 或 return:條碼">
+                <button onclick="generateCommandQR()" style="padding:10px; background:var(--secondary); color:white; border:none; border-radius:5px;">📱 產生指令 QR</button>
             </div>
-            <table>
-                <thead><tr><th>書名</th><th>財產編號</th><th>ISBN</th><th>複本數</th><th>可借數</th></tr></thead>
-                <tbody id="bookSearchResults"></tbody>
-            </table>
+            <div id="commandQRPreview" style="margin-top:12px; text-align:center; color:#666;">尚未產生</div>
         </div>
     </div>
 
@@ -235,6 +248,33 @@
             <label>🔑 修改密碼</label>
             <input type="password" id="newSystemPwd" placeholder="新密碼">
             <button onclick="updatePassword()" style="background:var(--dark); color:white; padding:10px; border:none; border-radius:5px;">更新</button>
+        </div>
+        <hr>
+        <div class="input-group">
+            <label>🛟 密碼救援設定（Email 驗證碼）</label>
+            <small style="color:#666; line-height:1.7;">帳號留空登入的「共用管理員」沒有個人帳號，請在此設定救援信箱。個別帳號的 Email 請見下方「帳號與救援 Email」。</small>
+            <input type="email" id="adminRecoveryEmail" placeholder="共用管理員救援信箱（例：admin@school.edu.tw）" autocomplete="off">
+            <div class="settings-grid">
+                <div><label>SMTP 主機</label><input type="text" id="smtpHost" placeholder="smtp.gmail.com" autocomplete="off"></div>
+                <div><label>連接埠</label><input type="number" id="smtpPort" value="587" min="1" max="65535"></div>
+                <div><label>加密方式</label>
+                    <select id="smtpSecurity">
+                        <option value="starttls">STARTTLS（587）</option>
+                        <option value="ssl">SSL（465）</option>
+                        <option value="none">不加密（僅內網）</option>
+                    </select>
+                </div>
+                <div><label>SMTP 帳號</label><input type="text" id="smtpUsername" autocomplete="off"></div>
+                <div><label>SMTP 密碼</label><input type="password" id="smtpPassword" placeholder="留空＝不變更" autocomplete="new-password"></div>
+                <div><label>寄件者信箱</label><input type="email" id="smtpFrom" placeholder="library@school.edu.tw" autocomplete="off"></div>
+            </div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <button onclick="saveRecoverySettings()" style="flex:1; min-width:150px; background:var(--primary); color:white; padding:10px; border:none; border-radius:5px;">💾 儲存救援設定</button>
+                <button onclick="regenerateRecoveryCode()" style="flex:1; min-width:150px; background:var(--warning); color:white; padding:10px; border:none; border-radius:5px;">🔄 重新產生本機復原碼</button>
+            </div>
+            <small style="color:#666; line-height:1.7;">
+                ⚠️ Email 寄不出去時，可在伺服器主機開啟 <code>data/recovery_code.txt</code>，用裡面的復原碼重設「共用管理員」密碼。變更 SMTP 密碼後若留空，會保留舊密碼。
+            </small>
         </div>
         <hr>
         <div class="input-group">
@@ -387,16 +427,115 @@
     <div id="singleLabelArea"></div>
 </div>
 
+<!-- 忘記密碼／救援 modal -->
+<div class="modal-overlay" id="forgotModal">
+    <div class="modal-box">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h3>🔑 忘記密碼</h3>
+            <button type="button" class="modal-close" onclick="closeForgotModal()" aria-label="關閉">✕</button>
+        </div>
+        <p class="modal-hint">請選擇救援方式。共用管理員（帳號留空登入）請將帳號欄位留空。</p>
+        <div class="modal-tabs">
+            <button type="button" id="tabEmail" class="active" onclick="switchRecoveryTab('email')">Email 驗證碼</button>
+            <button type="button" id="tabCode" onclick="switchRecoveryTab('code')">本機復原碼</button>
+        </div>
+
+        <div id="recoveryEmailPane">
+            <div id="emailStep1">
+                <label for="recoveryUsername">帳號／姓名／Email（共用管理員請留空）</label>
+                <input type="text" id="recoveryUsername" autocomplete="username">
+                <button type="button" class="btn-primary" onclick="requestRecoveryCode()">📧 寄送驗證碼</button>
+                <p class="modal-hint" id="recoveryEmailHint"></p>
+            </div>
+            <div id="emailStep2" style="display:none;">
+                <p class="modal-hint" id="recoverySentInfo"></p>
+                <label for="recoveryCodeInput">6 位數驗證碼</label>
+                <input type="text" id="recoveryCodeInput" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
+                <label for="recoveryNewPwd">新密碼（至少 4 碼）</label>
+                <input type="password" id="recoveryNewPwd" autocomplete="new-password">
+                <label for="recoveryNewPwd2">再次輸入新密碼</label>
+                <input type="password" id="recoveryNewPwd2" autocomplete="new-password">
+                <button type="button" class="btn-primary" onclick="verifyRecoveryCode()">✅ 重設密碼</button>
+                <button type="button" class="btn-secondary" onclick="backToEmailStep1()">← 返回</button>
+            </div>
+        </div>
+
+        <div id="recoveryCodePane" style="display:none;">
+            <p class="modal-hint">請在伺服器主機開啟 <code>data/recovery_code.txt</code>，輸入裡面的復原碼。此方式只能重設共用管理員密碼。</p>
+            <label for="localRecoveryCode">本機復原碼</label>
+            <input type="text" id="localRecoveryCode" autocomplete="off">
+            <label for="localNewPwd">新密碼（至少 4 碼）</label>
+            <input type="password" id="localNewPwd" autocomplete="new-password">
+            <label for="localNewPwd2">再次輸入新密碼</label>
+            <input type="password" id="localNewPwd2" autocomplete="new-password">
+            <button type="button" class="btn-primary" onclick="submitLocalRecovery()">✅ 重設密碼</button>
+        </div>
+
+        <p class="modal-error" id="recoveryError"></p>
+    </div>
+</div>
+
+<!-- 通用輸入對話框（取代 prompt） -->
+<div class="modal-overlay" id="inputDialog">
+    <div class="modal-box">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h3 id="inputDialogTitle">請輸入</h3>
+            <button type="button" class="modal-close" onclick="closeInputDialog(null)" aria-label="關閉">✕</button>
+        </div>
+        <p class="modal-hint" id="inputDialogMessage" style="display:none;"></p>
+        <div id="inputDialogFields"></div>
+        <p class="modal-error" id="inputDialogError"></p>
+        <button type="button" class="btn-primary" id="inputDialogSubmit" onclick="submitInputDialog()">確定</button>
+        <button type="button" class="btn-secondary" onclick="closeInputDialog(null)">取消</button>
+    </div>
+</div>
+
+<!-- 班級成員帳號維護對話框（顯示清單 + 點擊／新增開啟） -->
+<div class="modal-overlay" id="memberModal">
+    <div class="modal-box">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h3 id="memberModalTitle">維護帳號</h3>
+            <button type="button" class="modal-close" onclick="closeMemberModal()" aria-label="關閉">✕</button>
+        </div>
+        <div id="memberModalFields"></div>
+        <p class="modal-error" id="memberModalError"></p>
+        <button type="button" class="btn-primary" id="memberModalSave" onclick="submitMemberModal()">💾 儲存</button>
+        <button type="button" class="btn-secondary" id="memberModalReset" onclick="resetMemberModalPassword()">🔑 重設密碼</button>
+        <button type="button" class="btn-secondary" id="memberModalDelete" onclick="deleteMemberModalAccount()">🗑️ 刪除帳號</button>
+        <button type="button" class="btn-secondary" onclick="closeMemberModal()">✕ 取消</button>
+    </div>
+</div>
+
+<!-- 圖書編輯 modal（清單點擊開啟；儲存／報廢／標籤都在內） -->
+<div class="modal-overlay" id="bookModal">
+    <div class="modal-box">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h3 id="bookModalTitle">✏️ 編輯圖書</h3>
+            <button type="button" class="modal-close" onclick="closeBookModal()" aria-label="關閉">✕</button>
+        </div>
+        <div id="bookModalFields"></div>
+        <p class="modal-error" id="bookModalError"></p>
+        <button type="button" class="btn-primary" id="bookModalSave" onclick="submitBookModal()">💾 儲存</button>
+        <button type="button" class="btn-secondary" id="bookModalScrap" onclick="scrapBook(bookModalState ? bookModalState.barcode : '')">⚠️ 報廢</button>
+        <button type="button" class="btn-secondary" onclick="restoreBook(bookModalState ? bookModalState.barcode : '')">💡 取消報廢</button>
+        <button type="button" class="btn-secondary" onclick="printSingleLabel(bookModalState ? bookModalState.barcode : '')">🏷️ 標籤</button>
+        <button type="button" class="btn-secondary" onclick="closeBookModal()">✕ 取消</button>
+    </div>
+</div>
+
 <script>
     // 資料以伺服器端的 SQLite 為準；前端只保留本次操作所需的快取。
     let config = { classes: [] };
     let members = {};
+    let memberAccounts = [];
+    let memberSearchText = '';
     let bookDatabase = {};
     let logCount = 0;
     let html5QrCode, currentMode = '';
     let isLabelMode = false; // 控制報表顯示模式
     let scanQueue = Promise.resolve();
     let currentUser = { username: 'admin', role: 'admin' };
+    let currentLoanMember = null; // { className, userName, memberType }
 
     // --- 後端 API ---
     async function api(method, path, body) {
@@ -678,12 +817,14 @@
         const btn = e.target.closest('[data-act]');
         if (!btn) return;
         const d = btn.dataset;
-        if (d.act === 'edit') editBookInfo(d.id);
+        if (d.act === 'viewBook') openBookModal(String(d.id));
         else if (d.act === 'scrap') scrapBook(d.id);
         else if (d.act === 'restore') restoreBook(d.id);
         else if (d.act === 'delete') deleteBook(d.id);
         else if (d.act === 'label') printSingleLabel(d.id);
         else if (d.act === 'delMember') deleteMember(d.cls, d.member);
+        else if (d.act === 'delMemberAccount') deleteMemberAccount(Number(d.id), d.name);
+        else if (d.act === 'viewMember') openMemberModal(Number(d.id));
     });
 
     // 報表分頁：改由後端分頁，避免紀錄累積後一次傳輸／渲染上萬列
@@ -968,27 +1109,294 @@
             showApp();
             await maybeMigrateLegacy();
             await loadLoanRules();
-            applyMemberTypeDefault();
         } catch (err) {
             alert(err.message || "登入失敗");
         }
     }
 
     function applyMemberTypeDefault() {
-        const mt = document.getElementById('loanMemberType');
-        if (mt) mt.value = (currentUser && currentUser.role === 'student') ? 'student' : 'teacher';
+        // 成員輸入框已取代下拉選單，此函數保留以避免引用錯誤
     }
 
-    async function resetAdminPassword() {
-        const adminPwd = prompt('請輸入目前管理密碼（系統備援：1234）');
-        const newPwd = prompt('請輸入新密碼（至少 4 個字元）');
-        if (adminPwd === null || newPwd === null) return;
-        if (newPwd.length < 4) { alert('❌ 新密碼至少需 4 個字元'); return; }
-        try {
-            const res = await api('POST', '/api/password/reset', { adminPassword: adminPwd, newPassword: newPwd });
-            alert('✅ 密碼已重置，請使用新密碼登入');
-        } catch (err) { alert('❌ 密碼重置失敗：' + err.message); }
+    // --- 忘記密碼／救援 ---
+    function openForgotModal() {
+        document.getElementById('recoveryError').textContent = '';
+        document.getElementById('recoveryEmailHint').textContent = '';
+        document.getElementById('recoveryUsername').value = '';
+        document.getElementById('recoveryCodeInput').value = '';
+        document.getElementById('recoveryNewPwd').value = '';
+        document.getElementById('recoveryNewPwd2').value = '';
+        document.getElementById('localRecoveryCode').value = '';
+        document.getElementById('localNewPwd').value = '';
+        document.getElementById('localNewPwd2').value = '';
+        document.getElementById('emailStep1').style.display = 'block';
+        document.getElementById('emailStep2').style.display = 'none';
+        switchRecoveryTab('email');
+        document.getElementById('forgotModal').classList.add('open');
+        setTimeout(() => document.getElementById('recoveryUsername').focus(), 50);
     }
+
+    function closeForgotModal() {
+        document.getElementById('forgotModal').classList.remove('open');
+    }
+
+    function switchRecoveryTab(tab) {
+        document.getElementById('recoveryError').textContent = '';
+        const email = tab === 'email';
+        document.getElementById('tabEmail').classList.toggle('active', email);
+        document.getElementById('tabCode').classList.toggle('active', !email);
+        document.getElementById('recoveryEmailPane').style.display = email ? 'block' : 'none';
+        document.getElementById('recoveryCodePane').style.display = email ? 'none' : 'block';
+    }
+
+    function setRecoveryError(message) {
+        document.getElementById('recoveryError').textContent = message || '';
+    }
+
+    async function requestRecoveryCode() {
+        setRecoveryError('');
+        const username = document.getElementById('recoveryUsername').value.trim();
+        try {
+            const info = await api('GET', '/api/password/recovery-info?username=' + encodeURIComponent(username));
+            if (!info.hasEmail) {
+                setRecoveryError('此帳號沒有可用的救援 Email。請聯絡管理員設定，或改用「本機復原碼」。');
+                return;
+            }
+            if (!info.smtpConfigured) {
+                setRecoveryError('系統尚未設定 SMTP 寄件服務。請聯絡管理員，或改用「本機復原碼」。');
+                return;
+            }
+            const res = await api('POST', '/api/password/forgot/request', { username });
+            document.getElementById('emailStep1').style.display = 'none';
+            document.getElementById('emailStep2').style.display = 'block';
+            document.getElementById('recoverySentInfo').textContent =
+                `驗證碼已寄到 ${res.maskedEmail || info.maskedEmail}，10 分鐘內有效。`;
+            document.getElementById('recoveryCodeInput').focus();
+        } catch (err) {
+            setRecoveryError(err.message || '寄送失敗');
+        }
+    }
+
+    function backToEmailStep1() {
+        setRecoveryError('');
+        document.getElementById('emailStep2').style.display = 'none';
+        document.getElementById('emailStep1').style.display = 'block';
+        document.getElementById('recoveryCodeInput').value = '';
+        document.getElementById('recoveryNewPwd').value = '';
+        document.getElementById('recoveryNewPwd2').value = '';
+    }
+
+    async function verifyRecoveryCode() {
+        setRecoveryError('');
+        const username = document.getElementById('recoveryUsername').value.trim();
+        const code = document.getElementById('recoveryCodeInput').value.trim();
+        const pwd = document.getElementById('recoveryNewPwd').value;
+        const pwd2 = document.getElementById('recoveryNewPwd2').value;
+        if (!/^\d{6}$/.test(code)) { setRecoveryError('請輸入 6 位數驗證碼'); return; }
+        if (pwd.length < 4) { setRecoveryError('新密碼至少需 4 個字元'); return; }
+        if (pwd !== pwd2) { setRecoveryError('兩次輸入的新密碼不一致'); return; }
+        try {
+            await api('POST', '/api/password/forgot/verify', { username, code, newPassword: pwd });
+            alert('✅ 密碼已重設，請使用新密碼登入');
+            closeForgotModal();
+            document.getElementById('loginPwd').value = '';
+        } catch (err) {
+            setRecoveryError(err.message || '重設失敗');
+        }
+    }
+
+    async function submitLocalRecovery() {
+        setRecoveryError('');
+        const code = document.getElementById('localRecoveryCode').value.trim();
+        const pwd = document.getElementById('localNewPwd').value;
+        const pwd2 = document.getElementById('localNewPwd2').value;
+        if (!code) { setRecoveryError('請輸入本機復原碼'); return; }
+        if (pwd.length < 4) { setRecoveryError('新密碼至少需 4 個字元'); return; }
+        if (pwd !== pwd2) { setRecoveryError('兩次輸入的新密碼不一致'); return; }
+        try {
+            await api('POST', '/api/password/recovery-code', { code, newPassword: pwd });
+            alert('✅ 密碼已重設，請使用新密碼登入');
+            closeForgotModal();
+            document.getElementById('loginPwd').value = '';
+        } catch (err) {
+            setRecoveryError(err.message || '重設失敗');
+        }
+    }
+
+    // --- 通用輸入對話框（取代 prompt） ---
+    let inputDialogState = null;
+
+    let bookModalState = null;
+
+    function openBookModal(barcode) {
+        const book = bookDatabase[barcode] || { title: "", assetId: "", status: "在館", loanedTo: null, callNo: "", isbn: "" };
+        bookModalState = { barcode: barcode, book: book };
+        document.getElementById('bookModalTitle').textContent = '✏️ 編輯圖書';
+        document.getElementById('bookModalError').textContent = '';
+        renderBookModalFields();
+        document.getElementById('bookModal').classList.add('open');
+    }
+
+    function closeBookModal() {
+        bookModalState = null;
+        document.getElementById('bookModal').classList.remove('open');
+        document.getElementById('bookModalError').textContent = '';
+    }
+
+    function renderBookModalFields() {
+        const container = document.getElementById('bookModalFields');
+        const barcode = bookModalState ? bookModalState.barcode : '';
+        const book = (bookModalState && bookModalState.book) || {};
+        container.innerHTML = `
+            <label for="bfAssetId">財產編號</label>
+            <input type="text" id="bfAssetId" data-name="assetId" value="${escapeHtml(book.assetId || '')}">
+            <label for="bfTitle">書名</label>
+            <input type="text" id="bfTitle" data-name="title" value="${escapeHtml(book.title || '')}">
+            <label for="bfCallNo">索書號（call_no）</label>
+            <input type="text" id="bfCallNo" data-name="callNo" value="${escapeHtml(book.callNo || '')}">
+            <label for="bfIsbn">ISBN</label>
+            <input type="text" id="bfIsbn" data-name="isbn" value="${escapeHtml(book.isbn || '')}">
+        `;
+        const first = container.querySelector('input:not([readonly]), select, textarea');
+        if (first) {
+            setTimeout(() => {
+                first.focus();
+                if (first.tagName === 'INPUT' && first.type !== 'password') first.select();
+            }, 50);
+        }
+        // 根據狀態動態顯示「報廢」／「取消報廢」按鈕，兩者不同時出現
+        const isScrap = (book && book.status === '報廢');
+        document.getElementById('bookModalScrap').style.display = isScrap ? 'none' : '';
+        document.getElementById('bookModalScrap').nextElementSibling.style.display = isScrap ? '' : 'none';
+    }
+
+    async function submitBookModal() {
+        if (!bookModalState) return;
+        const barcode = bookModalState.barcode;
+        const values = {};
+        document.querySelectorAll('#bookModalFields [data-name]').forEach(el => { values[el.dataset.name] = el.value; });
+        const errorEl = document.getElementById('bookModalError');
+        errorEl.textContent = '';
+        if (!values.assetId || !values.assetId.trim()) { errorEl.textContent = '財產編號不可空白'; return; }
+        if (!values.title || !values.title.trim()) { errorEl.textContent = '書名不可空白'; return; }
+        try {
+            const res = await api('PUT', '/api/books/' + encodeURIComponent(barcode), {
+                title: values.title.trim(),
+                assetId: values.assetId.trim(),
+                callNo: (values.callNo || '').trim(),
+                isbn: (values.isbn || '').trim()
+            });
+            bookDatabase[barcode] = res.book;
+            closeBookModal();
+            renderBookTable();
+        } catch (err) { errorEl.textContent = '儲存失敗：' + err.message; }
+    }
+
+    function showInputDialog(options) {
+        return new Promise(function (resolve) {
+            const fields = options.fields || [];
+            inputDialogState = { resolve: resolve, validate: options.validate || null };
+            document.getElementById('inputDialogTitle').textContent = options.title || '請輸入';
+            const message = document.getElementById('inputDialogMessage');
+            message.textContent = options.message || '';
+            message.style.display = options.message ? 'block' : 'none';
+            document.getElementById('inputDialogSubmit').textContent = options.submitText || '確定';
+            document.getElementById('inputDialogError').textContent = '';
+            const container = document.getElementById('inputDialogFields');
+            container.innerHTML = fields.map(function (field, index) {
+                const id = 'inputDialogField' + index;
+                const name = escapeHtml(field.name || 'value');
+                const placeholder = escapeHtml(field.placeholder || '');
+                let control;
+                if (field.type === 'textarea') {
+                    control = `<textarea id="${id}" data-name="${name}" rows="4" placeholder="${placeholder}">${escapeHtml(field.value || '')}</textarea>`;
+                } else {
+                    const type = field.type || 'text';
+                    const readonly = field.readOnly ? ' readonly' : '';
+                    control = `<input id="${id}" data-name="${name}" type="${type}" value="${escapeHtml(field.value || '')}" placeholder="${placeholder}"${readonly}>`;
+                }
+                return `<label for="${id}">${escapeHtml(field.label || '')}</label>${control}`;
+            }).join('');
+            document.getElementById('inputDialog').classList.add('open');
+            setTimeout(function () {
+                const first = container.querySelector('input, textarea');
+                if (first) {
+                    first.focus();
+                    if (first.tagName === 'INPUT' && first.type !== 'password') first.select();
+                }
+            }, 50);
+        });
+    }
+
+    function submitInputDialog() {
+        if (!inputDialogState) return;
+        const values = {};
+        document.querySelectorAll('#inputDialogFields [data-name]').forEach(function (el) {
+            values[el.dataset.name] = el.value;
+        });
+        if (inputDialogState.validate) {
+            const error = inputDialogState.validate(values);
+            if (error) {
+                document.getElementById('inputDialogError').textContent = error;
+                return;
+            }
+        }
+        const resolve = inputDialogState.resolve;
+        inputDialogState = null;
+        document.getElementById('inputDialog').classList.remove('open');
+        resolve(values);
+    }
+
+    function closeInputDialog(value) {
+        const overlay = document.getElementById('inputDialog');
+        overlay.classList.remove('open');
+        if (!inputDialogState) return;
+        const resolve = inputDialogState.resolve;
+        inputDialogState = null;
+        resolve(value);
+    }
+
+    document.getElementById('inputDialog').addEventListener('click', function (e) {
+        if (e.target === this) closeInputDialog(null);
+    });
+    document.getElementById('inputDialog').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' && e.target.tagName === 'INPUT') {
+            e.preventDefault();
+            submitInputDialog();
+        }
+    });
+
+    // 點擊 modal 背景可關閉；Esc 優先關閉最上層的輸入對話框
+    document.getElementById('forgotModal').addEventListener('click', function (e) {
+        if (e.target === this) closeForgotModal();
+    });
+    document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Escape') return;
+        const memberModalEl = document.getElementById('memberModal');
+        if (memberModalEl.classList.contains('open')) {
+            closeMemberModal();
+            return;
+        }
+        const bookModalEl = document.getElementById('bookModal');
+        if (bookModalEl.classList.contains('open')) {
+            closeBookModal();
+            return;
+        }
+        if (document.getElementById('inputDialog').classList.contains('open')) {
+            closeInputDialog(null);
+            return;
+        }
+        closeForgotModal();
+    });
+
+    // 班級成員：點擊清單列開啟帳號維護 modal；新增從班級清單另開
+    document.getElementById('memberModal').addEventListener('click', function (e) {
+        if (e.target === this) closeMemberModal();
+    });
+    document.getElementById('bookModal').addEventListener('click', function (e) {
+        if (e.target === this) closeBookModal();
+    });
+
 
     function changeTab(pageId) {
         if (html5QrCode) stopScanner();
@@ -996,9 +1404,10 @@
         document.querySelectorAll('.nav button').forEach(b => b.classList.remove('active'));
         document.getElementById(pageId).classList.add('active');
         document.getElementById('btn-' + pageId).classList.add('active');
-        if(pageId === 'classPage') renderMemberTable();
+        if(pageId === 'classPage') { loadMemberAccounts(); populateMemberQRClass(); }
         if(pageId === 'managePage') renderBookTable();
         if(pageId === 'loanPage') focusGunInput();
+        if(pageId === 'configPage') { loadRecoverySettings(); }
         if(pageId === 'reportPage') {
             isLabelMode = false;
             document.getElementById('logReportSection').style.display = 'block';
@@ -1011,24 +1420,62 @@
 
     // --- 其他原有功能保持不變 ---
     function initDropdowns() {
-        const selects = ['loanClass', 'editClassSelect'];
+        const selects = ['editClassSelect'];
         selects.forEach(id => {
             const el = document.getElementById(id);
             if(el) el.innerHTML = config.classes.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
         });
-        document.getElementById('classListInput').value = config.classes.join(',');
-        filterMembers('loanMember', config.classes[0]);
-        const loanMemberType = document.getElementById('loanMemberType');
-        if (loanMemberType) {
-            loanMemberType.innerHTML = '<option value="student">🎒 學生</option><option value="teacher">🧑‍🏫 老師</option>';
-            loanMemberType.value = 'student';
+        // 班級成員管理專用：補上「教職員（未分班）」選項，帳號與成員整合在同一個清單中。
+        const staffSel = document.getElementById('editClassSelect');
+        if (staffSel) {
+            staffSel.innerHTML += '<option value="__staff__">👨‍🏫 教職員（未分班）</option>';
         }
+        document.getElementById('classListInput').value = config.classes.join(',');
     }
 
     function filterMembers(targetId, className) {
         const el = document.getElementById(targetId);
+        if (!el) return;
         const list = members[className] || [];
         el.innerHTML = list.length ? list.map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('') : '<option value="">(無成員)</option>';
+    }
+
+    // 成員輸入框：輸入成員條碼（member:班級:姓名）、姓名、帳號或 Email，自動比對成員
+    function onLoanMemberInput(value) {
+        const infoEl = document.getElementById('loanMemberInfo');
+        currentLoanMember = null;
+        infoEl.textContent = '';
+        if (!value || !value.trim()) return;
+        const v = value.trim();
+
+        // 支援成員條碼 QR：member:班級:姓名
+        if (v.startsWith('member:')) {
+            const parts = v.substring(7).split(':');
+            if (parts.length >= 2) {
+                currentLoanMember = { className: parts[0], userName: parts[1], memberType: 'student' };
+                infoEl.textContent = `✅ 已選擇：${currentLoanMember.userName}（${currentLoanMember.className}，學生）`;
+            } else {
+                infoEl.textContent = '⚠️ 條碼格式不正確';
+            }
+            return;
+        }
+
+        // 在 memberAccounts 中比對姓名／帳號／Email
+        const acct = (memberAccounts || []).find(a =>
+            (a.name || '').includes(v) ||
+            (a.username || '').includes(v) ||
+            (a.email || '').includes(v)
+        );
+        if (acct) {
+            currentLoanMember = {
+                className: acct.className || '',
+                userName: acct.name || '',
+                memberType: (acct.classId === null) ? 'teacher' : 'student'
+            };
+            infoEl.textContent = `✅ 已選擇：${currentLoanMember.userName}（${currentLoanMember.className || '未分班'}，${currentLoanMember.memberType === 'teacher' ? '老師' : '學生'}）`;
+        } else {
+            infoEl.textContent = '⚠️ 找不到成員';
+        }
     }
 
     function populateMemberQRClass() {
@@ -1040,7 +1487,7 @@
     }
 
     function initiateScan(mode) {
-        if (mode !== 'manage') { if (!document.getElementById('loanMember').value) { alert("⚠️ 請先選擇借閱人！"); return; } }
+        if (mode !== 'manage') { if (!currentLoanMember) { alert("⚠️ 請先選擇借閱人！"); return; } }
         currentMode = mode;
         lastScan = { code: '', time: 0 };
         clearScanStatus();
@@ -1133,13 +1580,11 @@
             const sep = rest.indexOf(':');
             const cls = sep >= 0 ? rest.slice(0, sep) : '';
             const name = sep >= 0 ? rest.slice(sep + 1) : rest;
-            const clsSel = document.getElementById('loanClass');
-            const memSel = document.getElementById('loanMember');
-            if (clsSel) clsSel.value = cls;
-            if (memSel) {
-                filterMembers('loanMember', cls);
-                setTimeout(() => { memSel.value = name; }, 60);
-            }
+            currentLoanMember = { className: cls, userName: name, memberType: 'student' };
+            const infoEl = document.getElementById('loanMemberInfo');
+            if (infoEl) infoEl.textContent = `✅ 已選擇：${name}（${cls}，學生）`;
+            const inputEl = document.getElementById('loanMemberInput');
+            if (inputEl) inputEl.value = code;
             showScanStatus(`✅ 已選擇成員：${name}`, 'ok');
             return;
         }
@@ -1158,7 +1603,7 @@
             await new Promise(resolve => setTimeout(resolve, 300));
             const b = bookDatabase[barcode];
             if (b && b.status === "報廢") alert("⚠️ 此書已報廢，如需編輯請先『取消報廢』。");
-            else await editBookInfo(barcode);
+            else await openBookModal(barcode);
             return;
         }
 
@@ -1172,9 +1617,9 @@
         if (!book) { showScanStatus("❌ 無此圖書，請先至「圖書管理」建檔", 'err'); return; }
         if (book.status === "報廢") { showScanStatus(`⚠️ 《${book.title}》已報廢，不可借還`, 'warn'); return; }
 
-        const userName = document.getElementById('loanMember').value;
-        const className = document.getElementById('loanClass').value;
-        const memberType = (document.getElementById('loanMemberType') || {}).value || 'student';
+        const userName = currentLoanMember ? currentLoanMember.userName : '';
+        const className = currentLoanMember ? currentLoanMember.className : '';
+        const memberType = currentLoanMember ? currentLoanMember.memberType : 'student';
         const action = mode === 'borrow' ? '借書' : '還書';
 
         if (mode === 'borrow' && book.loanedTo) {
@@ -1205,54 +1650,32 @@
 
     function renderBookTable() {
         const tbody = document.querySelector('#bookTable tbody');
-        tbody.innerHTML = Object.keys(bookDatabase).map(barcode => {
+        const barcodes = Object.keys(bookDatabase);
+        if (!barcodes.length) {
+            tbody.innerHTML = '<tr><td colspan="4" style="color:#666;">目前沒有圖書資料。</td></tr>';
+            return;
+        }
+        tbody.innerHTML = barcodes.map(barcode => {
             const b = bookDatabase[barcode];
-            let statusBadge = '', actionButtons = '';
+            let statusBadge = '';
             if(b.status === "報廢") {
                 statusBadge = `<span class="badge badge-scrap">報廢</span>`;
-                actionButtons = `<button class="btn-action btn-restore" data-act="restore" data-id="${escapeHtml(barcode)}">取消報廢</button>` +
-                                `<button class="btn-action btn-del" data-act="delete" data-id="${escapeHtml(barcode)}">永久刪除</button>`;
             } else {
                 statusBadge = b.loanedTo ? `<span class="badge badge-loaned">借出</span>` : `<span class="badge badge-in">在館</span>`;
-                actionButtons = `<button class="btn-action btn-edit" data-act="edit" data-id="${escapeHtml(barcode)}">編輯</button>` +
-                                `<button class="btn-action btn-scrap" data-act="scrap" data-id="${escapeHtml(barcode)}">報廢</button>` +
-                                `<button class="btn-action" style="color:var(--dark); border:1px solid var(--dark);" data-act="label" data-id="${escapeHtml(barcode)}">🏷️ 標籤</button>`;
             }
-            return `<tr><td>${escapeHtml(b.title)}</td><td>${escapeHtml(b.assetId)}</td><td>${escapeHtml(b.callNo || '')}</td><td>${escapeHtml(b.isbn || '')}</td><td>${statusBadge}</td><td>${actionButtons}</td></tr>`;
+            return `<tr data-act="viewBook" data-id="${barcode}" style="cursor:pointer;">
+            <td>${escapeHtml(b.title)}</td>
+            <td>${escapeHtml(b.assetId)}</td>
+            <td>${escapeHtml(b.isbn || '')}</td>
+            <td>${statusBadge}</td>
+        </tr>`;
         }).join('');
     }
 
-    async function editBookInfo(barcode) {
-        const book = bookDatabase[barcode] || { title: "", assetId: "", status: "在館", loanedTo: null, callNo: "", isbn: "" };
-        const newAssetId = prompt("財產編號:", book.assetId || barcode);
-        if (newAssetId === null) { refocusActiveInput(); return; }
-        const newTitle = prompt("書名:", book.title);
-        const newCallNo = prompt("索書號（call_no）:", book.callNo || "");
-        const newIsbn = prompt("ISBN:", book.isbn || "");
-        if (newTitle && newAssetId) {
-            try {
-                const res = await api('PUT', '/api/books/' + encodeURIComponent(barcode), {
-                    title: newTitle, assetId: newAssetId, callNo: newCallNo || '', isbn: newIsbn || ''
-                });
-                bookDatabase[barcode] = res.book;
-                renderBookTable();
-            } catch (err) {
-                alert("❌ 儲存失敗：" + err.message);
-            }
-        }
-        refocusActiveInput();
-    }
-
-    // 對話框關閉後把焦點還給條碼輸入框，讓條碼槍能繼續掃下一本
-    function refocusActiveInput() {
-        const page = document.querySelector('.page.active');
-        if (!page) return;
-        const el = page.querySelector('input[id$="BarcodeInput"]');
-        if (el) setTimeout(() => el.focus(), 50);
-    }
 
     async function scrapBook(id) {
-        if (!confirm(`⚠️ 確定要將《${bookDatabase[id].title}》標記為報廢？`)) return;
+        const book = bookDatabase[id];
+        if (!confirm(`⚠️ 確定要將《${book ? book.title : ''}》標記為報廢？`)) return;
         try {
             const res = await api('POST', '/api/books/' + encodeURIComponent(id) + '/scrap');
             bookDatabase[id] = res.book;
@@ -1261,7 +1684,8 @@
     }
 
     async function restoreBook(id) {
-        if (!confirm(`💡 確定要恢復《${bookDatabase[id].title}》？`)) return;
+        const book = bookDatabase[id];
+        if (!confirm(`💡 確定要恢復《${book ? book.title : ''}》？`)) return;
         try {
             const res = await api('POST', '/api/books/' + encodeURIComponent(id) + '/restore');
             bookDatabase[id] = res.book;
@@ -1270,7 +1694,8 @@
     }
 
     async function deleteBook(id) {
-        if (!confirm('🔥 確定要「永久刪除」？')) return;
+        const book = bookDatabase[id];
+        if (!confirm(`🔥 確定要「永久刪除」《${book ? book.title : ''}》？此動作不可復原。`)) return;
         try {
             await api('DELETE', '/api/books/' + encodeURIComponent(id));
             delete bookDatabase[id];
@@ -1278,29 +1703,246 @@
         } catch (err) { alert("❌ " + err.message); }
     }
 
-    async function addMember() {
-        const c = document.getElementById('editClassSelect').value;
-        const n = document.getElementById('newMemberName').value.trim();
-        if (!n) return;
-        try {
-            const res = await api('POST', '/api/members', { className: c, name: n });
-            members = res.memberDB;
-            document.getElementById('newMemberName').value = '';
-            renderMemberTable();
-            filterMembers('loanMember', document.getElementById('loanClass').value);
-        } catch (err) { alert("❌ " + err.message); }
+    // --- 班級成員帳號維護：清單點擊開 modal，新增／修改／儲存／重設／刪除都進 modal ---
+    let memberModalState = null;
+
+    function memberModalSetField(id, key, value) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (el.tagName === 'SELECT') {
+            el.value = value;
+        } else {
+            el.value = value === null || value === undefined ? '' : value;
+        }
     }
 
-    function renderMemberTable() { const tbody = document.querySelector('#memberTable tbody'); tbody.innerHTML = ''; for(let c in members) members[c].forEach(m => { tbody.innerHTML += `<tr><td>${escapeHtml(c)}</td><td>${escapeHtml(m)}</td><td><button class="btn-action btn-del" data-act="delMember" data-cls="${escapeHtml(c)}" data-member="${escapeHtml(m)}">刪除</button></td></tr>`; }); }
+    function renderMemberModalFields() {
+        const container = document.getElementById('memberModalFields');
+        const v = memberModalState.values || {};
+        const classOptions = [];
+        const isStaffEdit = memberModalState.mode === 'edit' && String(v.className || '') === '__staff__';
+        if (memberModalState.mode === 'add' || isStaffEdit) {
+            classOptions.push({ value: '__staff__', label: '\u{1F9D1}\u200D\u{1F3AF} \u6559\u8077\uff08\u672A\u5206\u8AB0\uff09' });
+        }
+        (config.classes || []).forEach(c => classOptions.push({ value: c, label: c }));
+        const classHtml = classOptions.map(o => `<option value="${o.value}"${String(v.className || '') === o.value ? ' selected' : ''}>${o.label}</option>`).join('');
+        const addRole = String(v.className || '') === '__staff__' ? 'teacher' : (v.role || 'student');
+        if (memberModalState.mode === 'add') {
+            container.innerHTML = `
+                <label for="mmClass">班級</label>
+                <select id="mmClass" data-name="className">${classHtml}</select>
+                <label for="mmName">姓名</label>
+                <input type="text" id="mmName" data-name="name" value="${escapeHtml(v.name || '')}">
+                <label for="mmEmail">Email</label>
+                <input type="email" id="mmEmail" data-name="email" value="${escapeHtml(v.email || '')}">
+                <label for="mmRole">角色</label>
+                <select id="mmRole" data-name="role">
+                    <option value="teacher"${String(addRole) === 'teacher' ? ' selected' : ''}>👨‍🏫 老師</option>
+                    <option value="student"${String(addRole) === 'student' ? ' selected' : ''}>🎒 學生</option>
+                </select>
+            `;
+        } else {
+            container.innerHTML = `
+                <label for="mmUsername">帳號</label>
+                <input type="text" id="mmUsername" data-name="username" value="${escapeHtml(v.username || '')}" readonly>
+                <label for="mmClass">班級</label>
+                <select id="mmClass" data-name="className">${classHtml}</select>
+                <label for="mmName">姓名</label>
+                <input type="text" id="mmName" data-name="name" value="${escapeHtml(v.name || '')}">
+                <label for="mmEmail">Email</label>
+                <input type="email" id="mmEmail" data-name="email" value="${escapeHtml(v.email || '')}">
+                <label for="mmRole">角色</label>
+                <select id="mmRole" data-name="role">
+                    <option value="teacher"${String(v.role || 'teacher') === 'teacher' ? ' selected' : ''}>\u{1F9D1}\u200D\u{1F3AF} 老師</option>
+                    <option value="student"${String(v.role || 'teacher') === 'student' ? ' selected' : ''}>\u{1F4B8} \u5B66\u751F</option>
+                </select>
+            `;
+        }
+        document.getElementById('memberModalSave').style.display = '';
+        const resetBtn = document.getElementById('memberModalReset');
+        const delBtn = document.getElementById('memberModalDelete');
+        resetBtn.style.display = memberModalState.mode === 'edit' ? '' : 'none';
+        delBtn.style.display = memberModalState.mode === 'edit' ? '' : 'none';
+        const first = container.querySelector('input:not([readonly]), select, textarea');
+        if (first) {
+            setTimeout(() => {
+                first.focus();
+                if (first.tagName === 'INPUT' && first.type !== 'password') first.select();
+            }, 50);
+        }
+    }
 
-    async function deleteMember(c, m) {
-        if (!confirm(`移除【${c}】的成員【${m}】？`)) return;
+    function openMemberModal(id) {
+        const a = (memberAccounts || []).find(x => String(x.id) === String(id));
+        if (!a) return;
+        const clsName = (a.classId === null) ? '__staff__' : (a.className || '');
+        memberModalState = {
+            mode: 'edit',
+            id: a.id,
+            values: {
+                name: a.name || '',
+                username: a.username || '',
+                email: a.email || '',
+                className: clsName,
+                role: (a.classId === null) ? (a.role || 'teacher') : 'student',
+            },
+        };
+        document.getElementById('memberModalTitle').textContent = '✏️ 編輯帳號';
+        document.getElementById('memberModalError').textContent = '';
+        renderMemberModalFields();
+        document.getElementById('memberModal').classList.add('open');
+    }
+
+    function openMemberModalAdd() {
+        const defaultClass = (config.classes || [])[0] || '__staff__';
+        memberModalState = { mode: 'add', id: null, values: { className: defaultClass, name: '', email: '', role: defaultClass === '__staff__' ? 'teacher' : 'student' } };
+        document.getElementById('memberModalTitle').textContent = '\u279C \u65B0\u589E\u6210\u50A8';
+        document.getElementById('memberModalError').textContent = '';
+        renderMemberModalFields();
+        document.getElementById('memberModal').classList.add('open');
+    }
+
+    function closeMemberModal() {
+        memberModalState = null;
+        document.getElementById('memberModal').classList.remove('open');
+        document.getElementById('memberModalError').textContent = '';
+    }
+
+    function submitMemberModal() {
+        if (!memberModalState) return;
+        const values = {};
+        document.querySelectorAll('#memberModalFields [data-name]').forEach(el => { values[el.dataset.name] = el.value; });
+        const errorEl = document.getElementById('memberModalError');
+        errorEl.textContent = '';
+        if (memberModalState.mode === 'add') {
+            if (!values.name || !values.name.trim()) { errorEl.textContent = '姓名不可空白'; return; }
+            return api('POST', '/api/members', {
+                staff: values.className === '__staff__',
+                className: values.className,
+                name: values.name.trim(),
+                email: values.email.trim(),
+                role: values.role || 'student'
+            }).then(res => {
+                closeMemberModal();
+                members = res.memberDB;
+                loadMemberAccounts();
+                alert('✅ 已建立成員：' + (res.account && res.account.username));
+            }).catch(err => { errorEl.textContent = '新增成員失敗：' + err.message; });
+        }
+        if (memberModalState.id) {
+            const role = values.role || 'teacher';
+            const className = values.className || '__staff__';
+            const classId = className === '__staff__' ? null : undefined;
+            return api('PUT', '/api/member-accounts/' + memberModalState.id, {
+                name: values.name,
+                email: values.email,
+                className: className,
+                classId: classId,
+                role: role
+            }).then(() => api('GET', '/api/state')).then(s => { applyState(s); return loadMemberAccounts(); })
+              .then(() => { alert('✅ 已修改帳號'); })
+              .catch(err => { errorEl.textContent = '儲存失敗：' + err.message; });
+        }
+    }
+
+    async function resetMemberModalPassword() {
+        if (!memberModalState || memberModalState.mode !== 'edit') return;
+        const result = await showInputDialog({
+            title: '🔑 重設帳號密碼',
+            message: '請輸入該帳號的新密碼。',
+            fields: [{ name: 'password', label: '新密碼（至少 4 個字元）', type: 'password' }],
+            submitText: '重設',
+            validate: function (v) { return v.password.length < 4 ? '密碼至少需 4 個字元' : ''; }
+        });
+        if (result === null) return;
         try {
-            const qs = new URLSearchParams({ className: c, name: m });
-            const res = await api('DELETE', '/api/members?' + qs.toString());
+            await api('POST', '/api/member-accounts/' + memberModalState.id + '/reset-password', { password: result.password });
+            await loadMemberAccounts();
+            alert('✅ 密碼已重設，該帳號的其他登入已被登出');
+        } catch (err) { alert('❌ 重設失敗：' + err.message); }
+    }
+
+    async function deleteMemberModalAccount() {
+        if (!memberModalState || memberModalState.mode !== 'edit') return;
+        const id = memberModalState.id;
+        const name = memberModalState.values.name;
+        if (!confirm(`確定要移除帳號【${name}】？班級成員會停用帳號，不刪除密碼與 Email。`)) return;
+        try {
+            const res = await api('DELETE', '/api/member-accounts/' + id);
+            closeMemberModal();
             members = res.memberDB;
+            await loadMemberAccounts();
+        } catch (err) { alert('❌ 刪除失敗：' + err.message); }
+    }
+
+    async function loadMemberAccounts() {
+        const tbody = document.querySelector('#memberTable tbody');
+        if (!tbody) return;
+        tbody.innerHTML = '<tr><td colspan="5" style="color:#666;">載入中…</td></tr>';
+        try {
+            const data = await api('GET', '/api/member-accounts');
+            memberAccounts = data.accounts || [];
             renderMemberTable();
-            filterMembers('loanMember', document.getElementById('loanClass').value);
+        } catch (err) {
+            tbody.innerHTML = '<tr><td colspan="5" style="color:#c62828;">載入失敗：${escapeHtml(err.message)}</td></tr>';
+        }
+    }
+
+    function renderMemberTable() {
+        const tbody = document.querySelector('#memberTable tbody');
+        if (!tbody) return;
+        if (!memberAccounts.length) {
+            tbody.innerHTML = '<tr><td colspan="5" style="color:#666;">尚無帳號資料。請先選擇班級並輸入姓名新增。</td></tr>';
+            return;
+        }
+        tbody.innerHTML = memberAccounts
+            .filter(a => {
+                const q = (memberSearchText || '').toLowerCase();
+                if (!q) return true;
+                const hay = [a.className || '', a.name || '', a.username || '', a.email || ''].join(' ').toLowerCase();
+                return hay.includes(q);
+            })
+            .map(a => {
+            const cls = a.classId === null ? '👨‍🏫 教職員（未分班）' : (a.className || '');
+            const clsEsc = escapeHtml(cls);
+            const nameEsc = escapeHtml(a.name || '');
+            const userEsc = escapeHtml(a.username || '');
+            const emailEsc = escapeHtml(a.email || '') || '未設定';
+            const roleEsc = escapeHtml(a.classId === null ? roleLabel(a.role || 'teacher') : '學生');
+            return `<tr data-act="viewMember" data-id="${a.id}" style="cursor:pointer;">
+            <td>${clsEsc}</td>
+            <td>${nameEsc}</td>
+            <td>${userEsc}</td>
+            <td>${emailEsc}</td>
+            <td>${roleEsc}</td>
+        </tr>`;
+        }).join('');
+    }
+
+    async function resetMemberAccountPassword(id) {
+        const result = await showInputDialog({
+            title: '🔑 重設帳號密碼',
+            message: '請輸入該帳號的新密碼。',
+            fields: [{ name: 'password', label: '新密碼（至少 4 個字元）', type: 'password' }],
+            submitText: '重設',
+            validate: function (v) {
+                return v.password.length < 4 ? '密碼至少需 4 個字元' : '';
+            }
+        });
+        if (result === null) return;
+        try {
+            await api('POST', '/api/member-accounts/' + id + '/reset-password', { password: result.password });
+            await loadMemberAccounts();
+            alert('✅ 密碼已重設，該帳號的其他登入已被登出');
+        } catch (err) { alert('❌ 重設失敗：' + err.message); }
+    }
+
+    async function deleteMemberAccount(id, name) {
+        if (!confirm(`移除帳號【${name}】？\n班級成員會停用帳號，不刪除密碼與 Email。`)) return;
+        try {
+            const res = await api('DELETE', '/api/member-accounts/' + id);
+            members = res.memberDB;
+            await loadMemberAccounts();
         } catch (err) { alert("❌ " + err.message); }
     }
 
@@ -1313,6 +1955,64 @@
             alert("✅ 密碼已更新");
         } catch (err) { alert("❌ " + err.message); }
     }
+
+    async function loadRecoverySettings() {
+        try {
+            const data = await api('GET', '/api/settings/recovery');
+            document.getElementById('adminRecoveryEmail').value = data.adminRecoveryEmail || '';
+            const smtp = data.smtp || {};
+            document.getElementById('smtpHost').value = smtp.host || '';
+            document.getElementById('smtpPort').value = smtp.port || 587;
+            document.getElementById('smtpSecurity').value = smtp.security || 'starttls';
+            document.getElementById('smtpUsername').value = smtp.username || '';
+            document.getElementById('smtpFrom').value = smtp.from || '';
+            document.getElementById('smtpPassword').value = '';
+            document.getElementById('smtpPassword').placeholder = smtp.hasPassword ? '已設定（留空＝不變更）' : '尚未設定';
+        } catch (err) {
+            console.warn('載入救援設定失敗：', err.message);
+        }
+    }
+
+    async function saveRecoverySettings() {
+        const smtp = {
+            host: document.getElementById('smtpHost').value.trim(),
+            port: Number(document.getElementById('smtpPort').value) || 587,
+            security: document.getElementById('smtpSecurity').value,
+            username: document.getElementById('smtpUsername').value.trim(),
+            password: document.getElementById('smtpPassword').value,
+            from: document.getElementById('smtpFrom').value.trim()
+        };
+        try {
+            await api('PUT', '/api/settings/recovery', {
+                adminRecoveryEmail: document.getElementById('adminRecoveryEmail').value.trim(),
+                smtp
+            });
+            alert('✅ 救援設定已儲存');
+            await loadRecoverySettings();
+        } catch (err) {
+            alert('❌ 儲存失敗：' + err.message);
+        }
+    }
+
+    function roleLabel(role) {
+        return ({ admin: '系統管理員', root: '系統 Root', teacher: '老師', student: '學生' })[role] || role;
+    }
+
+    async function regenerateRecoveryCode() {
+        if (!confirm('重新產生後，舊的本機復原碼會立即失效。確定要繼續嗎？')) return;
+        try {
+            const res = await api('POST', '/api/recovery-code/regenerate');
+            await showInputDialog({
+                title: '新的本機復原碼',
+                message: '請立刻抄下或複製。檔案位置：' + (res.filename || 'data/recovery_code.txt'),
+                fields: [{ name: 'code', label: '復原碼', value: res.code, readOnly: true }],
+                submitText: '我已抄下'
+            });
+        } catch (err) {
+            alert('❌ 產生失敗：' + err.message);
+        }
+    }
+
 
     async function updateClassList() {
         const l = document.getElementById('classListInput').value;
@@ -1379,10 +2079,10 @@
     async function reserveBook(barcode) {
         barcode = (barcode || '').trim();
         if (!barcode) { alert('❌ 請先輸入或掃描欲預約的條碼'); return false; }
-        const className = document.getElementById('loanClass') ? document.getElementById('loanClass').value : '';
-        const memberType = (document.getElementById('loanMemberType') || { value: 'student' }).value || 'student';
-        const userName = (document.getElementById('loanMember') || { value: '' }).value || '';
-        if (!userName) { alert('❌ 請先選擇成員'); return false; }
+        if (!currentLoanMember) { alert('❌ 請先選擇成員'); return false; }
+        const className = currentLoanMember.className;
+        const memberType = currentLoanMember.memberType;
+        const userName = currentLoanMember.userName;
         try {
             const res = await api('POST', '/api/reservations', { barcode, className, userName, memberType });
             showScanStatus(`✅ 已為 ${userName} 預約《${res.reservation.title}》`, 'ok');
@@ -1404,8 +2104,17 @@
     }
 
     async function batchReturnBooks() {
-        const raw = prompt('請輸入要批次還書的條碼（以逗號、空白或換行分隔）');
-        const barcodes = (raw || '').split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
+        const result = await showInputDialog({
+            title: '📥 批次還書',
+            message: '請輸入或貼上多個條碼，以逗號、空白或換行分隔。',
+            fields: [{ name: 'barcodes', label: '條碼清單', type: 'textarea', placeholder: '例如：A001, A002\nA003' }],
+            submitText: '下一步',
+            validate: function (v) {
+                return v.barcodes.trim() ? '' : '請輸入至少一個條碼';
+            }
+        });
+        if (result === null) return;
+        const barcodes = result.barcodes.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
         if (!barcodes.length) return;
         if (!confirm(`確定要批次還書 ${barcodes.length} 筆嗎？`)) return;
         try {
@@ -1416,11 +2125,9 @@
 
     function generateCommandQR() {
         const barcodeInput = document.getElementById('cmdQRBarcode');
-        const modeSelect = document.getElementById('cmdQRMode');
         const barcode = (barcodeInput && barcodeInput.value) || '';
-        const mode = (modeSelect && modeSelect.value) || 'borrow';
-        if (!barcode) { showScanStatus('❌ 請先輸入欲執行的條碼', 'err'); return; }
-        const text = mode + ':' + barcode;
+        if (!barcode) { showScanStatus('❌ 請先輸入欲執行的條碼（如 borrow:12345）', 'err'); return; }
+        const text = barcode.startsWith('borrow:') || barcode.startsWith('return:') ? barcode : 'borrow:' + barcode;
         const box = document.getElementById('commandQRPreview');
         box.innerHTML = '<div id="cmdQRCanvas" style="display:inline-block;"></div>';
         const el = document.getElementById('cmdQRCanvas');
@@ -1449,19 +2156,20 @@
     function printMemberQRList() {
         const sel = document.getElementById('memberQRClass');
         const className = sel ? sel.value : '';
-        const members = members[className] || [];
-        if (!className || !members.length) { alert('❌ 請先選擇班級（或該班級無成員）'); return; }
+        const memberList = (members && members[className]) || [];
+        if (!className || !memberList.length) { alert('❌ 請先選擇班級（或該班級無成員）'); return; }
         const area = document.getElementById('singleLabelArea');
-        area.innerHTML = '';
-        members.forEach(name => {
+        area.innerHTML = '<div class="qr-label-grid"></div>';
+        const grid = area.querySelector('.qr-label-grid');
+        memberList.forEach(name => {
             const card = document.createElement('div');
             card.className = 'qr-card';
-            card.style.cssText = 'max-width:200px; margin:0 auto; padding:12px;';
-            card.innerHTML = `<div style="font-size:14px; font-weight:bold;">${escapeHtml(name)}</div>` +
+            card.style.cssText = 'width:52mm; margin:0 auto;';
+            card.innerHTML = `<div style="font-size:14px; font-weight:bold; margin-bottom:4px;">${escapeHtml(name)}</div>` +
                              `<div class="qr-code-img" data-mname="${escapeHtml(name)}" data-mcls="${escapeHtml(className)}"></div>`;
-            area.appendChild(card);
+            grid.appendChild(card);
         });
-        area.querySelectorAll('.qr-code-img').forEach(el => {
+        grid.querySelectorAll('.qr-code-img').forEach(el => {
             const name = el.getAttribute('data-mname');
             new QRCode(el, { text: 'member:' + className + ':' + name, width: 200, height: 200, colorDark: "#000000", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.H });
         });
@@ -1646,16 +2354,39 @@
     }
 
     async function searchBooks() {
-        const tbody = document.getElementById('bookSearchResults');
-        const keyword = (document.getElementById('bookSearchKeyword') ? document.getElementById('bookSearchKeyword').value : '') || '';
-        tbody.innerHTML = '<tr><td colspan="5" style="color:#666;">載入中…</td></tr>';
+        const tbody = document.getElementById('bookManageResults');
+        const keyword = (document.getElementById('bookManageSearchInput') ? document.getElementById('bookManageSearchInput').value : '') || '';
+        tbody.innerHTML = '<tr><td colspan="4" style="color:#666;">載入中…</td></tr>';
         try {
             const data = await api('GET', '/api/books/search?keyword=' + encodeURIComponent(keyword));
             const list = data.books || [];
             tbody.innerHTML = list.length
-                ? list.map(b => `<tr><td>${escapeHtml(b.title)}</td><td>${escapeHtml(b.assetId)}</td><td>${escapeHtml(b.isbn || '')}</td><td>${escapeHtml(String(b.copyCount))}</td><td>${escapeHtml(String(b.available))}</td></tr>`).join('')
-                : '<tr><td colspan="5" style="color:#666;">查無結果</td></tr>';
-        } catch (err) { tbody.innerHTML = `<tr><td colspan="5" style="color:#c62828;">搜尋失敗：${escapeHtml(err.message)}</td></tr>`; }
+                ? list.map(b => {
+                    const copies = b.copies || [];
+                    const barcode = copies[0] ? copies[0].barcode : b.assetId;
+                    bookDatabase[barcode] = {
+                        title: b.title,
+                        assetId: b.assetId,
+                        callNo: b.callNo || '',
+                        isbn: b.isbn || '',
+                        status: copies.length ? copies[0].status : '在館',
+                        loanedTo: copies.length ? copies[0].loanedTo : null,
+                    };
+                    const scrap = copies.filter(c => c.status === '報廢').length;
+                    const loaned = copies.filter(c => c.loanedTo).length;
+                    let statusHtml = '';
+                    if (scrap === copies.length) statusHtml = '<span class="badge badge-scrap">報廢</span>';
+                    else if (loaned === copies.length) statusHtml = '<span class="badge badge-loaned">借出</span>';
+                    else if (loaned > 0) statusHtml = '<span class="badge badge-loaned">部分借出</span>';
+                    else statusHtml = '<span class="badge badge-in">在館</span>';
+                    return `<tr data-act="viewBook" data-id="${escapeHtml(barcode)}" style="cursor:pointer;">
+                    <td>${escapeHtml(b.title)}</td>
+                    <td>${escapeHtml(b.assetId)}</td>
+                    <td>${escapeHtml(b.isbn || '')}</td>
+                    <td>${statusHtml}</td></tr>`;
+                }).join('')
+                : '<tr><td colspan="4" style="color:#666;">查無結果</td></tr>';
+        } catch (err) { tbody.innerHTML = `<tr><td colspan="4" style="color:#c62828;">搜尋失敗：${escapeHtml(err.message)}</td></tr>`; }
     }
 
     // 啟動：先向後端取得資料；未登入則停留在登入頁

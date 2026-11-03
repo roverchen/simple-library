@@ -25,14 +25,8 @@ CREATE TABLE IF NOT EXISTS classes (
     active     INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1))
 );
 
--- 班級成員。同一班級內姓名不可重複。
-CREATE TABLE IF NOT EXISTS members (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    class_id   INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
-    name       TEXT    NOT NULL,
-    created_at TEXT    NOT NULL DEFAULT (datetime('now', 'localtime')),
-    UNIQUE (class_id, name)
-);
+-- 班級成員與系統帳號整併於 users 表（class_id 有值＝班級成員）。
+-- 舊版 members 表已由 server.py 的遷移程式併入 users 並移除。
 
 -- 館藏。barcode 為條碼槍讀到的值，也是主鍵。
 -- status：在館 / 借出 / 遺失 / 修繕中 / 爭議中 / 報廢
@@ -103,16 +97,38 @@ CREATE TABLE IF NOT EXISTS sessions (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- 系統帳號（多帳號基礎：系統管理員、老師、學生）。
+-- 系統帳號，同時也是班級成員名單（單一資料表）。
+-- class_id 有值＝班級成員（學生）；class_id 為 NULL＝教職員／系統管理員。
+-- name 為顯示用姓名；email 供「忘記密碼」寄送驗證碼使用，可留空。
 CREATE TABLE IF NOT EXISTS users (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     username   TEXT    NOT NULL UNIQUE,
+    name       TEXT    NOT NULL DEFAULT '',
     password   TEXT    NOT NULL,
     role       TEXT    NOT NULL DEFAULT 'teacher',
     class_id   INTEGER REFERENCES classes(id) ON DELETE SET NULL,
+    email      TEXT    NOT NULL DEFAULT '',
     active     INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions (expires_at);
+CREATE INDEX IF NOT EXISTS idx_users_class_name ON users (class_id, name);
+
+-- 忘記密碼驗證碼。只存雜湊，不存明碼；每次請求覆蓋舊碼。
+-- target_key：'admin'（共用管理員）或 'user:<users.id>'
+CREATE TABLE IF NOT EXISTS password_resets (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_key   TEXT    NOT NULL,
+    target_email TEXT    NOT NULL DEFAULT '',
+    code_hash    TEXT    NOT NULL,
+    created_at   REAL    NOT NULL,
+    expires_at   REAL    NOT NULL,
+    attempts     INTEGER NOT NULL DEFAULT 0,
+    used         INTEGER NOT NULL DEFAULT 0,
+    requester_ip TEXT    NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_password_resets_target
+    ON password_resets (target_key, used, expires_at);

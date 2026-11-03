@@ -38,6 +38,23 @@
         .btn-add-book { background-color: var(--dark); grid-column: span 2; }
         .btn-cancel { background-color: #666; width: 100%; margin-top: 15px; padding: 15px; border: none; border-radius: 10px; color: white; font-weight: bold; }
 
+        /* 忘記密碼／救援 modal */
+        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 1000; padding: 14px; align-items: center; justify-content: center; }
+        .modal-overlay.open { display: flex; }
+        .modal-box { background: #fff; border-radius: 12px; padding: 18px; width: 100%; max-width: 420px; max-height: 92vh; overflow: auto; box-shadow: 0 10px 40px rgba(0,0,0,.25); }
+        .modal-box h3 { margin: 0; }
+        .modal-close { background: none; border: none; font-size: 1.4rem; cursor: pointer; color: #666; line-height: 1; }
+        .modal-tabs { display: flex; gap: 8px; margin: 12px 0; }
+        .modal-tabs button { flex: 1; padding: 10px; border: 1px solid #ddd; background: #f7f7f7; border-radius: 8px; cursor: pointer; font-weight: bold; color: #555; }
+        .modal-tabs button.active { background: var(--secondary); border-color: var(--secondary); color: #fff; }
+        .modal-box label { display: block; margin: 10px 0 6px; font-weight: bold; font-size: .9rem; }
+        .modal-box textarea { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; font-family: inherit; resize: vertical; }
+        .modal-box input[readonly] { background: #f5f5f5; font-family: monospace; letter-spacing: .04em; }
+        .modal-box .btn-primary { width: 100%; margin-top: 14px; padding: 12px; background: var(--primary); color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: bold; cursor: pointer; }
+        .modal-box .btn-secondary { width: 100%; margin-top: 8px; padding: 10px; background: #eee; color: #444; border: none; border-radius: 8px; cursor: pointer; }
+        .modal-hint { color: #666; font-size: .82rem; line-height: 1.6; white-space: pre-line; }
+        .modal-error { color: #c62828; font-size: .88rem; line-height: 1.5; min-height: 1.2em; }
+
         .input-group { margin: 15px 0; display: flex; flex-direction: column; gap: 10px; }
         input, select { padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; }
 
@@ -69,8 +86,10 @@
     <div id="loginPage" class="page active" style="max-width: 360px; margin: 40px auto;">
         <h3 style="text-align:center;">🔐 幼兒園圖書系統</h3>
         <div class="input-group" style="flex-direction: column;">
-            <input type="password" id="loginPwd" placeholder="管理密碼" autocomplete="current-password">
+            <input type="text" id="loginUsername" placeholder="帳號／姓名／Email（留空=管理員）" autocomplete="username">
+            <input type="password" id="loginPwd" placeholder="密碼" autocomplete="current-password">
             <button onclick="handleLogin()" class="btn-main btn-borrow" style="padding: 14px;">登入</button>
+            <button onclick="openForgotModal()" style="background:#666; color:white; padding:10px; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">🔑 忘記密碼？</button>
         </div>
         <p id="loginError" style="color:#c62828; line-height:1.6;"></p>
     </div>
@@ -132,6 +151,66 @@
                 <tbody></tbody>
             </table>
         </div>
+    </div>
+</div>
+
+<!-- 忘記密碼／救援 modal -->
+<div class="modal-overlay" id="forgotModal">
+    <div class="modal-box">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h3>🔑 忘記密碼</h3>
+            <button type="button" class="modal-close" onclick="closeForgotModal()" aria-label="關閉">✕</button>
+        </div>
+        <p class="modal-hint">共用管理員（帳號留空登入）請將帳號欄位留空。</p>
+        <div class="modal-tabs">
+            <button type="button" id="tabEmail" class="active" onclick="switchRecoveryTab('email')">Email 驗證碼</button>
+            <button type="button" id="tabCode" onclick="switchRecoveryTab('code')">本機復原碼</button>
+        </div>
+        <div id="recoveryEmailPane">
+            <div id="emailStep1">
+                <label for="recoveryUsername">帳號／姓名／Email（共用管理員請留空）</label>
+                <input type="text" id="recoveryUsername" autocomplete="username">
+                <button type="button" class="btn-primary" onclick="requestRecoveryCode()">📧 寄送驗證碼</button>
+                <p class="modal-hint" id="recoveryEmailHint"></p>
+            </div>
+            <div id="emailStep2" style="display:none;">
+                <p class="modal-hint" id="recoverySentInfo"></p>
+                <label for="recoveryCodeInput">6 位數驗證碼</label>
+                <input type="text" id="recoveryCodeInput" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
+                <label for="recoveryNewPwd">新密碼（至少 4 碼）</label>
+                <input type="password" id="recoveryNewPwd" autocomplete="new-password">
+                <label for="recoveryNewPwd2">再次輸入新密碼</label>
+                <input type="password" id="recoveryNewPwd2" autocomplete="new-password">
+                <button type="button" class="btn-primary" onclick="verifyRecoveryCode()">✅ 重設密碼</button>
+                <button type="button" class="btn-secondary" onclick="backToEmailStep1()">← 返回</button>
+            </div>
+        </div>
+        <div id="recoveryCodePane" style="display:none;">
+            <p class="modal-hint">請在伺服器主機開啟 <code>data/recovery_code.txt</code>，輸入裡面的復原碼。此方式只能重設共用管理員密碼。</p>
+            <label for="localRecoveryCode">本機復原碼</label>
+            <input type="text" id="localRecoveryCode" autocomplete="off">
+            <label for="localNewPwd">新密碼（至少 4 碼）</label>
+            <input type="password" id="localNewPwd" autocomplete="new-password">
+            <label for="localNewPwd2">再次輸入新密碼</label>
+            <input type="password" id="localNewPwd2" autocomplete="new-password">
+            <button type="button" class="btn-primary" onclick="submitLocalRecovery()">✅ 重設密碼</button>
+        </div>
+        <p class="modal-error" id="recoveryError"></p>
+    </div>
+</div>
+
+<!-- 通用輸入對話框（取代 prompt） -->
+<div class="modal-overlay" id="inputDialog">
+    <div class="modal-box">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h3 id="inputDialogTitle">請輸入</h3>
+            <button type="button" class="modal-close" onclick="closeInputDialog(null)" aria-label="關閉">✕</button>
+        </div>
+        <p class="modal-hint" id="inputDialogMessage" style="display:none;"></p>
+        <div id="inputDialogFields"></div>
+        <p class="modal-error" id="inputDialogError"></p>
+        <button type="button" class="btn-primary" id="inputDialogSubmit" onclick="submitInputDialog()">確定</button>
+        <button type="button" class="btn-secondary" onclick="closeInputDialog(null)">取消</button>
     </div>
 </div>
 
@@ -199,10 +278,11 @@
 
     async function handleLogin() {
         const pwd = document.getElementById('loginPwd').value;
+        const uname = (document.getElementById('loginUsername') || {}).value || '';
         const errorEl = document.getElementById('loginError');
         errorEl.textContent = '';
         try {
-            await api('POST', '/api/login', { password: pwd });
+            await api('POST', '/api/login', { username: uname, password: pwd });
             const state = await api('GET', '/api/state');
             applyState(state);
             document.getElementById('loginPwd').value = '';
@@ -216,6 +296,193 @@
         try { await api('POST', '/api/logout'); } catch (_) { /* 忽略 */ }
         location.reload();
     }
+
+    // --- 忘記密碼／救援 ---
+    function openForgotModal() {
+        document.getElementById('recoveryError').textContent = '';
+        document.getElementById('recoveryUsername').value = '';
+        document.getElementById('recoveryCodeInput').value = '';
+        document.getElementById('recoveryNewPwd').value = '';
+        document.getElementById('recoveryNewPwd2').value = '';
+        document.getElementById('localRecoveryCode').value = '';
+        document.getElementById('localNewPwd').value = '';
+        document.getElementById('localNewPwd2').value = '';
+        document.getElementById('emailStep1').style.display = 'block';
+        document.getElementById('emailStep2').style.display = 'none';
+        switchRecoveryTab('email');
+        document.getElementById('forgotModal').classList.add('open');
+    }
+
+    function closeForgotModal() {
+        document.getElementById('forgotModal').classList.remove('open');
+    }
+
+    function switchRecoveryTab(tab) {
+        document.getElementById('recoveryError').textContent = '';
+        const email = tab === 'email';
+        document.getElementById('tabEmail').classList.toggle('active', email);
+        document.getElementById('tabCode').classList.toggle('active', !email);
+        document.getElementById('recoveryEmailPane').style.display = email ? 'block' : 'none';
+        document.getElementById('recoveryCodePane').style.display = email ? 'none' : 'block';
+    }
+
+    function setRecoveryError(message) {
+        document.getElementById('recoveryError').textContent = message || '';
+    }
+
+    async function requestRecoveryCode() {
+        setRecoveryError('');
+        const username = document.getElementById('recoveryUsername').value.trim();
+        try {
+            const info = await api('GET', '/api/password/recovery-info?username=' + encodeURIComponent(username));
+            if (!info.hasEmail) {
+                setRecoveryError('此帳號沒有可用的救援 Email，請聯絡管理員或改用本機復原碼。');
+                return;
+            }
+            if (!info.smtpConfigured) {
+                setRecoveryError('系統尚未設定 SMTP，請聯絡管理員或改用本機復原碼。');
+                return;
+            }
+            const res = await api('POST', '/api/password/forgot/request', { username });
+            document.getElementById('emailStep1').style.display = 'none';
+            document.getElementById('emailStep2').style.display = 'block';
+            document.getElementById('recoverySentInfo').textContent =
+                `驗證碼已寄到 ${res.maskedEmail || info.maskedEmail}，10 分鐘內有效。`;
+        } catch (err) {
+            setRecoveryError(err.message || '寄送失敗');
+        }
+    }
+
+    function backToEmailStep1() {
+        setRecoveryError('');
+        document.getElementById('emailStep2').style.display = 'none';
+        document.getElementById('emailStep1').style.display = 'block';
+    }
+
+    async function verifyRecoveryCode() {
+        setRecoveryError('');
+        const username = document.getElementById('recoveryUsername').value.trim();
+        const code = document.getElementById('recoveryCodeInput').value.trim();
+        const pwd = document.getElementById('recoveryNewPwd').value;
+        const pwd2 = document.getElementById('recoveryNewPwd2').value;
+        if (!/^\d{6}$/.test(code)) { setRecoveryError('請輸入 6 位數驗證碼'); return; }
+        if (pwd.length < 4) { setRecoveryError('新密碼至少需 4 個字元'); return; }
+        if (pwd !== pwd2) { setRecoveryError('兩次輸入的新密碼不一致'); return; }
+        try {
+            await api('POST', '/api/password/forgot/verify', { username, code, newPassword: pwd });
+            alert('✅ 密碼已重設，請使用新密碼登入');
+            closeForgotModal();
+            document.getElementById('loginPwd').value = '';
+        } catch (err) {
+            setRecoveryError(err.message || '重設失敗');
+        }
+    }
+
+    async function submitLocalRecovery() {
+        setRecoveryError('');
+        const code = document.getElementById('localRecoveryCode').value.trim();
+        const pwd = document.getElementById('localNewPwd').value;
+        const pwd2 = document.getElementById('localNewPwd2').value;
+        if (!code) { setRecoveryError('請輸入本機復原碼'); return; }
+        if (pwd.length < 4) { setRecoveryError('新密碼至少需 4 個字元'); return; }
+        if (pwd !== pwd2) { setRecoveryError('兩次輸入的新密碼不一致'); return; }
+        try {
+            await api('POST', '/api/password/recovery-code', { code, newPassword: pwd });
+            alert('✅ 密碼已重設，請使用新密碼登入');
+            closeForgotModal();
+            document.getElementById('loginPwd').value = '';
+        } catch (err) {
+            setRecoveryError(err.message || '重設失敗');
+        }
+    }
+
+    // --- 通用輸入對話框（取代 prompt） ---
+    let inputDialogState = null;
+
+    function showInputDialog(options) {
+        return new Promise(function (resolve) {
+            const fields = options.fields || [];
+            inputDialogState = { resolve: resolve, validate: options.validate || null };
+            document.getElementById('inputDialogTitle').textContent = options.title || '請輸入';
+            const message = document.getElementById('inputDialogMessage');
+            message.textContent = options.message || '';
+            message.style.display = options.message ? 'block' : 'none';
+            document.getElementById('inputDialogSubmit').textContent = options.submitText || '確定';
+            document.getElementById('inputDialogError').textContent = '';
+            const container = document.getElementById('inputDialogFields');
+            container.innerHTML = fields.map(function (field, index) {
+                const id = 'inputDialogField' + index;
+                const name = escapeHtml(field.name || 'value');
+                const placeholder = escapeHtml(field.placeholder || '');
+                let control;
+                if (field.type === 'textarea') {
+                    control = `<textarea id="${id}" data-name="${name}" rows="4" placeholder="${placeholder}">${escapeHtml(field.value || '')}</textarea>`;
+                } else {
+                    const type = field.type || 'text';
+                    const readonly = field.readOnly ? ' readonly' : '';
+                    control = `<input id="${id}" data-name="${name}" type="${type}" value="${escapeHtml(field.value || '')}" placeholder="${placeholder}"${readonly}>`;
+                }
+                return `<label for="${id}">${escapeHtml(field.label || '')}</label>${control}`;
+            }).join('');
+            document.getElementById('inputDialog').classList.add('open');
+            setTimeout(function () {
+                const first = container.querySelector('input, textarea');
+                if (first) {
+                    first.focus();
+                    if (first.tagName === 'INPUT' && first.type !== 'password') first.select();
+                }
+            }, 50);
+        });
+    }
+
+    function submitInputDialog() {
+        if (!inputDialogState) return;
+        const values = {};
+        document.querySelectorAll('#inputDialogFields [data-name]').forEach(function (el) {
+            values[el.dataset.name] = el.value;
+        });
+        if (inputDialogState.validate) {
+            const error = inputDialogState.validate(values);
+            if (error) {
+                document.getElementById('inputDialogError').textContent = error;
+                return;
+            }
+        }
+        const resolve = inputDialogState.resolve;
+        inputDialogState = null;
+        document.getElementById('inputDialog').classList.remove('open');
+        resolve(values);
+    }
+
+    function closeInputDialog(value) {
+        document.getElementById('inputDialog').classList.remove('open');
+        if (!inputDialogState) return;
+        const resolve = inputDialogState.resolve;
+        inputDialogState = null;
+        resolve(value);
+    }
+
+    document.getElementById('inputDialog').addEventListener('click', function (e) {
+        if (e.target === this) closeInputDialog(null);
+    });
+    document.getElementById('inputDialog').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' && e.target.tagName === 'INPUT') {
+            e.preventDefault();
+            submitInputDialog();
+        }
+    });
+
+    document.getElementById('forgotModal').addEventListener('click', function (e) {
+        if (e.target === this) closeForgotModal();
+    });
+    document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Escape') return;
+        if (document.getElementById('inputDialog').classList.contains('open')) {
+            closeInputDialog(null);
+            return;
+        }
+        closeForgotModal();
+    });
 
     // 所有使用者輸入的內容在寫入 innerHTML 前都必須經過此轉義
     function escapeHtml(str) {
@@ -305,11 +572,20 @@
             stopScanner();
             await new Promise(resolve => setTimeout(resolve, 300));
             const existing = bookDatabase[barcode] || null;
-            const promptMsg = existing ? `條碼: ${barcode}\n目前名稱: ${existing.title}\n請輸入新書名:` : `發現新條碼: ${barcode}\n請輸入書名:`;
-            const title = prompt(promptMsg, existing ? existing.title : "");
-            if (title !== null && title.trim() !== "") {
+            const result = await showInputDialog({
+                title: existing ? '✏️ 修改圖書' : '➕ 新增圖書',
+                message: existing
+                    ? `條碼：${barcode}\n目前名稱：${existing.title}`
+                    : `發現新條碼：${barcode}`,
+                fields: [{ name: 'title', label: '書名', value: existing ? existing.title : '' }],
+                submitText: '儲存',
+                validate: function (v) {
+                    return v.title.trim() ? '' : '書名不可空白';
+                }
+            });
+            if (result !== null) {
                 const res = await api('PUT', '/api/books/' + encodeURIComponent(barcode), {
-                    title: title.trim(),
+                    title: result.title.trim(),
                     assetId: existing ? (existing.assetId || '') : ''
                 });
                 bookDatabase[barcode] = res.book;
@@ -426,19 +702,29 @@
     }
 
     async function manualEdit(isbn) {
-        const newTitle = prompt("修改書名:", bookDatabase[isbn].title);
-        const newIsbn = prompt("ISBN（選填）:", bookDatabase[isbn].isbn || "");
-        if (newTitle !== null && newTitle.trim() !== "") {
-            try {
-                const res = await api('PUT', '/api/books/' + encodeURIComponent(isbn), {
-                    title: newTitle.trim(),
-                    assetId: bookDatabase[isbn].assetId || '',
-                    isbn: newIsbn || ''
-                });
-                bookDatabase[isbn] = res.book;
-                renderManageTable();
-            } catch (err) { alert('❌ ' + err.message); }
-        }
+        const book = bookDatabase[isbn];
+        const result = await showInputDialog({
+            title: '✏️ 修改圖書',
+            message: '條碼：' + isbn,
+            fields: [
+                { name: 'title', label: '書名', value: book.title || '' },
+                { name: 'isbn', label: 'ISBN（選填）', value: book.isbn || '' }
+            ],
+            submitText: '儲存',
+            validate: function (v) {
+                return v.title.trim() ? '' : '書名不可空白';
+            }
+        });
+        if (result === null) return;
+        try {
+            const res = await api('PUT', '/api/books/' + encodeURIComponent(isbn), {
+                title: result.title.trim(),
+                assetId: book.assetId || '',
+                isbn: (result.isbn || '').trim()
+            });
+            bookDatabase[isbn] = res.book;
+            renderManageTable();
+        } catch (err) { alert('❌ ' + err.message); }
     }
 
     function renderReportTable() {
