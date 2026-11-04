@@ -1503,6 +1503,14 @@ class Handler(SimpleHTTPRequestHandler):
                 require_permission(conn, token, "report")
                 return self.api_report_checked_out_pdf(conn)
 
+            if method == "GET" and path == "/api/report/full-catalog.pdf":
+                require_permission(conn, token, "report")
+                return self.api_report_full_catalog_pdf(conn, query)
+
+            if method == "GET" and path == "/api/report/callno-catalog.pdf":
+                require_permission(conn, token, "report")
+                return self.api_report_callno_catalog_pdf(conn, query)
+
             if method == "GET" and path == "/api/report/issues.pdf":
                 require_permission(conn, token, "report")
                 return self.api_report_issues_pdf(conn)
@@ -2351,6 +2359,70 @@ class Handler(SimpleHTTPRequestHandler):
             widths=[0.14, 0.3, 0.16, 0.12, 0.12, 0.16],
         )
         self.send_pdf(body, "已借出清單-{}.pdf".format(datetime.now().strftime("%Y%m%d-%H%M")))
+
+    def api_report_full_catalog_pdf(self, conn, query):
+        """全圖名冊：所有書籍（不含管理者相關，即所有館藏書籍）。"""
+        rows = conn.execute(
+            "SELECT asset_id, title, call_no, category, status, loaned_to, loan_class, due_at "
+            "FROM books ORDER BY asset_id"
+        ).fetchall()
+        table = []
+        for r in rows:
+            status = r["status"]
+            if status == "報廢":
+                display = "報廢"
+            elif r["loaned_to"]:
+                display = "借出"
+            else:
+                display = "在館"
+            table.append([
+                r["asset_id"] or "", r["title"], r["call_no"] or "",
+                r["category"] or "", display,
+                r["loan_class"] or "", r["loaned_to"] or "", r["due_at"] or "",
+            ])
+        meta = [
+            "列印時間：{}".format(datetime.now().strftime("%Y/%m/%d %H:%M")),
+            "共 {} 筆".format(len(rows)),
+        ]
+        body = build_table_pdf(
+            "全圖名冊", meta,
+            ["財產編號", "書名", "索書號", "主題分類", "狀態", "班級", "借閱人", "應還日期"], table,
+            widths=[0.13, 0.22, 0.12, 0.1, 0.08, 0.1, 0.12, 0.13],
+            landscape=True,
+        )
+        self.send_pdf(body, "全圖名冊-{}.pdf".format(datetime.now().strftime("%Y%m%d-%H%M")))
+
+    def api_report_callno_catalog_pdf(self, conn, query):
+        """索書號清冊：以索書號排序的書籍清冊（僅含有索書號之書籍）。"""
+        rows = conn.execute(
+            "SELECT asset_id, title, call_no, category, status, loaned_to, loan_class, due_at "
+            "FROM books WHERE call_no != '' ORDER BY call_no, asset_id"
+        ).fetchall()
+        table = []
+        for r in rows:
+            status = r["status"]
+            if status == "報廢":
+                display = "報廢"
+            elif r["loaned_to"]:
+                display = "借出"
+            else:
+                display = "在館"
+            table.append([
+                r["call_no"], r["asset_id"] or "", r["title"],
+                r["category"] or "", display,
+                r["loan_class"] or "", r["loaned_to"] or "", r["due_at"] or "",
+            ])
+        meta = [
+            "列印時間：{}".format(datetime.now().strftime("%Y/%m/%d %H:%M")),
+            "共 {} 筆".format(len(rows)),
+        ]
+        body = build_table_pdf(
+            "索書號清冊", meta,
+            ["索書號", "財產編號", "書名", "主題分類", "狀態", "班級", "借閱人", "應還日期"], table,
+            widths=[0.12, 0.13, 0.22, 0.1, 0.08, 0.1, 0.12, 0.13],
+            landscape=True,
+        )
+        self.send_pdf(body, "索書號清冊-{}.pdf".format(datetime.now().strftime("%Y%m%d-%H%M")))
 
     def api_report_issues_pdf(self, conn):
         rows = conn.execute(
