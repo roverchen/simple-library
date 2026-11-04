@@ -573,9 +573,17 @@ def init_db(db_path):
             conn.execute("ALTER TABLE loan_logs ADD COLUMN due_at TEXT")
         except Exception:
             pass
+        try:
+            conn.execute("ALTER TABLE loan_logs ADD COLUMN archived INTEGER DEFAULT 0")
+        except Exception:
+            pass
         # 舊庫若在欄位新增前已存在，索引須在 ALTER 之後建立
         try:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_loan_logs_overdue ON loan_logs (was_overdue)")
+        except Exception:
+            pass
+        try:
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_loan_logs_archived ON loan_logs (archived)")
         except Exception:
             pass
 
@@ -1441,6 +1449,38 @@ class Handler(SimpleHTTPRequestHandler):
                               student_limit, student_days, teacher_limit, teacher_days),
                           ip=self.client_address[0])
                 return self.send_json({"ok": True})
+            if method == "POST" and path == "/api/settings/reset-school-year":
+                require_admin(conn, token)
+                data = self.read_json()
+                school_year = _clean_text(data.get("schoolYear") or "", "學年", 10)
+                if not school_year:
+                    raise ApiError(400, "請提供學年（例如 115）")
+                if not re.match(r'^\d{2,3}$', school_year):
+                    raise ApiError(400, "學年格式錯誤（例如 115）")
+                # 歸檔：將該學年的借閱紀錄標記為已歸檔，並將逾期未還的書標記為歸檔
+                conn.execute("BEGIN IMMEDIATE")
+                try:
+                    # 歸檔該學年的借閱紀錄
+                    conn.execute(
+                        "UPDATE loan_logs SET archived = 1, archived_at = ? "
+                        "WHERE archived = 0 AND class_name IS NOT NULL AND archived = 0",
+                        (now_display(),)
+                    )
+                    # 將該學年逾期未還的書標記為歸檔（不再顯示在逾期清單）
+                    conn.execute(
+                        "UPDATE books SET status = '在館', loaned_to = NULL, loan_class = NULL, due_at = NULL, "
+                        "updated_at = ? WHERE status = '借出' AND due_at < ?",
+                        (now_display(), now_display())
+                    )
+                    conn.execute("COMMIT")
+                except Exception:
+                    conn.execute("ROLLBACK")
+                    raise
+                _audit_id, _audit_name = session_actor(conn, token)
+                log_audit(conn, "學年歸檔", _audit_id, _audit_name,
+                          detail="學年 {} 歸檔".format(school_year),
+                          ip=self.client_address[0])
+                return self.send_json({"ok": True, "schoolYear": school_year})
             if method == "GET" and path == "/api/state":
                 return self.send_json(build_state(conn))
 

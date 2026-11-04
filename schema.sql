@@ -91,7 +91,9 @@ CREATE TABLE IF NOT EXISTS loan_logs (
     -- 還書時當下是否逾期（1＝逾期、0＝期限內），用於「逾期已還紀錄清冊」
     was_overdue INTEGER,
     -- 還書時的應還日期快照（僅還書紀錄有值）
-    due_at      TEXT
+    due_at      TEXT,
+    -- 歸檔標記（1＝已歸檔，用於學年結算）
+    archived    INTEGER DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_loan_logs_created ON loan_logs (created_at DESC);

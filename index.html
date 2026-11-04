@@ -326,6 +326,7 @@
             <button onclick="initiateScan('return')" class="btn-main btn-return">📥 還書</button>
             <button onclick="batchReturnBooks()" class="btn-main" style="background:#666; color:white;">📥 批次還書</button>
             <button onclick="reserveCurrentBook()" class="btn-main" style="background:#8e24aa; color:white;">📌 預約此書</button>
+            <button onclick="toggleReturnBoxMode()" class="btn-main" style="background:#4caf50; color:white;">📦 還書箱模式：關閉</button>
         </div>
         <div id="reservationSection" style="margin-top:16px;">
             <h3 style="margin:0;">📌 進行中預約</h3>
@@ -472,6 +473,33 @@
                 依班級排序，班內依姓名排序。重設後會影響條碼掃描識別，請確認後再執行。
             </small>
         </div>
+        <hr>
+        <div class="input-group">
+            <label>🔒 安全提問設定（3.3 離線密碼救援）</label>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <select id="securityQuestionSelect" style="min-width:200px; padding:8px; border:1px solid #ccc; border-radius:5px;"></select>
+                <input type="text" id="securityAnswer" placeholder="安全提問答案" style="padding:8px; border:1px solid #ccc; border-radius:5px; min-width:180px;">
+                <button onclick="saveSecurityQuestion()" style="background:var(--primary); color:white; padding:8px 14px; border:none; border-radius:5px;">💾 儲存安全提問</button>
+            </div>
+            <div id="securityQuestionDisplay" style="margin-top:6px; font-size:0.92rem; color:#333;"></div>
+            <small style="color:#666; line-height:1.7;">
+                設定安全提問與答案後，若忘記密碼且無法使用 Email 救援，可於登入畫面的「🔑 忘記密碼？」→「安全提問（離線）」進行密碼重設。
+            </small>
+        </div>
+        <hr>
+        <div class="input-group">
+            <label>🗓️ 學年結算／歸檔（2.1）</label>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <input type="text" id="archiveSchoolYear" placeholder="學年（例如 115）" style="padding:8px; border:1px solid #ccc; border-radius:5px; width:120px;">
+                <button onclick="archiveSchoolYear()" style="background:var(--danger); color:white; padding:10px 16px; border:none; border-radius:5px;">📦 執行學年歸檔</button>
+            </div>
+            <small style="color:#666; line-height:1.7;">
+                每學期末使用，將該學年的借閱紀錄歸檔，並將逾期未還的書設為歸檔狀態（不再顯示在逾期清單）。歸檔後的紀錄仍可透過稽核紀錄查詢。
+            </small>
+        </div>
+        <hr>
+        <div class="input-group">
+            <label>📥 批次匯入（圖書 / 學生與老師名單）</label>
         <hr>
         <div class="input-group">
             <label>📥 批次匯入（圖書 / 學生與老師名單）</label>
@@ -859,6 +887,7 @@
     let scanQueue = Promise.resolve();
     let currentUser = { username: 'admin', role: 'admin', permissions: {} };
     let currentLoanMember = null; // { className, userName, memberType }
+    let returnBoxMode = false; // 還書箱模式：開啟後掃描書籍條碼直接還書，不需選成員
 
     // --- 後端 API ---
     async function api(method, path, body) {
@@ -2136,7 +2165,7 @@
         if(pageId === 'classPage') { loadMemberAccounts(); populateMemberQRClass(); }
         if(pageId === 'managePage') renderBookTable();
         if(pageId === 'loanPage') focusGunInput();
-        if(pageId === 'configPage') { loadRecoverySettings(); renderAuditTable(); loadBackupSettings(); loadCategories(); }
+        if(pageId === 'configPage') { loadRecoverySettings(); renderAuditTable(); loadBackupSettings(); loadCategories(); loadSecurityQuestion(); }
         if(pageId === 'reportPage') {
             isLabelMode = false;
             document.getElementById('logReportSection').style.display = 'block';
@@ -2333,6 +2362,15 @@
             const infoEl = document.getElementById('loanMemberInfo');
             if (infoEl) infoEl.textContent = '';
             showScanStatus('✅ 已清除重來', 'ok');
+            return;
+        }
+        // 還書箱模式：掃描書籍條碼直接還書，不需選成員
+        if (returnBoxMode && bookDatabase[barcode]) {
+            if (!barcode) { showScanStatus('❌ 條碼為空', 'err'); return; }
+            if (isDuplicateScan(barcode)) return;
+            scanQueue = scanQueue
+                .then(() => processScan(barcode, 'return'))
+                .catch(err => showScanStatus(`❌ ${err.message || '處理失敗'}`, 'err'));
             return;
         }
         // 成員條碼（SA01 / T001 等）：先檢查本機圖書（快），再查詢成員條碼 API
@@ -2965,6 +3003,67 @@
             alert('✅ 備份設定已儲存');
             loadBackupSettings();
         } catch (err) { alert("❌ " + err.message); }
+    }
+
+    async function loadSecurityQuestion() {
+        const sel = document.getElementById('securityQuestionSelect');
+        const display = document.getElementById('securityQuestionDisplay');
+        try {
+            const data = await api('GET', '/api/security-question');
+            if (sel) {
+                const questions = [
+                    "你國小就讀的學校名稱是什麼？",
+                    "你寵物的名字是什麼？",
+                    "你母親的娘家姓氏是什麼？",
+                    "你出生的城市是哪裡？",
+                    "你最好的朋友的名字是什麼？"
+                ];
+                sel.innerHTML = '<option value="">（請選擇安全提問）</option>' +
+                    questions.map(q => `<option value="${escapeHtml(q)}">${escapeHtml(q)}</option>`).join('');
+                if (data.question) sel.value = data.question;
+            }
+            if (display) {
+                display.innerHTML = data.hasQuestion
+                    ? '已設定安全提問：' + escapeHtml(data.question)
+                    : '尚未設定安全提問';
+            }
+        } catch (err) { /* 載入失敗不阻斷 */ }
+    }
+
+    async function saveSecurityQuestion() {
+        const sel = document.getElementById('securityQuestionSelect');
+        const answer = (document.getElementById('securityAnswer') || {}).value.trim();
+        const question = (sel || {}).value.trim();
+        if (!question || !answer) { alert('❌ 提問與答案皆不可空白'); return; }
+        try {
+            await api('PUT', '/api/security-question', { securityQuestion: question, securityAnswer: answer });
+            alert('✅ 安全提問已儲存');
+            (document.getElementById('securityAnswer') || {}).value = '';
+            loadSecurityQuestion();
+        } catch (err) { alert("❌ " + err.message); }
+    }
+
+    async function archiveSchoolYear() {
+        const year = (document.getElementById('archiveSchoolYear') || {}).value.trim();
+        if (!year) { alert('❌ 請輸入學年（例如 115）'); return; }
+        if (!confirm('確定要歸檔 ' + year + ' 學年嗎？歸檔後該學年的借閱紀錄將標記為已歸檔，逾期未還的書將設為歸檔狀態。')) return;
+        try {
+            const res = await api('POST', '/api/settings/reset-school-year', { schoolYear: year });
+            alert('✅ 已歸檔 ' + res.schoolYear + ' 學年。');
+            (document.getElementById('archiveSchoolYear') || {}).value = '';
+        } catch (err) { alert("❌ " + err.message); }
+    }
+
+    async function toggleReturnBoxMode() {
+        returnBoxMode = !returnBoxMode;
+        const btn = document.querySelector('button[onclick="toggleReturnBoxMode()"]');
+        if (btn) {
+            btn.innerText = returnBoxMode ? '📦 還書箱模式：開啟' : '📦 還書箱模式：關閉';
+            btn.style.background = returnBoxMode ? '#d32f2f' : '#4caf50';
+        }
+        const infoEl = document.getElementById('loanMemberInfo');
+        if (infoEl) infoEl.textContent = returnBoxMode ? '✅ 已啟動還書箱模式，請掃描書籍條碼直接還書' : '';
+        showScanStatus(returnBoxMode ? '✅ 已啟動還書箱模式' : '✅ 已關閉還書箱模式', 'ok');
     }
 
     async function resetStudentIds() {
