@@ -534,7 +534,7 @@
     let html5QrCode, currentMode = '';
     let isLabelMode = false; // 控制報表顯示模式
     let scanQueue = Promise.resolve();
-    let currentUser = { username: 'admin', role: 'admin' };
+    let currentUser = { username: 'admin', role: 'admin', permissions: {} };
     let currentLoanMember = null; // { className, userName, memberType }
 
     // --- 後端 API ---
@@ -574,12 +574,29 @@
         document.getElementById('mainNav').style.display = 'none';
     }
 
+    // 依權限顯示／隱藏導覽列按鈕
+    function applyPermissionNav() {
+        const p = currentUser.permissions || {};
+        document.getElementById('btn-loanPage').style.display = p.canLoan ? '' : 'none';
+        document.getElementById('btn-classPage').style.display = p.canMember ? '' : 'none';
+        document.getElementById('btn-managePage').style.display = p.canBook ? '' : 'none';
+        document.getElementById('btn-configPage').style.display = p.canConfig ? '' : 'none';
+        document.getElementById('btn-reportPage').style.display = p.canReport ? '' : 'none';
+        // 至少顯示一個頁面：若全部隱藏，預設顯示借還書
+        const visible = ['btn-loanPage','btn-classPage','btn-managePage','btn-configPage','btn-reportPage']
+            .some(id => document.getElementById(id).style.display !== 'none');
+        if (!visible) {
+            document.getElementById('btn-loanPage').style.display = '';
+        }
+    }
+
     function showApp() {
         document.getElementById('loginPage').classList.remove('active');
         document.getElementById('mainNav').style.display = 'flex';
         initDropdowns();
         populateMemberQRClass();
         populateMemberHistoryClasses();
+        applyPermissionNav();
         changeTab('loanPage');
         focusGunInput();
     }
@@ -589,6 +606,13 @@
         try {
             const session = await api('GET', '/api/session');
             if (!session.authenticated) { showLogin(); return; }
+            if (session.user) {
+                currentUser = {
+                    username: session.user.username || currentUser.username,
+                    role: session.user.role || currentUser.role,
+                    permissions: session.user.permissions || currentUser.permissions || {},
+                };
+            }
             const state = await api('GET', '/api/state');
             applyState(state);
             showApp();
@@ -1102,7 +1126,11 @@
         const uname = (document.getElementById('loginUsername') ? document.getElementById('loginUsername').value : '') || '';
         try {
             const res = await api('POST', '/api/login', { username: uname, password: pwd });
-            currentUser = { username: (res.user && res.user.username) || uname || 'admin', role: (res.user && res.user.role) || 'admin' };
+            currentUser = {
+                username: (res.user && res.user.username) || uname || 'admin',
+                role: (res.user && res.user.role) || 'admin',
+                permissions: (res.user && res.user.permissions) || {},
+            };
             const state = await api('GET', '/api/state');
             applyState(state);
             document.getElementById('loginPwd').value = '';
@@ -1399,6 +1427,25 @@
 
 
     function changeTab(pageId) {
+        // 權限檢查：無權限則不允許進入
+        const p = currentUser.permissions || {};
+        const pagePerms = {
+            'loanPage': p.canLoan,
+            'classPage': p.canMember,
+            'managePage': p.canBook,
+            'configPage': p.canConfig,
+            'reportPage': p.canReport,
+        };
+        if (!pagePerms[pageId]) {
+            alert('⚠️ 此帳號未啟用「' + {
+                'loanPage': '借還書',
+                'classPage': '班級成員',
+                'managePage': '圖書管理',
+                'configPage': '系統設定',
+                'reportPage': '報表/列印',
+            }[pageId] + '」功能，請洽系統管理員開啟。');
+            return;
+        }
         if (html5QrCode) stopScanner();
         document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
         document.querySelectorAll('.nav button').forEach(b => b.classList.remove('active'));
@@ -1597,6 +1644,20 @@
             .catch(err => showScanStatus(`❌ ${err.message || '處理失敗'}`, 'err'));
     }
 
+    async function refreshPermissions() {
+        try {
+            const session = await api('GET', '/api/session');
+            if (session.user) {
+                currentUser = {
+                    username: session.user.username || currentUser.username,
+                    role: session.user.role || currentUser.role,
+                    permissions: session.user.permissions || currentUser.permissions || {},
+                };
+                applyPermissionNav();
+            }
+        } catch (_) { /* 權限同步失敗不影響借還 */ }
+    }
+
     async function processScan(barcode, mode) {
         if (mode === 'manage') {
             stopScanner();
@@ -1639,6 +1700,8 @@
             await loadReservations();
             if (action === '借書') showScanStatus(`✅ 已借出《${res.book.title}》→ ${userName}`, 'ok');
             else showScanStatus(`✅ 已歸還《${res.book.title}》`, 'ok');
+            // 伺服器首次借書會自動開啟報表權限，同步更新導覽列
+            if (!currentUser.permissions || !currentUser.permissions.canReport) await refreshPermissions();
             // 掃描發生時報表頁不可能是前景，無須每次都重繪報表
             if (document.getElementById('reportPage').classList.contains('active') && !isLabelMode) renderReportTable();
         } catch (err) {
@@ -1730,7 +1793,7 @@
         if (memberModalState.mode === 'add') {
             container.innerHTML = `
                 <label for="mmClass">班級</label>
-                <select id="mmClass" data-name="className">${classHtml}</select>
+                <select id="mmClass" data-name="className" onchange="onMemberClassChange()">${classHtml}</select>
                 <label for="mmName">姓名</label>
                 <input type="text" id="mmName" data-name="name" value="${escapeHtml(v.name || '')}">
                 <label for="mmEmail">Email</label>
@@ -1740,13 +1803,22 @@
                     <option value="teacher"${String(addRole) === 'teacher' ? ' selected' : ''}>👨‍🏫 老師</option>
                     <option value="student"${String(addRole) === 'student' ? ' selected' : ''}>🎒 學生</option>
                 </select>
+                <div id="memberPermBlock" style="display:${String(v.className || '') === '__staff__' ? '' : 'none'}; margin-top:10px;">
+                <hr style="margin:12px 0; border:none; border-top:1px solid #ddd;">
+                <div style="font-size:0.9rem; color:#666; margin-bottom:8px;">功能權限（僅教職員帳號可設定）：</div>
+                <label style="display:block; margin:4px 0;"><input type="checkbox" data-name="canLoan"${v.canLoan ? ' checked' : ''}> 📖 借還書</label>
+                <label style="display:block; margin:4px 0;"><input type="checkbox" data-name="canMember"${v.canMember ? ' checked' : ''}> 👥 班級成員</label>
+                <label style="display:block; margin:4px 0;"><input type="checkbox" data-name="canBook"${v.canBook ? ' checked' : ''}> 📚 圖書管理</label>
+                <label style="display:block; margin:4px 0;"><input type="checkbox" data-name="canConfig"${v.canConfig ? ' checked' : ''}> ⚙️ 系統設定</label>
+                <label style="display:block; margin:4px 0;"><input type="checkbox" data-name="canReport"${v.canReport ? ' checked' : ''}> 📊 報告／列印</label>
+                </div>
             `;
         } else {
             container.innerHTML = `
                 <label for="mmUsername">帳號</label>
                 <input type="text" id="mmUsername" data-name="username" value="${escapeHtml(v.username || '')}" readonly>
                 <label for="mmClass">班級</label>
-                <select id="mmClass" data-name="className">${classHtml}</select>
+                <select id="mmClass" data-name="className" onchange="onMemberClassChange()">${classHtml}</select>
                 <label for="mmName">姓名</label>
                 <input type="text" id="mmName" data-name="name" value="${escapeHtml(v.name || '')}">
                 <label for="mmEmail">Email</label>
@@ -1756,6 +1828,17 @@
                     <option value="teacher"${String(v.role || 'teacher') === 'teacher' ? ' selected' : ''}>\u{1F9D1}\u200D\u{1F3AF} 老師</option>
                     <option value="student"${String(v.role || 'teacher') === 'student' ? ' selected' : ''}>\u{1F4B8} \u5B66\u751F</option>
                 </select>
+                ${String(v.className || '') === '__staff__' ? `
+                <hr style="margin:12px 0; border:none; border-top:1px solid #ddd;">
+                <div id="memberPermBlock" style="display:${String(v.className || '') === '__staff__' ? '' : 'none'};">
+                <div style="font-size:0.9rem; color:#666; margin-bottom:8px;">功能權限（僅教職員帳號可設定）：</div>
+                <label style="display:block; margin:4px 0;"><input type="checkbox" data-name="canLoan"${v.canLoan ? ' checked' : ''}> 📖 借還書</label>
+                <label style="display:block; margin:4px 0;"><input type="checkbox" data-name="canMember"${v.canMember ? ' checked' : ''}> 👥 班級成員</label>
+                <label style="display:block; margin:4px 0;"><input type="checkbox" data-name="canBook"${v.canBook ? ' checked' : ''}> 📚 圖書管理</label>
+                <label style="display:block; margin:4px 0;"><input type="checkbox" data-name="canConfig"${v.canConfig ? ' checked' : ''}> ⚙️ 系統設定</label>
+                <label style="display:block; margin:4px 0;"><input type="checkbox" data-name="canReport"${v.canReport ? ' checked' : ''}> 📊 報告／列印</label>
+                </div>
+                ` : ''}
             `;
         }
         document.getElementById('memberModalSave').style.display = '';
@@ -1785,6 +1868,11 @@
                 email: a.email || '',
                 className: clsName,
                 role: (a.classId === null) ? (a.role || 'teacher') : 'student',
+                canLoan: a.canLoan !== undefined ? a.canLoan : true,
+                canMember: a.canMember !== undefined ? a.canMember : false,
+                canBook: a.canBook !== undefined ? a.canBook : false,
+                canConfig: a.canConfig !== undefined ? a.canConfig : false,
+                canReport: a.canReport !== undefined ? a.canReport : false,
             },
         };
         document.getElementById('memberModalTitle').textContent = '✏️ 編輯帳號';
@@ -1795,7 +1883,8 @@
 
     function openMemberModalAdd() {
         const defaultClass = (config.classes || [])[0] || '__staff__';
-        memberModalState = { mode: 'add', id: null, values: { className: defaultClass, name: '', email: '', role: defaultClass === '__staff__' ? 'teacher' : 'student' } };
+        const isStaff = defaultClass === '__staff__';
+        memberModalState = { mode: 'add', id: null, values: { className: defaultClass, name: '', email: '', role: defaultClass === '__staff__' ? 'teacher' : 'student', canLoan: isStaff, canMember: false, canBook: false, canConfig: false, canReport: false } };
         document.getElementById('memberModalTitle').textContent = '\u279C \u65B0\u589E\u6210\u50A8';
         document.getElementById('memberModalError').textContent = '';
         renderMemberModalFields();
@@ -1808,20 +1897,39 @@
         document.getElementById('memberModalError').textContent = '';
     }
 
+    function onMemberClassChange() {
+        const sel = document.getElementById('mmClass');
+        const isStaff = sel && sel.value === '__staff__';
+        const permBlock = document.getElementById('memberPermBlock');
+        if (permBlock) permBlock.style.display = isStaff ? '' : 'none';
+    }
+
     function submitMemberModal() {
         if (!memberModalState) return;
         const values = {};
-        document.querySelectorAll('#memberModalFields [data-name]').forEach(el => { values[el.dataset.name] = el.value; });
+        document.querySelectorAll('#memberModalFields [data-name]').forEach(el => {
+            if (el.type === 'checkbox') {
+                values[el.dataset.name] = el.checked ? 'on' : '';
+            } else {
+                values[el.dataset.name] = el.value;
+            }
+        });
         const errorEl = document.getElementById('memberModalError');
         errorEl.textContent = '';
         if (memberModalState.mode === 'add') {
             if (!values.name || !values.name.trim()) { errorEl.textContent = '姓名不可空白'; return; }
+            const isStaffAdd = values.className === '__staff__';
             return api('POST', '/api/members', {
-                staff: values.className === '__staff__',
+                staff: isStaffAdd,
                 className: values.className,
                 name: values.name.trim(),
                 email: values.email.trim(),
-                role: values.role || 'student'
+                role: values.role || 'student',
+                canLoan: isStaffAdd ? (values.canLoan === 'on') : false,
+                canMember: isStaffAdd ? (values.canMember === 'on') : false,
+                canBook: isStaffAdd ? (values.canBook === 'on') : false,
+                canConfig: isStaffAdd ? (values.canConfig === 'on') : false,
+                canReport: isStaffAdd ? (values.canReport === 'on') : false,
             }).then(res => {
                 closeMemberModal();
                 members = res.memberDB;
@@ -1833,12 +1941,18 @@
             const role = values.role || 'teacher';
             const className = values.className || '__staff__';
             const classId = className === '__staff__' ? null : undefined;
+            const isStaff = classId === null;
             return api('PUT', '/api/member-accounts/' + memberModalState.id, {
                 name: values.name,
                 email: values.email,
                 className: className,
                 classId: classId,
-                role: role
+                role: role,
+                canLoan: isStaff ? (values.canLoan === 'on') : false,
+                canMember: isStaff ? (values.canMember === 'on') : false,
+                canBook: isStaff ? (values.canBook === 'on') : false,
+                canConfig: isStaff ? (values.canConfig === 'on') : false,
+                canReport: isStaff ? (values.canReport === 'on') : false,
             }).then(() => api('GET', '/api/state')).then(s => { applyState(s); return loadMemberAccounts(); })
               .then(() => { alert('✅ 已修改帳號'); })
               .catch(err => { errorEl.textContent = '儲存失敗：' + err.message; });

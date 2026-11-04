@@ -100,6 +100,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 -- 系統帳號，同時也是班級成員名單（單一資料表）。
 -- class_id 有值＝班級成員（學生）；class_id 為 NULL＝教職員／系統管理員。
 -- name 為顯示用姓名；email 供「忘記密碼」寄送驗證碼使用，可留空。
+-- can_* 為功能權限旗標：借還書／班級成員／圖書管理／系統設定／報表列印。
+-- admin/root 角色與共用管理員不受欄位限制，一律全權限。
 CREATE TABLE IF NOT EXISTS users (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     username   TEXT    NOT NULL UNIQUE,
@@ -109,6 +111,11 @@ CREATE TABLE IF NOT EXISTS users (
     class_id   INTEGER REFERENCES classes(id) ON DELETE SET NULL,
     email      TEXT    NOT NULL DEFAULT '',
     active     INTEGER NOT NULL DEFAULT 1,
+    can_loan   INTEGER NOT NULL DEFAULT 0,
+    can_member INTEGER NOT NULL DEFAULT 0,
+    can_book   INTEGER NOT NULL DEFAULT 0,
+    can_config INTEGER NOT NULL DEFAULT 0,
+    can_report INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );

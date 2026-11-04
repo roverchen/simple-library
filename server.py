@@ -310,6 +310,27 @@ def require_staff(conn, token):
         raise ApiError(403, "需要教職員權限")
 
 
+def require_permission(conn, token, perm):
+    """依功能權限欄位檢查；admin/root/共用管理員一律允許，教職員需對應權限，學生一律拒絕。"""
+    row = conn.execute(
+        "SELECT s.user_id, u.role, u.can_loan, u.can_member, u.can_book, u.can_config, u.can_report "
+        "FROM sessions s LEFT JOIN users u ON u.id = s.user_id WHERE s.token = ?",
+        (token,),
+    ).fetchone()
+    if not row:
+        raise ApiError(401, "請先登入")
+    if row["user_id"] is None:
+        return  # 共用管理員
+    role = (row["role"] or "").strip()
+    if role in ("admin", "root"):
+        return
+    if role != "teacher":
+        raise ApiError(403, "需要{}權限".format(perm))
+    col = "can_" + perm
+    if not row[col]:
+        raise ApiError(403, "此帳號未啟用「{}」功能".format(perm))
+
+
 def next_username(conn):
     """產生下一個未被使用的數字帳號（例如 026）。"""
     max_num = 0
@@ -442,6 +463,40 @@ def init_db(db_path):
             conn.execute("ALTER TABLE users ADD COLUMN class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL")
         except Exception:
             pass
+
+        # 權限欄位：借還書/班級成員/圖書管理/系統設定/報表列印
+        for col in ("can_loan", "can_member", "can_book", "can_config", "can_report"):
+            try:
+                conn.execute("ALTER TABLE users ADD COLUMN {} INTEGER DEFAULT 0".format(col))
+            except Exception:
+                pass
+
+        # 現有帳號預設權限：僅在首次導入權限欄位時設定一次，避免每次啟動覆蓋管理員的自訂設定。
+        migrated = conn.execute(
+            "SELECT value FROM settings WHERE key = 'permissions_migrated'"
+        ).fetchone()
+        if not migrated:
+            for r in conn.execute("SELECT id, role, class_id FROM users").fetchall():
+                if (r["role"] or "") in ("admin", "root"):
+                    conn.execute(
+                        "UPDATE users SET can_loan = 1, can_member = 1, can_book = 1, can_config = 1, can_report = 1 WHERE id = ?",
+                        (r["id"],),
+                    )
+                elif r["class_id"] is None:
+                    # 教職員：預設可借還書，其餘由管理員於帳號管理中開啟
+                    conn.execute(
+                        "UPDATE users SET can_loan = 1, can_member = 0, can_book = 0, can_config = 0, can_report = 0 WHERE id = ?",
+                        (r["id"],),
+                    )
+                else:
+                    # 班級成員（學生）：無系統操作權限
+                    conn.execute(
+                        "UPDATE users SET can_loan = 0, can_member = 0, can_book = 0, can_config = 0, can_report = 0 WHERE id = ?",
+                        (r["id"],),
+                    )
+            conn.execute(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES ('permissions_migrated', '1')"
+            )
 
         # 把舊版 members 整併進 users（班級成員＝class_id 有值的帳號）。
         migrate_members_to_users(conn)
@@ -981,16 +1036,53 @@ class Handler(SimpleHTTPRequestHandler):
                 raise ApiError(405, "方法不允許")
             token = self.cookies().get("sid")
             authenticated = False
+            user_info = None
             if token:
                 session_conn = connect()
                 try:
                     row = session_conn.execute(
-                        "SELECT expires_at FROM sessions WHERE token = ?", (token,)
+                        "SELECT s.expires_at, s.user_id, u.username, u.name, u.role, "
+                        "u.can_loan, u.can_member, u.can_book, u.can_config, u.can_report "
+                        "FROM sessions s LEFT JOIN users u ON u.id = s.user_id "
+                        "WHERE s.token = ?", (token,)
                     ).fetchone()
-                    authenticated = bool(row and row["expires_at"] >= time.time())
+                    if row and row["expires_at"] >= time.time():
+                        authenticated = True
+                        if row["user_id"] is None:
+                            user_info = {
+                                "username": "admin",
+                                "name": "",
+                                "role": "admin",
+                                "permissions": {
+                                    "canLoan": True, "canMember": True, "canBook": True,
+                                    "canConfig": True, "canReport": True,
+                                },
+                            }
+                        else:
+                            role = row["role"] or "teacher"
+                            if role in ("admin", "root"):
+                                perms = {"canLoan": True, "canMember": True, "canBook": True,
+                                         "canConfig": True, "canReport": True}
+                            else:
+                                perms = {
+                                    "canLoan": bool(row["can_loan"]),
+                                    "canMember": bool(row["can_member"]),
+                                    "canBook": bool(row["can_book"]),
+                                    "canConfig": bool(row["can_config"]),
+                                    "canReport": bool(row["can_report"]),
+                                }
+                            user_info = {
+                                "username": row["username"] or "",
+                                "name": row["name"] or "",
+                                "role": role,
+                                "permissions": perms,
+                            }
                 finally:
                     session_conn.close()
-            return self.send_json({"authenticated": authenticated})
+            resp = {"authenticated": authenticated}
+            if user_info:
+                resp["user"] = user_info
+            return self.send_json(resp)
 
         if path == "/api/password/reset":
             # 舊版：以「目前管理密碼」驗證後換新密碼（保留相容）
@@ -1044,7 +1136,7 @@ class Handler(SimpleHTTPRequestHandler):
                 })
 
             if path == "/api/loan-rules" and method == "PUT":
-                require_admin(conn, token)
+                require_permission(conn, token, "config")
                 data = self.read_json()
                 student_limit = int(data.get("student_limit") or 0)
                 teacher_limit = int(data.get("teacher_limit") or 0)
@@ -1086,15 +1178,19 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json({"ok": True, "filename": run_auto_backup()})
 
             if method == "GET" and path == "/api/logs":
+                require_permission(conn, token, "report")
                 return self.api_logs(conn, query)
 
             if method == "GET" and path == "/api/reservations":
+                require_permission(conn, token, "loan")
                 return self.api_reservations(conn, query)
 
             if method == "POST" and path == "/api/reservations":
+                require_permission(conn, token, "loan")
                 return self.api_reservation_add(conn)
 
             if method == "POST" and path.startswith("/api/reservations/"):
+                require_permission(conn, token, "loan")
                 rest = path[len("/api/reservations/"):].rstrip("/")
                 if rest.endswith("/cancel"):
                     rest = rest[: -len("/cancel")].rstrip("/")
@@ -1104,42 +1200,55 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.api_reservation_cancel(conn, int(reservation_id))
 
             if method == "POST" and path == "/api/logs/clear":
+                require_permission(conn, token, "report")
                 return self.api_logs_clear(conn, token)
 
             if method == "GET" and path == "/api/report/issues":
+                require_permission(conn, token, "report")
                 return self.api_report_issues(conn)
 
             if method == "GET" and path == "/api/report/overdue":
+                require_permission(conn, token, "report")
                 return self.api_report_overdue(conn)
 
             if method == "GET" and path == "/api/report/stats":
+                require_permission(conn, token, "report")
                 return self.api_report_stats(conn, query)
 
             if method == "GET" and path == "/api/report/logs.pdf":
+                require_permission(conn, token, "report")
                 return self.api_report_logs_pdf(conn, query)
 
             if method == "GET" and path == "/api/report/inventory.pdf":
+                require_permission(conn, token, "report")
                 return self.api_report_inventory_pdf(conn, query)
 
             if method == "GET" and path == "/api/report/checked-out.pdf":
+                require_permission(conn, token, "report")
                 return self.api_report_checked_out_pdf(conn)
 
             if method == "GET" and path == "/api/report/issues.pdf":
+                require_permission(conn, token, "report")
                 return self.api_report_issues_pdf(conn)
 
             if method == "GET" and path == "/api/report/member-history":
+                require_permission(conn, token, "report")
                 return self.api_report_member_history(conn, query)
 
             if method == "GET" and path == "/api/report/member-history.pdf":
+                require_permission(conn, token, "report")
                 return self.api_report_member_history_pdf(conn, query)
 
             if method == "GET" and path == "/api/report/stats.pdf":
+                require_permission(conn, token, "report")
                 return self.api_report_stats_pdf(conn, query)
 
             if method == "GET" and path == "/api/report/overdue.pdf":
+                require_permission(conn, token, "report")
                 return self.api_report_overdue_pdf(conn)
 
             if method == "GET" and path == "/api/logs.csv":
+                require_permission(conn, token, "report")
                 return self.api_logs_csv(conn)
 
             if method == "POST" and path == "/api/import":
@@ -1187,12 +1296,14 @@ class Handler(SimpleHTTPRequestHandler):
 
             if path == "/api/member-accounts":
                 require_staff(conn, token)
+                require_permission(conn, token, "member")
                 if method != "GET":
                     raise ApiError(405, "方法不允許")
                 return self.api_member_accounts_list(conn)
 
             if path.startswith("/api/member-accounts/"):
                 require_staff(conn, token)
+                require_permission(conn, token, "member")
                 rest = path[len("/api/member-accounts/"):].rstrip("/")
                 if rest.endswith("/reset-password"):
                     account_id = unquote(rest[: -len("/reset-password")].rstrip("/")).strip()
@@ -1210,16 +1321,20 @@ class Handler(SimpleHTTPRequestHandler):
 
             if method == "POST" and path == "/api/members":
                 require_staff(conn, token)
+                require_permission(conn, token, "member")
                 return self.api_member_add(conn, token)
 
             if method == "DELETE" and path == "/api/members":
                 require_staff(conn, token)
+                require_permission(conn, token, "member")
                 return self.api_member_delete(conn, query)
 
             if path == "/api/loan" and method == "POST":
+                require_permission(conn, token, "loan")
                 return self.api_loan(conn)
 
             if path == "/api/loan/batch-return" and method == "POST":
+                require_permission(conn, token, "loan")
                 return self.api_loan_batch_return(conn)
 
             if path.startswith("/api/books/"):
@@ -1231,18 +1346,26 @@ class Handler(SimpleHTTPRequestHandler):
                 if not barcode:
                     raise ApiError(400, "條碼不可空白")
                 if method == "PUT" and not action:
+                    require_permission(conn, token, "book")
                     return self.api_book_upsert(conn, barcode)
                 if method == "DELETE" and not action:
+                    require_permission(conn, token, "book")
                     return self.api_book_delete(conn, barcode)
+                if method == "POST" and action:
+                    require_permission(conn, token, "book")
+                    return self.api_book_action(conn, barcode, action)
 
             if method == "POST" and path == "/api/members/import":
                 require_staff(conn, token)
+                require_permission(conn, token, "member")
                 return self.api_members_import(conn, token)
 
             if method == "POST" and path == "/api/books/import":
+                require_permission(conn, token, "book")
                 return self.api_books_import(conn, token)
 
             if method == "GET" and path == "/api/books/search":
+                require_permission(conn, token, "book")
                 return self.api_books_search(conn, query)
                 if method == "POST" and action:
                     return self.api_book_action(conn, barcode, action)
@@ -1297,6 +1420,45 @@ class Handler(SimpleHTTPRequestHandler):
 
             token = secrets.token_urlsafe(32)
             user_id = user["id"] if user else None
+            # 讀取該帳號的各功能權限
+            if user is None:
+                # 共用管理員（admin）擁有全部功能權限
+                perms = {
+                    "canLoan": True,
+                    "canMember": True,
+                    "canBook": True,
+                    "canConfig": True,
+                    "canReport": True,
+                }
+            else:
+                prow = conn.execute(
+                    "SELECT can_loan, can_member, can_book, can_config, can_report, role FROM users WHERE id = ?",
+                    (user["id"],),
+                ).fetchone()
+                if prow and (prow["role"] or "") in ("admin", "root"):
+                    perms = {
+                        "canLoan": True,
+                        "canMember": True,
+                        "canBook": True,
+                        "canConfig": True,
+                        "canReport": True,
+                    }
+                elif prow:
+                    perms = {
+                        "canLoan": bool(prow["can_loan"]),
+                        "canMember": bool(prow["can_member"]),
+                        "canBook": bool(prow["can_book"]),
+                        "canConfig": bool(prow["can_config"]),
+                        "canReport": bool(prow["can_report"]),
+                    }
+                else:
+                    perms = {
+                        "canLoan": True,
+                        "canMember": False,
+                        "canBook": False,
+                        "canConfig": False,
+                        "canReport": False,
+                    }
             conn.execute(
                 "DELETE FROM sessions WHERE expires_at < ?", (now,)
             )
@@ -1311,6 +1473,7 @@ class Handler(SimpleHTTPRequestHandler):
                         "username": (user["username"] if user else "admin"),
                         "name": (user["name"] if user else "") or "",
                         "role": role,
+                        "permissions": perms,
                     },
                 },
                 headers={
@@ -1812,6 +1975,12 @@ class Handler(SimpleHTTPRequestHandler):
             )
             conn.execute("COMMIT")
 
+            # 完成一筆借還書後，自動為教職員開啟「報表」權限，讓老師能看到報表頁籤。
+            try:
+                self._grant_report_auto(conn)
+            except Exception:
+                pass
+
             book = conn.execute(
                 "SELECT * FROM books WHERE barcode = ?", (barcode,)
             ).fetchone()
@@ -1834,6 +2003,25 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception:
             safe_rollback(conn)
             raise
+
+    def _grant_report_auto(self, conn):
+        """教職員首次完成借還書後自動開啟報表權限；已開啟或其他角色不變動。"""
+        token = self.cookies().get("sid")
+        row = conn.execute(
+            "SELECT s.user_id, u.role, u.can_report FROM sessions s "
+            "JOIN users u ON u.id = s.user_id WHERE s.token = ?",
+            (token,),
+        ).fetchone()
+        if (
+            row
+            and (row["role"] or "") == "teacher"
+            and not row["can_report"]
+        ):
+            conn.execute(
+                "UPDATE users SET can_report = 1, "
+                "updated_at = datetime('now', 'localtime') WHERE id = ?",
+                (row["user_id"],),
+            )
 
     def reservation_json(self, row):
         return {
@@ -2150,10 +2338,19 @@ class Handler(SimpleHTTPRequestHandler):
             require_admin(conn, token)
             username = next_username(conn)
             email = _clean_text(data.get("email") or "", "Email", 254)
+            is_admin_role = (raw_role or "teacher") in ("admin", "root")
             cursor = conn.execute(
-                "INSERT INTO users (username, name, password, role, class_id, email, active) "
-                "VALUES (?, ?, ?, ?, NULL, ?, 1)",
-                (username, name, hash_password(DEFAULT_PASSWORD), raw_role or "teacher", email),
+                "INSERT INTO users (username, name, password, role, class_id, email, active, "
+                "can_loan, can_member, can_book, can_config, can_report) "
+                "VALUES (?, ?, ?, ?, NULL, ?, 1, ?, ?, ?, ?, ?)",
+                (
+                    username, name, hash_password(DEFAULT_PASSWORD), raw_role or "teacher", email,
+                    1,
+                    1 if (is_admin_role or data.get("canMember")) else 0,
+                    1 if (is_admin_role or data.get("canBook")) else 0,
+                    1 if (is_admin_role or data.get("canConfig")) else 0,
+                    1 if (is_admin_role or data.get("canReport")) else 0,
+                ),
             )
             return self.send_json({
                 "ok": True,
@@ -2612,6 +2809,7 @@ class Handler(SimpleHTTPRequestHandler):
     def api_member_accounts_list(self, conn):
         rows = conn.execute(
             "SELECT u.id, u.username, u.name, u.role, u.email, u.active, u.class_id, "
+            "u.can_loan, u.can_member, u.can_book, u.can_config, u.can_report, "
             "CASE WHEN u.password <> '' THEN 1 ELSE 0 END AS has_password, "
             "c.name AS class_name "
             "FROM users u LEFT JOIN classes c ON c.id = u.class_id "
@@ -2630,6 +2828,11 @@ class Handler(SimpleHTTPRequestHandler):
                     "classId": r["class_id"],
                     "className": r["class_name"] or "",
                     "hasPassword": bool(r["has_password"]),
+                    "canLoan": bool(r["can_loan"]),
+                    "canMember": bool(r["can_member"]),
+                    "canBook": bool(r["can_book"]),
+                    "canConfig": bool(r["can_config"]),
+                    "canReport": bool(r["can_report"]),
                 }
                 for r in rows
             ]
@@ -2713,8 +2916,17 @@ class Handler(SimpleHTTPRequestHandler):
 
         conn.execute(
             "UPDATE users SET class_id = ?, role = ?, name = ?, email = ?, "
+            "can_loan = ?, can_member = ?, can_book = ?, can_config = ?, can_report = ?, "
             "updated_at = datetime('now', 'localtime') WHERE id = ?",
-            (new_class_id, new_role, name, email, account_id),
+            (
+                new_class_id, new_role, name, email,
+                1 if data.get("canLoan", False) else 0,
+                1 if data.get("canMember", False) else 0,
+                1 if data.get("canBook", False) else 0,
+                1 if data.get("canConfig", False) else 0,
+                1 if data.get("canReport", False) else 0,
+                account_id,
+            ),
         )
         if isinstance(password, str) and password:
             conn.execute(
