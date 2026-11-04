@@ -82,7 +82,7 @@ CREATE TABLE IF NOT EXISTS reservations (
     class_name  TEXT NOT NULL,
     user_name   TEXT NOT NULL,
     member_type TEXT NOT NULL DEFAULT 'student',
-    status      TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'cancelled', 'fulfilled'))
+    status      TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'cancelled', 'fulfilled', 'ready', 'expired'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_reservations_barcode ON reservations (barcode, status);

@@ -1836,7 +1836,11 @@
             logCount++;
             await loadReservations();
             if (action === '借書') showScanStatus(`✅ 已借出《${res.book.title}》→ ${userName}`, 'ok');
-            else showScanStatus(`✅ 已歸還《${res.book.title}》`, 'ok');
+            else {
+                showScanStatus(`✅ 已歸還《${res.book.title}》`, 'ok');
+                (res.promoted || []).forEach(p =>
+                    showScanStatus(`🔔 《${escapeHtml(p.title || res.book.title)}》已歸還，第一位預約者「${p.userName}（${p.className || ''}）」可來取書`, 'warn'));
+            }
             // 伺服器首次借書會自動開啟報表權限，同步更新導覽列
             if (!currentUser.permissions || !currentUser.permissions.canReport) await refreshPermissions();
             // 掃描發生時報表頁不可能是前景，無須每次都重繪報表
@@ -2304,14 +2308,21 @@
         const box = document.getElementById('reservationList');
         if (!box) return;
         try {
-            const data = await api('GET', '/api/reservations?status=pending');
+            const data = await api('GET', '/api/reservations?status=active');
             const list = data.reservations || [];
             if (!list.length) { box.innerHTML = '<div style="color:#666;">目前沒有進行中的預約。</div>'; return; }
-            box.innerHTML = list.map(r => `
-                <div style="display:flex; align-items:center; gap:8px; padding:8px; border:1px solid #ddd; border-radius:6px; margin-bottom:6px;">
-                    <span>📌 <strong>${escapeHtml(r.userName)}</strong> → 《${escapeHtml(r.title)}》（${escapeHtml(r.className || '')}）${r.expiresAt ? `<br><small style="color:#888;">有效至 ${escapeHtml(r.expiresAt)}</small>` : ''}</span>
-                    <button onclick="cancelReservation(${r.id})" style="margin-left:auto; padding:6px; background:#c62828; color:white; border:none; border-radius:4px;">取消預約</button>
-                </div>`).join('');
+            box.innerHTML = list.map(r => {
+                const isReady = r.status === 'ready';
+                const tag = isReady
+                    ? '<span style="color:#fff; background:#2e7d32; padding:1px 8px; border-radius:10px; font-size:0.8rem;">可來取書</span>'
+                    : `<span style="color:#666; background:#eee; padding:1px 8px; border-radius:10px; font-size:0.8rem;">第 ${r.queuePos || '?'} 位．排隊中</span>`;
+                const headIcon = isReady ? '🔔' : '📌';
+                return `
+                <div style="display:flex; align-items:center; gap:8px; padding:8px; border:1px solid ${isReady ? '#81c784' : '#ddd'}; background:${isReady ? '#e8f5e9' : '#fff'}; border-radius:6px; margin-bottom:6px;">
+                    <span>${headIcon} <strong>${escapeHtml(r.userName)}</strong> → 《${escapeHtml(r.title)}》（${escapeHtml(r.className || '')}） ${tag}${(r.expiresAt && !isReady) ? `<br><small style="color:#888;">等候期限 ${escapeHtml(r.expiresAt)}</small>` : ''}${isReady ? `<br><small style="color:#2e7d32;">請於 ${escapeHtml(r.expiresAt || '')} 前來取書</small>` : ''}</span>
+                    <button onclick="cancelReservation(${r.id})" style="margin-left:auto; padding:6px; background:#c62828; color:white; border:none; border-radius:4px;">${isReady ? '放棄候取' : '取消預約'}</button>
+                </div>`;
+            }).join('');
         } catch (err) { box.innerHTML = `<div style="color:#c62828;">載入預約失敗：${escapeHtml(err.message)}</div>`; }
     }
 
@@ -2366,6 +2377,8 @@
         try {
             const res = await api('POST', '/api/loan/batch-return', { barcodes });
             showScanStatus(`✅ 批次還書完成：${res.returned ? res.returned.length : 0} 筆`, 'ok');
+            (res.promoted || []).forEach(p =>
+                showScanStatus(`🔔 《${p.title}》已歸還，第一位預約者「${p.userName}（${p.className || ''}）」可來取書`, 'warn'));
         } catch (err) { showScanStatus(`❌ 批次還書失敗：${err.message}`, 'warn'); }
     }
 

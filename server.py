@@ -460,6 +460,38 @@ def init_db(db_path):
         conn.executescript(schema)
         conn.execute("PRAGMA user_version = 1")
 
+        # 預約排隊機制（v2.1）：舊版 CHECK 只允許 pending/cancelled/fulfilled，
+        # 新增 ready（已歸還可來取書）與 expired（逾期未取）狀態 → 需要重建表
+        legacy = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'reservations'"
+        ).fetchone()
+        if legacy and legacy["sql"] and "'ready'" not in legacy["sql"]:
+            conn.executescript(
+                """
+                BEGIN;
+                ALTER TABLE reservations RENAME TO reservations_legacy;
+                CREATE TABLE reservations (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+                    expires_at  TEXT,
+                    barcode     TEXT NOT NULL,
+                    title       TEXT NOT NULL,
+                    asset_id    TEXT NOT NULL DEFAULT '',
+                    class_name  TEXT NOT NULL,
+                    user_name   TEXT NOT NULL,
+                    member_type TEXT NOT NULL DEFAULT 'student',
+                    status      TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'cancelled', 'fulfilled', 'ready', 'expired'))
+                );
+                INSERT INTO reservations (id, created_at, expires_at, barcode, title, asset_id, class_name, user_name, member_type, status)
+                    SELECT id, created_at, expires_at, barcode, title, asset_id, class_name, user_name, member_type, status
+                    FROM reservations_legacy;
+                DROP TABLE reservations_legacy;
+                CREATE INDEX IF NOT EXISTS idx_reservations_barcode ON reservations (barcode, status);
+                CREATE INDEX IF NOT EXISTS idx_reservations_user ON reservations (user_name, status);
+                COMMIT;
+                """
+            )
+
         try:
             conn.execute("ALTER TABLE books ADD COLUMN due_at TEXT")
         except Exception:
@@ -2130,6 +2162,8 @@ class Handler(SimpleHTTPRequestHandler):
 
         try:
             conn.execute("BEGIN IMMEDIATE")
+            # 先惰性清理逾期預約，讓候取狀態與排隊順位正確
+            self.expire_reservations(conn)
             row = conn.execute(
                 "SELECT * FROM books WHERE barcode = ?", (barcode,)
             ).fetchone()
@@ -2142,6 +2176,18 @@ class Handler(SimpleHTTPRequestHandler):
                 raise ApiError(409, "《{}》目前狀態為「{}」，不可借出".format(row["title"], row["status"]))
 
             if action == "借書":
+                # 多人候取中的書：僅輪到的人可先借閱
+                ready = conn.execute(
+                    "SELECT * FROM reservations WHERE barcode = ? AND status = 'ready'",
+                    (barcode,),
+                ).fetchone()
+                if ready and (ready["user_name"] or "") != user_name:
+                    raise ApiError(
+                        409,
+                        "《{}》已由 {}（{}）預約候取，請先等候取書或逾期未取再排隊".format(
+                            row["title"], ready["user_name"], ready["class_name"] or ""
+                        ),
+                    )
                 if row["status"] == "借出" or row["loaned_to"]:
                     raise ApiError(
                         409,
@@ -2180,11 +2226,23 @@ class Handler(SimpleHTTPRequestHandler):
                 ),
             )
             log_id = cursor.lastrowid
-            # 借書成功：該成員的「待借」預約自動履約（客製化需求 4.4）
-            conn.execute(
-                "UPDATE reservations SET status = 'fulfilled' WHERE barcode = ? AND user_name = ? AND status = 'pending'",
-                (barcode, user_name),
-            )
+            promoted = []
+            if action == "借書":
+                # 借書成功：優先履約「可取書(ready)」狀態的自己預約，其次履約自己最早的 pending 預約
+                my_reservation = conn.execute(
+                    "SELECT * FROM reservations WHERE barcode = ? AND user_name = ? AND status = 'ready' "
+                    "ORDER BY id ASC LIMIT 1",
+                    (barcode, user_name),
+                ).fetchone() or conn.execute(
+                    "SELECT * FROM reservations WHERE barcode = ? AND user_name = ? AND status = 'pending' "
+                    "ORDER BY id ASC LIMIT 1",
+                    (barcode, user_name),
+                ).fetchone()
+                if my_reservation:
+                    conn.execute("UPDATE reservations SET status = 'fulfilled' WHERE id = ?", (my_reservation["id"],))
+            else:
+                # 還書：佇列下一位自動遞補為候取狀態
+                promoted = self._promote_ready(conn, [barcode])
             conn.execute("COMMIT")
 
             # 完成一筆借還書後，自動為教職員開啟「報表」權限，讓老師能看到報表頁籤。
@@ -2203,6 +2261,7 @@ class Handler(SimpleHTTPRequestHandler):
                 "ok": True,
                 "book": book_json(book),
                 "log": log_json(log),
+                "promoted": promoted,
             })
         except ApiError as err:
             safe_rollback(conn)
@@ -2235,7 +2294,89 @@ class Handler(SimpleHTTPRequestHandler):
                 (row["user_id"],),
             )
 
-    def reservation_json(self, row):
+    def expire_reservations(self, conn):
+        """惰性清理：待履約超過 expires_at → cancelled；可取書超過期限 → expired（再由歸還/取消/排隊邏輯往後推）。"""
+        expired_barcodes = [
+            r["barcode"] for r in conn.execute(
+                "SELECT DISTINCT barcode FROM reservations "
+                "WHERE status = 'ready' AND expires_at IS NOT NULL AND expires_at < ?",
+                (now_display(),),
+            ).fetchall()
+        ]
+        conn.execute(
+            "UPDATE reservations SET status = 'cancelled' "
+            "WHERE status = 'pending' AND expires_at IS NOT NULL AND expires_at < ?",
+            (now_display(),),
+        )
+        conn.execute(
+            "UPDATE reservations SET status = 'expired' "
+            "WHERE status = 'ready' AND expires_at IS NOT NULL AND expires_at < ?",
+            (now_display(),),
+        )
+        # 排隊中下一位等著取書：每條書若書在館且還沒有 ready 預約，補到 ready 狀態
+        for barcode in expired_barcodes:
+            self._promote_ready(conn, [barcode])
+
+    def _queue_by_barcode(self, conn):
+        """回傳 {barcode: [rows...]}（只含 pending／ready，依 id 由舊到新）。"""
+        groups = {}
+        for r in conn.execute(
+            "SELECT * FROM reservations WHERE status IN ('pending', 'ready') ORDER BY barcode, id"
+        ).fetchall():
+            groups.setdefault(r["barcode"], []).append(r)
+        return groups
+
+    def _reservation_positions(self, conn):
+        """回傳 {id: 順位}（同一本書內依 id 順序）。"""
+        positions = {}
+        for barcode, rows in self._queue_by_barcode(conn).items():
+            for i, r in enumerate(rows, start=1):
+                positions[r["id"]] = i
+        return positions
+
+    def _promote_ready(self, conn, barcodes):
+        """歸還後把每條 barcode 的下一位 pending 預約改為 ready（可來取書）；書不在館則不遞補。"""
+        promoted = []
+        if isinstance(barcodes, str):
+            barcodes = [barcodes]
+        for barcode in barcodes:
+            book = conn.execute(
+                "SELECT status FROM books WHERE barcode = ?", (barcode,)
+            ).fetchone()
+            if not book or book["status"] != "在館":
+                continue
+            exists_ready = conn.execute(
+                "SELECT 1 FROM reservations WHERE barcode = ? AND status = 'ready'",
+                (barcode,),
+            ).fetchone()
+            if exists_ready:
+                continue
+            nxt = conn.execute(
+                "SELECT * FROM reservations WHERE barcode = ? AND status = 'pending' ORDER BY id ASC LIMIT 1",
+                (barcode,),
+            ).fetchone()
+            if not nxt:
+                continue
+            days = int(get_setting(
+                conn,
+                "loan_days_teacher" if nxt["member_type"] == "teacher" else "loan_days_student",
+                "7",
+            ))
+            expires_at = (datetime.now() + timedelta(days=days)).strftime("%Y/%m/%d %H:%M:%S")
+            conn.execute(
+                "UPDATE reservations SET status = 'ready', expires_at = ? WHERE id = ? AND status = 'pending'",
+                (expires_at, nxt["id"]),
+            )
+            promoted.append({
+                "id": nxt["id"],
+                "userName": nxt["user_name"],
+                "className": nxt["class_name"],
+                "title": nxt["title"],
+                "expiresAt": expires_at,
+            })
+        return promoted
+
+    def reservation_json(self, row, positions=None):
         return {
             "id": row["id"],
             "createdAt": row["created_at"],
@@ -2247,29 +2388,31 @@ class Handler(SimpleHTTPRequestHandler):
             "userName": row["user_name"],
             "memberType": row["member_type"],
             "status": row["status"],
+            "queuePos": (positions or {}).get(row["id"]),
         }
 
     def api_reservations(self, conn, query):
         # 過期預約自動失效，避免清單累積永遠不會成立的「進行中」預約
-        conn.execute(
-            "UPDATE reservations SET status = 'cancelled' "
-            "WHERE status = 'pending' AND expires_at IS NOT NULL AND expires_at < ?",
-            (now_display(),),
-        )
+        self.expire_reservations(conn)
         status_filter = (query.get("status") or [""])[0].strip()
         conditions = []
         params = []
-        if status_filter:
+        if status_filter == "active":
+            conditions.append("status IN ('pending', 'ready')")
+        elif status_filter:
             conditions.append("status = ?")
             params.append(status_filter)
         where_sql = (" WHERE " + " AND ".join(conditions)) if conditions else ""
+
+        positions = self._reservation_positions(conn)
         rows = conn.execute(
-            "SELECT * FROM reservations" + where_sql + " ORDER BY id DESC",
+            "SELECT * FROM reservations" + where_sql +
+            " ORDER BY CASE WHEN status = 'ready' THEN 0 ELSE 1 END, id DESC",
             params,
         ).fetchall()
         reservations = []
         for r in rows:
-            reservations.append(self.reservation_json(r))
+            reservations.append(self.reservation_json(r, positions))
         return self.send_json({"reservations": reservations, "total": len(reservations)})
 
     def api_reservation_add(self, conn, token=None):
@@ -2283,6 +2426,8 @@ class Handler(SimpleHTTPRequestHandler):
         expires_days = int(get_setting(conn, "loan_days_teacher" if member_type == "teacher" else "loan_days_student", "7"))
 
         conn.execute("BEGIN IMMEDIATE")
+        # 先清掉逾期預約，讓排隊順序準確
+        self.expire_reservations(conn)
         try:
             row = conn.execute("SELECT * FROM books WHERE barcode = ?", (barcode,)).fetchone()
             if not row:
@@ -2306,11 +2451,13 @@ class Handler(SimpleHTTPRequestHandler):
                 (now, expires_at, barcode, row["title"], row["asset_id"], class_name, user_name, member_type),
             )
             reservation_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            # 排隊順位可在同一 transaction 內算出（書仍為借出狀態，佇列依 id 排序）
+            positions = self._reservation_positions(conn)
             conn.execute("COMMIT")
             self._audit(conn, token, "新增預約", target=barcode,
                         detail="{}（{}）".format(row["title"] or "", user_name))
             res = conn.execute("SELECT * FROM reservations WHERE id = ?", (reservation_id,)).fetchone()
-            return self.send_json({"ok": True, "reservation": self.reservation_json(res)})
+            return self.send_json({"ok": True, "reservation": self.reservation_json(res, positions)})
         except ApiError as err:
             safe_rollback(conn)
             raise
@@ -2320,17 +2467,23 @@ class Handler(SimpleHTTPRequestHandler):
 
     def api_reservation_cancel(self, conn, reservation_id, token=None):
         conn.execute("BEGIN IMMEDIATE")
+        self.expire_reservations(conn)
         try:
             res = conn.execute("SELECT * FROM reservations WHERE id = ?", (reservation_id,)).fetchone()
             if not res:
                 raise ApiError(404, "找不到此預約紀錄")
-            if res["status"] == "pending":
-                conn.execute("UPDATE reservations SET status = 'cancelled' WHERE id = ?", (reservation_id,))
+            cancelled_ready = res["status"] == "ready"
+            if res["status"] in ("pending", "ready"):
+                conn.execute("UPDATE reservations SET status = 'cancelled' WHERE id = ? AND status IN ('pending', 'ready')", (reservation_id,))
                 self._audit(conn, token, "取消預約", target=res["barcode"],
                             detail="{}（{}）".format(res["title"] or "", res["user_name"] or ""))
+            # 取消的是候取中的預約 → 排隊下一位往前遞補
+            if cancelled_ready:
+                self._promote_ready(conn, [res["barcode"]])
+            positions = self._reservation_positions(conn)
             conn.execute("COMMIT")
             res = conn.execute("SELECT * FROM reservations WHERE id = ?", (reservation_id,)).fetchone()
-            return self.send_json({"ok": True, "reservation": self.reservation_json(res)})
+            return self.send_json({"ok": True, "reservation": self.reservation_json(res, positions)})
         except ApiError as err:
             safe_rollback(conn)
             raise
@@ -2352,6 +2505,7 @@ class Handler(SimpleHTTPRequestHandler):
                 barcodes.append(code)
 
         conn.execute("BEGIN IMMEDIATE")
+        self.expire_reservations(conn)
         returned = []
         try:
             for barcode in barcodes:
@@ -2371,6 +2525,7 @@ class Handler(SimpleHTTPRequestHandler):
                     (now_display(), barcode, row["title"], row["asset_id"], row["loan_class"] or "", row["loaned_to"] or ""),
                 )
                 returned.append(barcode)
+            promoted = self._promote_ready(conn, returned)
             conn.execute("COMMIT")
             self._audit(conn, token, "批次還書", detail="共 {} 本：{}".format(
                 len(returned), "、".join(returned[:10]) + ("…" if len(returned) > 10 else "")))
@@ -2380,7 +2535,7 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception:
             safe_rollback(conn)
             raise
-        return self.send_json({"ok": True, "returned": returned, "total": len(returned)})
+        return self.send_json({"ok": True, "returned": returned, "total": len(returned), "promoted": promoted})
 
     def api_book_upsert(self, conn, barcode, token=None):
         data = self.read_json()
