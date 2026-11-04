@@ -1825,8 +1825,9 @@
                 <input type="email" id="mmEmail" data-name="email" value="${escapeHtml(v.email || '')}">
                 <label for="mmRole">角色</label>
                 <select id="mmRole" data-name="role">
-                    <option value="teacher"${String(v.role || 'teacher') === 'teacher' ? ' selected' : ''}>\u{1F9D1}\u200D\u{1F3AF} 老師</option>
-                    <option value="student"${String(v.role || 'teacher') === 'student' ? ' selected' : ''}>\u{1F4B8} \u5B66\u751F</option>
+                    <option value="teacher"${String(v.role || 'teacher') === 'teacher' ? ' selected' : ''}>👨‍🏫 老師</option>
+                    <option value="student"${String(v.role || 'teacher') === 'student' ? ' selected' : ''}>🎒 學生</option>
+                    ${(v.role === 'admin' || v.role === 'root') ? `<option value="${v.role}" selected>🛡️ ${roleLabel(v.role)}</option>` : ''}
                 </select>
                 ${String(v.className || '') === '__staff__' ? `
                 <hr style="margin:12px 0; border:none; border-top:1px solid #ddd;">
@@ -1867,7 +1868,7 @@
                 username: a.username || '',
                 email: a.email || '',
                 className: clsName,
-                role: (a.classId === null) ? (a.role || 'teacher') : 'student',
+                role: a.role || ((a.classId === null) ? 'teacher' : 'student'),
                 canLoan: a.canLoan !== undefined ? a.canLoan : true,
                 canMember: a.canMember !== undefined ? a.canMember : false,
                 canBook: a.canBook !== undefined ? a.canBook : false,
@@ -2022,7 +2023,7 @@
             const nameEsc = escapeHtml(a.name || '');
             const userEsc = escapeHtml(a.username || '');
             const emailEsc = escapeHtml(a.email || '') || '未設定';
-            const roleEsc = escapeHtml(a.classId === null ? roleLabel(a.role || 'teacher') : '學生');
+            const roleEsc = escapeHtml(roleLabel(a.role || ((a.classId === null) ? 'teacher' : 'student')));
             return `<tr data-act="viewMember" data-id="${a.id}" style="cursor:pointer;">
             <td>${clsEsc}</td>
             <td>${nameEsc}</td>
