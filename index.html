@@ -153,6 +153,16 @@
             grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 6px 10px;
         }
+        @media (max-width: 640px) {
+            .container { padding: 12px; margin: 6px auto; border-radius: 8px; }
+            .nav { flex-wrap: wrap; }
+            .nav button { flex: 1 1 auto; min-width: 88px; padding: 10px 6px; font-size: 0.92rem; }
+            body { font-size: 15px; }
+            input, select, textarea, button, table { font-size: 1rem; }
+            table { font-size: 0.85rem; }
+            #memberModalFields .permBox .permGrid { grid-template-columns: 1fr; }
+        }
+
         @media (max-width: 540px) {
             #memberModalFields .permBox .permGrid { grid-template-columns: 1fr; }
         }
