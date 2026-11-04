@@ -1357,6 +1357,13 @@ class Handler(SimpleHTTPRequestHandler):
             finally:
                 public_conn.close()
 
+        if path == "/api/security-question" and method == "GET":
+            public_conn = connect()
+            try:
+                return self.api_security_question_get(public_conn, query)
+            finally:
+                public_conn.close()
+
         if path == "/api/password/forgot/security-verify" and method == "POST":
             public_conn = connect()
             try:
@@ -1367,10 +1374,6 @@ class Handler(SimpleHTTPRequestHandler):
         conn = connect()
         try:
             token = self.require_session(conn)
-
-            if path == "/api/security-question" and method == "GET":
-                require_permission(conn, token, "loan")
-                return self.api_security_question_get(conn)
 
             if path == "/api/security-question" and method == "PUT":
                 require_permission(conn, token, "loan")
@@ -3925,21 +3928,32 @@ class Handler(SimpleHTTPRequestHandler):
         "你最好的朋友的名字是什麼？",
     ]
 
-    def api_security_question_get(self, conn):
-        """取得當前登入使用者的安全提問題目（不回傳答案）。"""
+    def api_security_question_get(self, conn, query):
+        """取得使用者的安全提問題目。
+        已登入時自動使用 session 使用者；未登入時依 query username 查詢（公開端點，供忘記密碼使用）。
+        不回傳答案。
+        """
         token = self.cookies().get("sid")
-        row = conn.execute(
+        sess = conn.execute(
             "SELECT s.user_id FROM sessions s WHERE s.token = ? AND s.expires_at >= ?",
             (token, time.time()),
         ).fetchone()
-        if not row or row["user_id"] is None:
-            raise ApiError(401, "請先登入")
-        user = conn.execute(
-            "SELECT security_question FROM users WHERE id = ? AND active = 1",
-            (row["user_id"],),
-        ).fetchone()
+        if sess and sess["user_id"] is not None:
+            user_id = sess["user_id"]
+            user = conn.execute(
+                "SELECT security_question FROM users WHERE id = ? AND active = 1",
+                (user_id,),
+            ).fetchone()
+        else:
+            username = (query.get("username") or [""])[0].strip()
+            if not username:
+                raise ApiError(400, "請提供帳號")
+            user = conn.execute(
+                "SELECT security_question FROM users WHERE (username = ? OR name = ?) AND active = 1 ORDER BY id LIMIT 1",
+                (username, username),
+            ).fetchone()
         if not user:
-            raise ApiError(404, "查無此使用者")
+            raise ApiError(404, "查無此啟用中的使用者")
         return self.send_json({
             "hasQuestion": bool(user["security_question"]),
             "question": user["security_question"] or "",

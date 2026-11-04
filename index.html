@@ -690,6 +690,7 @@
         <div class="modal-tabs">
             <button type="button" id="tabEmail" class="active" onclick="switchRecoveryTab('email')">Email 驗證碼</button>
             <button type="button" id="tabCode" onclick="switchRecoveryTab('code')">本機復原碼</button>
+            <button type="button" id="tabSec" onclick="switchRecoveryTab('security')">安全提問（離線）</button>
         </div>
 
         <div id="recoveryEmailPane">
@@ -721,6 +722,27 @@
             <label for="localNewPwd2">再次輸入新密碼</label>
             <input type="password" id="localNewPwd2" autocomplete="new-password">
             <button type="button" class="btn-primary" onclick="submitLocalRecovery()">✅ 重設密碼</button>
+        </div>
+
+        <div id="recoverySecurityPane" style="display:none;">
+            <p class="modal-hint">無 Email 時可用「安全提問」重設密碼。請先登入系統於個人頁面設定安全提問與答案。</p>
+            <div id="securityStep1" style="display:block;">
+                <label for="secUsername">帳號／姓名</label>
+                <input type="text" id="secUsername" autocomplete="username">
+                <button type="button" class="btn-primary" onclick="requestSecurityQuestion()">🔍 取得提問題目</button>
+                <p class="modal-hint" id="secHint"></p>
+            </div>
+            <div id="securityStep2" style="display:none;">
+                <p class="modal-hint" id="secQuestionText"></p>
+                <label for="secAnswer">安全提問答案</label>
+                <input type="text" id="secAnswer" autocomplete="off">
+                <label for="secNewPwd">新密碼（至少 4 碼）</label>
+                <input type="password" id="secNewPwd" autocomplete="new-password">
+                <label for="secNewPwd2">再次輸入新密碼</label>
+                <input type="password" id="secNewPwd2" autocomplete="new-password">
+                <button type="button" class="btn-primary" onclick="verifySecurityAnswer()">✅ 重設密碼</button>
+                <button type="button" class="btn-secondary" onclick="backToSecurityStep1()">← 返回</button>
+            </div>
         </div>
 
         <p class="modal-error" id="recoveryError"></p>
@@ -1657,10 +1679,69 @@
     function switchRecoveryTab(tab) {
         document.getElementById('recoveryError').textContent = '';
         const email = tab === 'email';
+        const code = tab === 'code';
+        const sec = tab === 'security';
         document.getElementById('tabEmail').classList.toggle('active', email);
-        document.getElementById('tabCode').classList.toggle('active', !email);
+        document.getElementById('tabCode').classList.toggle('active', code);
+        document.getElementById('tabSec').classList.toggle('active', sec);
         document.getElementById('recoveryEmailPane').style.display = email ? 'block' : 'none';
-        document.getElementById('recoveryCodePane').style.display = email ? 'none' : 'block';
+        document.getElementById('recoveryCodePane').style.display = code ? 'block' : 'none';
+        document.getElementById('recoverySecurityPane').style.display = sec ? 'block' : 'none';
+        if (sec) {
+            document.getElementById('securityStep1').style.display = 'block';
+            document.getElementById('securityStep2').style.display = 'none';
+            document.getElementById('secUsername').value = '';
+            document.getElementById('secAnswer').value = '';
+            document.getElementById('secNewPwd').value = '';
+            document.getElementById('secNewPwd2').value = '';
+        }
+    }
+
+    async function requestSecurityQuestion() {
+        setRecoveryError('');
+        const username = document.getElementById('secUsername').value.trim();
+        if (!username) { setRecoveryError('請輸入帳號'); return; }
+        try {
+            const info = await api('GET', '/api/security-question?username=' + encodeURIComponent(username));
+            document.getElementById('secQuestionText').textContent = info.question || '此帳號尚未設定安全提問';
+            document.getElementById('securityStep1').style.display = 'none';
+            document.getElementById('securityStep2').style.display = 'block';
+            document.getElementById('secAnswer').focus();
+        } catch (err) {
+            setRecoveryError(err.message || '取得提問失敗');
+        }
+    }
+
+    function backToSecurityStep1() {
+        setRecoveryError('');
+        document.getElementById('securityStep2').style.display = 'none';
+        document.getElementById('securityStep1').style.display = 'block';
+        document.getElementById('secAnswer').value = '';
+        document.getElementById('secNewPwd').value = '';
+        document.getElementById('secNewPwd2').value = '';
+    }
+
+    async function verifySecurityAnswer() {
+        setRecoveryError('');
+        const username = document.getElementById('secUsername').value.trim();
+        const question = document.getElementById('secQuestionText').textContent;
+        const answer = document.getElementById('secAnswer').value.trim();
+        const pwd = document.getElementById('secNewPwd').value;
+        const pwd2 = document.getElementById('secNewPwd2').value;
+        if (!question || question.startsWith('此帳號尚未設定')) { setRecoveryError('請先取得有效的提問題目'); return; }
+        if (!answer) { setRecoveryError('請輸入安全提問答案'); return; }
+        if (pwd.length < 4) { setRecoveryError('新密碼至少需 4 個字元'); return; }
+        if (pwd !== pwd2) { setRecoveryError('兩次輸入的新密碼不一致'); return; }
+        try {
+            await api('POST', '/api/password/forgot/security-verify', {
+                username, securityQuestion: question, securityAnswer: answer, newPassword: pwd
+            });
+            alert('✅ 密碼已重設，請使用新密碼登入');
+            closeForgotModal();
+            document.getElementById('loginPwd').value = '';
+        } catch (err) {
+            setRecoveryError(err.message || '重設失敗');
+        }
     }
 
     function setRecoveryError(message) {
