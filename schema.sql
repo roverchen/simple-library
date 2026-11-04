@@ -46,8 +46,9 @@ CREATE TABLE IF NOT EXISTS books (
     borrow_count INTEGER NOT NULL DEFAULT 0,
     remarks      TEXT    NOT NULL DEFAULT '',
     due_at       TEXT,
-    call_no      TEXT    NOT NULL DEFAULT '',   -- 索書號：館藏分類編號（客製化需求 v2.1 4.5）
-    isbn         TEXT    NOT NULL DEFAULT '',   -- ISBN：國際標準書號（版本身分，非館藏條碼）
+    call_no      TEXT    NOT NULL DEFAULT '',   -- 索書號：[主題分類代碼]-[書名首字注音]，如 D-ㄏ
+    category     TEXT    NOT NULL DEFAULT '',   -- 主題分類代碼（A-E, S），供索書號自動產生與排架
+    isbn         TEXT    NOT NULL DEFAULT '',
     publisher    TEXT    NOT NULL DEFAULT '',   -- 出版社
     price        INTEGER NOT NULL DEFAULT 0,    -- 單價（新台幣元）
     quantity     INTEGER NOT NULL DEFAULT 1,    -- 數量（固定 1）
@@ -59,6 +60,18 @@ CREATE TABLE IF NOT EXISTS books (
     scrap_date   TEXT    NOT NULL DEFAULT '',   -- 報廢日期（民國年格式）
     created_at   TEXT    NOT NULL DEFAULT (datetime('now', 'localtime')),
     updated_at   TEXT    NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+
+-- 主題分類：供索書號自動產生與書架排架（規格 v2.1 4.5）
+CREATE TABLE IF NOT EXISTS categories (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT    NOT NULL DEFAULT '',   -- 分類名稱，如 語文與故事
+    code        TEXT    NOT NULL DEFAULT '',   -- 系統分類代碼，大寫英文字母，如 A/B/C/D/E/S
+    color       TEXT    NOT NULL DEFAULT '',   -- 實體對應顏色，如 黃色／紅色／藍色／綠色／紫色／橘色
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    active      INTEGER NOT NULL DEFAULT 1,
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now', 'localtime')),
+    updated_at  TEXT    NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_books_status ON books (status);
@@ -123,6 +136,7 @@ CREATE TABLE IF NOT EXISTS users (
     role       TEXT    NOT NULL DEFAULT 'teacher',
     class_id   INTEGER REFERENCES classes(id) ON DELETE SET NULL,
     email      TEXT    NOT NULL DEFAULT '',
+    barcode    TEXT    NOT NULL DEFAULT '',   -- 成員條碼：學生 SA+班級+號碼（如 SA01）、老師 T+員工編號（如 T001）
     active     INTEGER NOT NULL DEFAULT 1,
     can_loan   INTEGER NOT NULL DEFAULT 0,
     can_member INTEGER NOT NULL DEFAULT 0,

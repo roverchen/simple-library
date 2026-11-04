@@ -406,33 +406,41 @@ def next_username(conn):
         num += 1
 
 
-def ensure_member_user(conn, class_id, name, flags=None):
+def ensure_member_user(conn, class_id, name, flags=None, barcode=None):
     """確保班級成員有對應的 users 資料列；回傳 user id。
 
     成員與帳號已整併到 users 表：class_id 有值即為班級成員，
     老師／管理員則為 class_id IS NULL。
     新建帳號時以 flags 套用功能權限（預設僅開借還書）；
     重新加入既有（曾停用）成員時保留原權限，不覆蓋。
+    barcode 為成員條碼（學生 SA+班級+號碼、老師 T+員工編號），同時用作 username。
     """
-    row = conn.execute(
-        "SELECT id FROM users WHERE class_id = ? AND name = ? ORDER BY active DESC, id LIMIT 1",
-        (class_id, name),
-    ).fetchone()
+    username = barcode or next_username(conn)
+    row = None
+    if barcode:
+        row = conn.execute(
+            "SELECT id FROM users WHERE username = ? ORDER BY active DESC, id LIMIT 1",
+            (username,),
+        ).fetchone()
+    if not row:
+        row = conn.execute(
+            "SELECT id FROM users WHERE class_id = ? AND name = ? ORDER BY active DESC, id LIMIT 1",
+            (class_id, name),
+        ).fetchone()
     if row:
         conn.execute(
             "UPDATE users SET active = 1, role = 'student', "
-            "updated_at = datetime('now', 'localtime') WHERE id = ?",
-            (row["id"],),
+            "barcode = COALESCE(?, barcode), updated_at = datetime('now', 'localtime') WHERE id = ?",
+            (barcode, row["id"]),
         )
         return row["id"]
 
     default_flags = flags if isinstance(flags, (list, tuple)) and len(flags) == 5 else (1, 0, 0, 0, 0)
-    username = next_username(conn)
     cursor = conn.execute(
-        "INSERT INTO users (username, name, password, role, class_id, email, active, "
+        "INSERT INTO users (username, name, password, role, class_id, email, barcode, active, "
         "can_loan, can_member, can_book, can_config, can_report) "
-        "VALUES (?, ?, ?, 'student', ?, '', 1, ?, ?, ?, ?, ?)",
-        (username, name, hash_password(DEFAULT_PASSWORD), class_id, *default_flags),
+        "VALUES (?, ?, ?, 'student', ?, '', ?, 1, ?, ?, ?, ?, ?)",
+        (username, name, hash_password(DEFAULT_PASSWORD), class_id, barcode, *default_flags),
     )
     return cursor.lastrowid
 
@@ -597,6 +605,21 @@ def init_db(db_path):
             except Exception:
                 pass
 
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN barcode TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass
+
+        try:
+            conn.execute("ALTER TABLE books ADD COLUMN category TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass
+
+        try:
+            conn.execute("ALTER TABLE categories ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))")
+        except Exception:
+            pass
+
         # 現有帳號預設權限：僅在首次導入權限欄位時設定一次，避免每次啟動覆蓋管理員的自訂設定。
         # 所有啟用帳號一律可使用借還書畫面（含學生；規格「學生帳號僅能登入使用借還書」），
         # 其餘系統功能照舊：教職員可由管理員勾選、學生不開放。
@@ -649,6 +672,23 @@ def init_db(db_path):
                     "INSERT INTO classes (name, sort_order, active) VALUES (?, ?, 1)",
                     (name, i),
                 )
+
+        # 預設主題分類（規格 v2.1 4.5）：代碼＋顏色
+        DEFAULT_CATEGORIES = [
+            ("語文與故事", "A", "黃色", 0),
+            ("情緒與品格", "B", "紅色", 1),
+            ("生活與常規", "C", "藍色", 2),
+            ("自然與科學", "D", "綠色", 3),
+            ("多元與文化", "E", "紫色", 4),
+            ("特殊材質區", "S", "橘色", 5),
+        ]
+        ccount = conn.execute("SELECT COUNT(*) FROM categories").fetchone()[0]
+        if ccount == 0:
+            for name, code, color, order in DEFAULT_CATEGORIES:
+                conn.execute(
+                    "INSERT INTO categories (name, code, color, sort_order, active) VALUES (?, ?, ?, ?, 1)",
+                    (name, code, color, order),
+                )
     finally:
         conn.close()
 
@@ -668,6 +708,41 @@ def safe_rollback(conn):
         pass
 
 
+_ZHUYIN = {
+    "好": "ㄏ", "媽": "ㄇㄚ", "爸": "ㄅㄚˋ", "哥": "ㄍㄜ", "姐": "ㄐㄧㄝˇ", "弟": "ㄉㄧˋ", "妹": "ㄇㄟˋ",
+    "貓": "ㄇㄠ", "狗": "ㄍㄡˇ", "兔": "ㄊㄨˋ", "熊": "ㄒㄩㄥˊ", "獅": "ㄕ", "虎": "ㄏㄨˇ",
+    "大": "ㄉㄚˋ", "小": "ㄒㄧㄠˇ", "中": "ㄓㄨㄥ", "上": "ㄕㄤˋ", "下": "ㄒㄧㄚˋ", "左": "ㄗㄨㄛˇ", "右": "ㄧㄡˋ",
+    "人": "ㄖㄣˊ", "口": "ㄎㄡˇ", "手": "ㄕㄡˇ", "足": "ㄗㄨˊ", "目": "ㄇㄨˋ", "耳": "ㄦˇ", "鼻": "ㄅㄧˊ",
+    "心": "ㄒㄧㄣ", "木": "ㄇㄨˋ", "火": "ㄏㄨㄛˇ", "水": "ㄕㄨㄟˇ", "金": "ㄐㄧㄣ", "土": "ㄊㄨˇ",
+    "日": "ㄖˋ", "月": "ㄩㄝˋ", "星": "ㄒㄧㄥ", "天": "ㄊㄧㄢ", "地": "ㄉㄧˋ", "山": "ㄕㄢ", "川": "ㄔㄨㄢ",
+    "花": "ㄏㄨㄚ", "草": "ㄘㄠˇ", "樹": "ㄕㄨˋ", "林": "ㄌㄧㄣˊ", "魚": "ㄩˊ", "鳥": "ㄋㄧㄠˇ",
+    "紅": "ㄏㄨㄥˊ", "黃": "ㄏㄨㄤˊ", "藍": "ㄌㄢˊ", "綠": "ㄌㄩˋ", "紫": "ㄗˇ", "橘": "ㄐㄩˊ",
+    "白": "ㄅㄚˊ", "黑": "ㄏㄟ", "灰": "ㄏㄨㄟ", "粉": "ㄈㄣˇ", "色": "ㄙㄜˋ",
+    "愛": "ㄞˋ", "親": "ㄑㄧㄣ", "暖": "ㄋㄨㄢˇ", "開心": "ㄎㄞˊ", "難過": "ㄋㄢˋ",
+    "彩": "ㄘㄟˇ", "學": "ㄒㄩㄝˊ", "校": "ㄒㄧㄠˋ", "書": "ㄕㄨ", "毛": "ㄇㄠˊ", "蟲": "ㄔㄨㄥˊ",
+    "牙": "ㄚˊ", "廁": "ㄘㄜˋ", "所": "ㄙㄨㄛˇ", "安": "ㄢ", "全": "ㄑㄩㄢˊ", "就": "ㄐㄧㄡˋ", "寢": "ㄑㄧㄣˇ",
+    "習": "ㄒㄧˊ", "象": "ㄒㄧㄤˋ", "氣": "ㄑㄧˋ", "年": "ㄋㄧán", "節": "ㄐㄧㄝˊ", "各": "ㄍㄜˋ",
+    "國": "ㄍㄨㄛˊ", "風": "ㄈㄥ", "俗": "ㄙㄨˊ", "家": "ㄐㄧㄚ", "庭": "ㄊㄧㄥˊ", "多": "ㄉㄨㄛ",
+    "樣": "ㄋㄧㄢˋ", "特": "ㄊㄜˋ", "殊": "ㄕㄨ", "材": "ㄘㄞˊ", "質": "ㄓˋ", "區": "ㄑㄩ",
+    "翻": "ㄈㄢ", "有聲": "ㄧㄡˇ",
+}
+
+
+def zhuyin_of_char(ch):
+    """回傳單字注音；未收錄字元退回該字元本身，供索書號次分類使用。"""
+    return _ZHUYIN.get(ch, ch)
+
+
+def auto_call_no(category_code, title):
+    """依主分類代碼與書名第一字自動產生索書號；無類別則回傳空字串。"""
+    code = (category_code or "").strip().upper()
+    title = (title or "").strip()
+    if not code or not title:
+        return ""
+    first = title[0]
+    return "{}-{}".format(code, zhuyin_of_char(first))
+
+
 def book_json(row):
     return {
         "title": row["title"],
@@ -682,6 +757,7 @@ def book_json(row):
         "count": row["borrow_count"],
         "remarks": row["remarks"],
         "callNo": row["call_no"] or "",
+        "category": row["category"] or "",
         "isbn": row["isbn"] or "",
         "publisher": row["publisher"] or "",
         "price": row["price"] or 0,
@@ -1564,10 +1640,32 @@ class Handler(SimpleHTTPRequestHandler):
                     return self.api_book_action(conn, barcode, action, token)
                 raise ApiError(404, "找不到此圖書 API")
 
+            if method == "GET" and path == "/api/categories":
+                require_permission(conn, token, "book")
+                return self.api_categories_list(conn)
+
+            if method == "PUT" and path == "/api/categories":
+                require_permission(conn, token, "config")
+                return self.api_categories_upsert(conn)
+
+            if method == "DELETE" and path.startswith("/api/categories/"):
+                require_permission(conn, token, "config")
+                code = unquote(path[len("/api/categories/"):].rstrip("/")).strip()
+                if not code:
+                    raise ApiError(400, "分類代碼不可空白")
+                return self.api_categories_delete(conn, code)
+
             if method == "POST" and path == "/api/members/import":
                 require_staff(conn, token)
                 require_permission(conn, token, "member")
                 return self.api_members_import(conn, token)
+
+            if method == "GET" and path == "/api/member/by-barcode":
+                require_permission(conn, token, "loan")
+                barcode = (query.get("barcode") or [""])[0].strip()
+                if not barcode:
+                    raise ApiError(400, "條碼不可空白")
+                return self.api_member_by_barcode(conn, barcode)
 
             if method == "GET" and path == "/api/template/members.xlsx":
                 require_permission(conn, token, "member")
@@ -3033,6 +3131,13 @@ class Handler(SimpleHTTPRequestHandler):
         asset = _clean_text(data.get("assetId", ""), "財產編號", 64)
         remarks = _clean_text(data.get("remarks") or "", "備註", 500)
         call_no = _clean_text(data.get("callNo") or data.get("call_no") or "", "索書號", 50)
+        category = _clean_text(data.get("category") or "", "主題分類", 10)
+        valid_codes = {r["code"] for r in conn.execute("SELECT code FROM categories WHERE active = 1")}
+        if category and category not in valid_codes:
+            raise ApiError(400, "主題分類代碼不合法：{}".format(category))
+        # 若未手動指定索書號但有選主題分類，自動產生 [代碼]-[注音]
+        if not call_no and category:
+            call_no = auto_call_no(category, title)
         isbn = _clean_text(data.get("isbn") or data.get("ISBN") or "", "ISBN", 32)
         publisher = _clean_text(data.get("publisher") or "", "出版社", 100)
         source = _clean_text(data.get("source") or "", "來源", 20)
@@ -3065,9 +3170,9 @@ class Handler(SimpleHTTPRequestHandler):
             ).fetchone()
             if row:
                 conn.execute(
-                    "UPDATE books SET title = ?, asset_id = ?, call_no = ?, isbn = ?, remarks = ?, publisher = ?, price = ?, quantity = ?, source = ?, purchase_date = ?, keeper = ?, confirm_note = ?, inventory_date = ?, scrap_date = ?, updated_at = ? "
+                    "UPDATE books SET title = ?, asset_id = ?, call_no = ?, category = ?, isbn = ?, remarks = ?, publisher = ?, price = ?, quantity = ?, source = ?, purchase_date = ?, keeper = ?, confirm_note = ?, inventory_date = ?, scrap_date = ?, updated_at = ? "
                     "WHERE barcode = ?",
-                    (title, asset, call_no, isbn, remarks, publisher, price, quantity, source,
+                    (title, asset, call_no, category, isbn, remarks, publisher, price, quantity, source,
                      purchase_date, keeper, confirm_note, inventory_date, scrap_date,
                      now_display(), barcode),
                 )
@@ -3078,9 +3183,9 @@ class Handler(SimpleHTTPRequestHandler):
                     )
             else:
                 conn.execute(
-                    "INSERT INTO books (barcode, title, asset_id, status, remarks, call_no, isbn, publisher, price, quantity, source, purchase_date, keeper, confirm_note, inventory_date, scrap_date, created_at, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (barcode, title, asset, status or "在館", remarks, call_no, isbn,
+                    "INSERT INTO books (barcode, title, asset_id, status, remarks, call_no, category, isbn, publisher, price, quantity, source, purchase_date, keeper, confirm_note, inventory_date, scrap_date, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (barcode, title, asset, status or "在館", remarks, call_no, category, isbn,
                      publisher, price, quantity, source, purchase_date, keeper,
                      confirm_note, inventory_date, scrap_date,
                      now_display(), now_display()),
@@ -3137,6 +3242,76 @@ class Handler(SimpleHTTPRequestHandler):
             "loanDays": loan_days,
             "memberType": member_type,
         })
+
+    def api_categories_list(self, conn):
+        rows = conn.execute(
+            "SELECT * FROM categories ORDER BY sort_order, id"
+        ).fetchall()
+        return self.send_json({
+            "categories": [
+                {
+                    "id": r["id"], "name": r["name"], "code": r["code"],
+                    "color": r["color"], "sortOrder": r["sort_order"],
+                    "active": bool(r["active"]),
+                }
+                for r in rows
+            ],
+        })
+
+    def api_categories_upsert(self, conn):
+        token = self.cookies().get("sid")
+        data = self.read_json()
+        name = _clean_text(data.get("name"), "分類名稱", 50, required=True)
+        code = _clean_text(data.get("code"), "分類代碼", 10, required=True).upper()
+        if not re.fullmatch(r"[A-Za-z]{1,2}", code):
+            raise ApiError(400, "分類代碼需為 1–2 個英文字母")
+        color = _clean_text(data.get("color") or "", "顏色", 20)
+        try:
+            sort_order = int(data.get("sortOrder") or 0)
+        except (TypeError, ValueError):
+            sort_order = 0
+        active = 1 if data.get("active", True) else 0
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            existing = conn.execute(
+                "SELECT id FROM categories WHERE code = ?", (code,)
+            ).fetchone()
+            if existing:
+                conn.execute(
+                    "UPDATE categories SET name = ?, color = ?, sort_order = ?, active = ?, updated_at = ? "
+                    "WHERE code = ?",
+                    (name, color, sort_order, active, now_display(), code),
+                )
+            else:
+                conn.execute(
+                    "INSERT INTO categories (name, code, color, sort_order, active, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (name, code, color, sort_order, active, now_display(), now_display()),
+                )
+            conn.execute("COMMIT")
+        except Exception:
+            safe_rollback(conn)
+            raise
+        self._audit(conn, token, "儲存主題分類", target=code,
+                    detail="{}（{}）".format(name, code))
+        return self.send_json({"ok": True, "code": code})
+
+    def api_categories_delete(self, conn, code):
+        token = self.cookies().get("sid")
+        row = conn.execute(
+            "SELECT id FROM categories WHERE code = ?", (code,)
+        ).fetchone()
+        if not row:
+            raise ApiError(404, "找不到此主題分類")
+        # 不得刪除尚有書籍採用的分類
+        used = conn.execute(
+            "SELECT COUNT(*) FROM books WHERE category = ?", (code,)
+        ).fetchone()[0]
+        if used:
+            raise ApiError(409, "已有 {} 本書籍採用此分類，無法刪除".format(used))
+        conn.execute("DELETE FROM categories WHERE code = ?", (code,))
+        self._audit(conn, token, "刪除主題分類", target=code)
+        return self.send_json({"ok": True})
 
     def api_book_action(self, conn, barcode, action, token=None):
         if action not in ("scrap", "restore"):
@@ -3310,6 +3485,28 @@ class Handler(SimpleHTTPRequestHandler):
         wb.save(buf)
         self.send_xlsx(buf.getvalue(), "圖書匯入範本.xlsx")
 
+    def api_member_by_barcode(self, conn, barcode):
+        row = conn.execute(
+            "SELECT id, name, class_id, role FROM users WHERE active = 1 AND (barcode = ? OR username = ?)",
+            (barcode, barcode),
+        ).fetchone()
+        if not row:
+            raise ApiError(404, "找不到對應的成員條碼：{}".format(barcode))
+        class_name = ""
+        if row["class_id"]:
+            crow = conn.execute(
+                "SELECT name FROM classes WHERE id = ?", (row["class_id"],)
+            ).fetchone()
+            class_name = crow["name"] if crow else ""
+        member_type = "teacher" if row["role"] == "teacher" else "student"
+        return self.send_json({
+            "ok": True,
+            "barcode": barcode,
+            "userName": row["name"],
+            "className": class_name,
+            "memberType": member_type,
+        })
+
     def api_members_import(self, conn, token):
         data = self.read_json()
         raw = data.get("members")
@@ -3325,6 +3522,11 @@ class Handler(SimpleHTTPRequestHandler):
             name = _clean_text(item.get("name"), "姓名", 50)
             class_name = _clean_text(item.get("className") or item.get("class") or item.get("班級") or "", "班級", 50)
             member_type = _clean_text(item.get("memberType") or item.get("type") or "", "類型", 20)
+            member_id = _clean_text(
+                item.get("id") or item.get("barcode") or item.get("employeeId")
+                or item.get("studentId") or item.get("學號") or item.get("員工編號") or "",
+                "成員編號／條碼", 30,
+            )
             if not name or not class_name:
                 continue
             row = conn.execute(
@@ -3336,7 +3538,7 @@ class Handler(SimpleHTTPRequestHandler):
                 "SELECT 1 FROM users WHERE class_id = ? AND name = ?",
                 (row["id"], name),
             ).fetchone()
-            ensure_member_user(conn, row["id"], name)
+            ensure_member_user(conn, row["id"], name, barcode=member_id)
             if not exists:
                 imported += 1
         self._audit(conn, token, "批次匯入成員",
