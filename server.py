@@ -670,6 +670,8 @@ def init_db(db_path):
             ("loan_limit_teacher", "90"),
             ("loan_days_student", "7"),
             ("loan_days_teacher", "180"),
+            ("backup_dir", os.path.join("data", "backups")),
+            ("backup_time", "02:00"),
         ):
             conn.execute(
                 "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
@@ -864,19 +866,27 @@ def run_auto_backup():
     conn = connect()
     try:
         payload = build_backup(conn)
-        os.makedirs(BACKUP_DIR, exist_ok=True)
+        backup_dir = get_setting(conn, "backup_dir", os.path.join("data", "backups"))
+        if not os.path.isabs(backup_dir):
+            backup_dir = os.path.join(BASE_DIR, backup_dir)
+        os.makedirs(backup_dir, exist_ok=True)
         filename = "backup-{}.json".format(datetime.now().strftime("%Y%m%d-%H%M%S"))
-        path = os.path.join(BACKUP_DIR, filename)
+        path = os.path.join(backup_dir, filename)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
         files = sorted(
-            f for f in os.listdir(BACKUP_DIR) if f.startswith("backup-") and f.endswith(".json")
+            f for f in os.listdir(backup_dir) if f.startswith("backup-") and f.endswith(".json")
         )
         for old in files[:-BACKUP_RETENTION]:
             try:
-                os.remove(os.path.join(BACKUP_DIR, old))
+                os.remove(os.path.join(backup_dir, old))
             except OSError:
                 pass
+        # 記錄最後備份日期
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES ('last_backup_date', ?)",
+            (datetime.now().strftime("%Y%m%d"),),
+        )
         return filename
     finally:
         conn.close()
@@ -884,11 +894,21 @@ def run_auto_backup():
 
 def auto_backup_worker():
     while True:
-        time.sleep(86400)
         try:
-            run_auto_backup()
+            conn = connect()
+            try:
+                backup_time = get_setting(conn, "backup_time", "02:00")
+                last_date = get_setting(conn, "last_backup_date", "")
+                today = datetime.now().strftime("%Y%m%d")
+                now_hm = datetime.now().strftime("%H:%M")
+                # 只有當今日尚未備份，且當前時間 >= 設定時間時才執行
+                if last_date != today and now_hm >= backup_time:
+                    run_auto_backup()
+            finally:
+                conn.close()
         except Exception:
             pass
+        time.sleep(60)
 
 
 # --------------------------------------------------------------------------
@@ -1584,6 +1604,13 @@ class Handler(SimpleHTTPRequestHandler):
                     return self.api_recovery_settings_get(conn)
                 if method == "PUT":
                     return self.api_recovery_settings_put(conn)
+
+            if path == "/api/settings/backup":
+                require_admin(conn, token)
+                if method == "GET":
+                    return self.api_backup_settings_get(conn)
+                if method == "PUT":
+                    return self.api_backup_settings_put(conn)
 
             if path == "/api/accounts":
                 require_admin(conn, token)
@@ -4294,6 +4321,36 @@ class Handler(SimpleHTTPRequestHandler):
         self._audit(conn, self.cookies().get("sid"), "修改密碼救援設定",
                     target=(email or "（共用管理員）"),
                     detail="SMTP／救援信箱已更新（密碼欄位{}變更）".format("已" if smtp.get("password") or smtp.get("clearPassword") else "未"))
+        return self.send_json({"ok": True})
+
+    def api_backup_settings_get(self, conn):
+        """取得備份設定（目錄與時間）。"""
+        return self.send_json({
+            "backupDir": get_setting(conn, "backup_dir", os.path.join("data", "backups")),
+            "backupTime": get_setting(conn, "backup_time", "02:00"),
+            "backupRetention": BACKUP_RETENTION,
+        })
+
+    def api_backup_settings_put(self, conn):
+        """更新備份設定（目錄與時間）。"""
+        token = self.cookies().get("sid")
+        data = self.read_json()
+        backup_dir = _clean_text(data.get("backupDir") or "", "備份目錄", 255)
+        backup_time = _clean_text(data.get("backupTime") or "", "備份時間", 10)
+        if backup_time:
+            try:
+                hh, mm = backup_time.split(":")
+                hh = int(hh); mm = int(mm)
+                if hh < 0 or hh > 23 or mm < 0 or mm > 59:
+                    raise ValueError()
+            except (ValueError, AttributeError):
+                raise ApiError(400, "備份時間格式錯誤（請用 HH:MM，例如 02:00）")
+            backup_time = "{:02d}:{:02d}".format(hh, mm)
+        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('backup_dir', ?)", (backup_dir,))
+        if backup_time:
+            conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('backup_time', ?)", (backup_time,))
+        self._audit(conn, token, "修改備份設定",
+                    detail="目錄：{}，時間：{}".format(backup_dir or "(預設)", backup_time or "(預設 02:00)"))
         return self.send_json({"ok": True})
 
     def api_recovery_code_regenerate(self):
