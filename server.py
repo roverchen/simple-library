@@ -2907,19 +2907,20 @@ class Handler(SimpleHTTPRequestHandler):
         ):
             raise ApiError(400, "密碼需為 4–128 個字元")
 
+        can_flags = [1, 0, 0, 0, 0] if new_class_id is not None else [
+            1 if data.get("canLoan", False) else 0,
+            1 if data.get("canMember", False) else 0,
+            1 if data.get("canBook", False) else 0,
+            1 if data.get("canConfig", False) else 0,
+            1 if data.get("canReport", False) else 0,
+        ]
         conn.execute(
             "UPDATE users SET class_id = ?, role = ?, name = ?, email = ?, "
             "can_loan = ?, can_member = ?, can_book = ?, can_config = ?, can_report = ?, "
             "updated_at = datetime('now', 'localtime') WHERE id = ?",
-            (
-                new_class_id, new_role, name, email,
-                1 if data.get("canLoan", False) else 0,
-                1 if data.get("canMember", False) else 0,
-                1 if data.get("canBook", False) else 0,
-                1 if data.get("canConfig", False) else 0,
-                1 if data.get("canReport", False) else 0,
-                account_id,
-            ),
+            tuple([
+                new_class_id, new_role, name, email, *can_flags, account_id,
+            ]),
         )
         if isinstance(password, str) and password:
             conn.execute(

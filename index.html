@@ -1829,17 +1829,21 @@
                     <option value="student"${String(v.role || 'teacher') === 'student' ? ' selected' : ''}>🎒 學生</option>
                     ${(v.role === 'admin' || v.role === 'root') ? `<option value="${v.role}" selected>🛡️ ${roleLabel(v.role)}</option>` : ''}
                 </select>
-                ${String(v.className || '') === '__staff__' ? `
+                <div id="memberPermBlock" style="margin-top:10px;">
                 <hr style="margin:12px 0; border:none; border-top:1px solid #ddd;">
-                <div id="memberPermBlock" style="display:${String(v.className || '') === '__staff__' ? '' : 'none'};">
+                ${String(v.className || '') === '__staff__' ? `
                 <div style="font-size:0.9rem; color:#666; margin-bottom:8px;">功能權限（僅教職員帳號可設定）：</div>
                 <label style="display:block; margin:4px 0;"><input type="checkbox" data-name="canLoan"${v.canLoan ? ' checked' : ''}> 📖 借還書</label>
                 <label style="display:block; margin:4px 0;"><input type="checkbox" data-name="canMember"${v.canMember ? ' checked' : ''}> 👥 班級成員</label>
                 <label style="display:block; margin:4px 0;"><input type="checkbox" data-name="canBook"${v.canBook ? ' checked' : ''}> 📚 圖書管理</label>
                 <label style="display:block; margin:4px 0;"><input type="checkbox" data-name="canConfig"${v.canConfig ? ' checked' : ''}> ⚙️ 系統設定</label>
                 <label style="display:block; margin:4px 0;"><input type="checkbox" data-name="canReport"${v.canReport ? ' checked' : ''}> 📊 報告／列印</label>
+                ` : `
+                <div style="font-size:0.9rem; color:#666; margin-bottom:8px;">功能權限（班級成員固定僅開放借還書）：</div>
+                <label style="display:block; margin:4px 0;"><input type="checkbox" checked disabled> 📖 借還書</label>
+                <div style="font-size:0.8rem; color:#999; margin-top:4px;">班級成員（學生）帳號不開放其他系統功能；如需讓班級人員協助管理，請改在「教職員（未分班）」新增帳號。</div>
+                `}
                 </div>
-                ` : ''}
             `;
         }
         document.getElementById('memberModalSave').style.display = '';
@@ -1949,7 +1953,7 @@
                 className: className,
                 classId: classId,
                 role: role,
-                canLoan: isStaff ? (values.canLoan === 'on') : false,
+                canLoan: isStaff ? (values.canLoan === 'on') : true,
                 canMember: isStaff ? (values.canMember === 'on') : false,
                 canBook: isStaff ? (values.canBook === 'on') : false,
                 canConfig: isStaff ? (values.canConfig === 'on') : false,
