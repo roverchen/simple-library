@@ -39,6 +39,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 from pdf_report import build_table_pdf
+from qr import encode as qr_encode, matrix_to_png_bytes as qr_png
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_DB = os.path.join(BASE_DIR, "data", "library.db")
@@ -1511,6 +1512,10 @@ class Handler(SimpleHTTPRequestHandler):
                 require_permission(conn, token, "report")
                 return self.api_report_callno_catalog_pdf(conn, query)
 
+            if method == "GET" and path == "/api/report/command-codes.pdf":
+                require_permission(conn, token, "report")
+                return self.api_report_command_codes_pdf(conn)
+
             if method == "GET" and path == "/api/report/issues.pdf":
                 require_permission(conn, token, "report")
                 return self.api_report_issues_pdf(conn)
@@ -2423,6 +2428,59 @@ class Handler(SimpleHTTPRequestHandler):
             landscape=True,
         )
         self.send_pdf(body, "索書號清冊-{}.pdf".format(datetime.now().strftime("%Y%m%d-%H%M")))
+
+    def api_report_command_codes_pdf(self, conn):
+        """功能指令條碼名冊（5.2）：列印啟動借書／還書模式、清除重來三張 QR Code，貼於螢幕邊框。"""
+        from PIL import Image, ImageDraw, ImageFont
+        import io
+
+        commands = [
+            ("啟動借書模式", "啟動借書模式"),
+            ("啟動還書模式", "啟動還書模式"),
+            ("清除重來", "清除重來"),
+        ]
+
+        qr_images = []
+        for label, text in commands:
+            matrix, _v, _size, _ec, _mask = qr_encode(text, "M")
+            png_bytes = qr_png(matrix, module_size=6, border=2)
+            qr_images.append(png_bytes)
+
+        # 合併成一張 A4 比例圖片（垂直排列，每個 QR Code 下方加文字標籤）
+        qr_pils = [Image.open(io.BytesIO(b)).convert("RGB") for b in qr_images]
+        qr_w, qr_h = qr_pils[0].size
+        label_h = 60
+        gap = 40
+        margin = 60
+        total_w = qr_w + margin * 2
+        total_h = (qr_h + label_h + gap) * len(qr_pils) + margin * 2
+
+        canvas = Image.new("RGB", (total_w, total_h), "white")
+        draw = ImageDraw.Draw(canvas)
+        try:
+            font = ImageFont.truetype("/System/Library/Fonts/PingFang.ttc", 32)
+        except Exception:
+            font = ImageFont.load_default()
+
+        y = margin
+        for i, (pil_img, (label, _text)) in enumerate(zip(qr_pils, commands)):
+            canvas.paste(pil_img, (margin, y))
+            draw.text((margin, y + qr_h + 8), label, font=font, fill="black")
+            y += qr_h + label_h + gap
+
+        buf = io.BytesIO()
+        canvas.save(buf, format="PDF")
+        body = buf.getvalue()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/pdf")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header(
+            "Content-Disposition",
+            'attachment; filename="command-codes.pdf"',
+        )
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
 
     def api_report_issues_pdf(self, conn):
         rows = conn.execute(
