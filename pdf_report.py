@@ -427,6 +427,9 @@ def _wrap(text, canvas, size, max_width):
     return lines or [""]
 
 
+# 園所全稱：所有報表表頭第一行
+SCHOOL_FULL_NAME = "國防部海軍司令部海育員工子女非營利幼兒園（委託社團法人高雄市社區教育協會辦理）"
+
 def build_table_pdf(title, meta_lines, columns, rows, widths=None, landscape=False,
                     font_path=DEFAULT_FONT):
     """產生 PDF bytes。
@@ -451,12 +454,14 @@ def build_table_pdf(title, meta_lines, columns, rows, widths=None, landscape=Fal
     widths = [w / total * usable for w in widths]
 
     top = margin
-    canvas.text(margin, top + 14, title, size=17)
-    y = top + 24
+    # 表頭：園所全稱（第一行，小字）→ 清冊名稱（第二行，大字）→ 列印資訊
+    canvas.text(margin, top + 16, SCHOOL_FULL_NAME, size=9, color=(0.25, 0.25, 0.25))
+    y = top + 46
+    canvas.text(margin, y, title, size=17)
     for line in meta_lines:
-        y += 12
+        y += 14
         canvas.text(margin, y, line, size=8.5, color=(0.32, 0.32, 0.32))
-    y += 10
+    y += 12
 
     header_lines = [_wrap(col, canvas, header_size, w - cell_pad * 2) for col, w in zip(columns, widths)]
     header_height = max(len(lines) for lines in header_lines) * line_height + cell_pad * 2

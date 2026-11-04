@@ -48,6 +48,15 @@ CREATE TABLE IF NOT EXISTS books (
     due_at       TEXT,
     call_no      TEXT    NOT NULL DEFAULT '',   -- 索書號：館藏分類編號（客製化需求 v2.1 4.5）
     isbn         TEXT    NOT NULL DEFAULT '',   -- ISBN：國際標準書號（版本身分，非館藏條碼）
+    publisher    TEXT    NOT NULL DEFAULT '',   -- 出版社
+    price        INTEGER NOT NULL DEFAULT 0,    -- 單價（新台幣元）
+    quantity     INTEGER NOT NULL DEFAULT 1,    -- 數量（固定 1）
+    source       TEXT    NOT NULL DEFAULT '',   -- 來源：自購／軍購／捐贈／英補／署補
+    purchase_date TEXT   NOT NULL DEFAULT '',   -- 書籍購入日期（民國年格式 115/05/16）
+    keeper       TEXT    NOT NULL DEFAULT '',   -- 保管人
+    confirm_note TEXT    NOT NULL DEFAULT '',   -- 確認（自由文字）
+    inventory_date TEXT   NOT NULL DEFAULT '',  -- 盤點日期（民國年格式）
+    scrap_date   TEXT    NOT NULL DEFAULT '',   -- 報廢日期（民國年格式）
     created_at   TEXT    NOT NULL DEFAULT (datetime('now', 'localtime')),
     updated_at   TEXT    NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
@@ -65,7 +74,11 @@ CREATE TABLE IF NOT EXISTS loan_logs (
     asset_id    TEXT    NOT NULL DEFAULT '',
     class_name  TEXT    NOT NULL,
     user_name   TEXT    NOT NULL,
-    action      TEXT    NOT NULL CHECK (action IN ('借書', '還書'))
+    action      TEXT    NOT NULL CHECK (action IN ('借書', '還書')),
+    -- 還書時當下是否逾期（1＝逾期、0＝期限內），用於「逾期已還紀錄清冊」
+    was_overdue INTEGER,
+    -- 還書時的應還日期快照（僅還書紀錄有值）
+    due_at      TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_loan_logs_created ON loan_logs (created_at DESC);

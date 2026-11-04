@@ -109,6 +109,26 @@
         .qr-code-img { display: flex; justify-content: center; margin: 4px 0; }
         .qr-code-img canvas, .qr-code-img img { max-width: 110px; height: auto; }
 
+        /* 📊 儀表板卡片 */
+        .dashboard-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-top: 12px; }
+        .dash-card { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 16px 12px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+        .dash-num { font-size: 2rem; font-weight: bold; color: #2c5f8a; }
+        .dash-in .dash-num { color: #2e7d32; }
+        .dash-out .dash-num { color: #e65100; }
+        .dash-late .dash-num { color: #c62828; }
+        .dash-label { margin-top: 6px; color: #555; font-size: 0.95rem; }
+
+        /* 🔍 F06 館藏查詢 */
+        .query-stats { background: #f0f5fb; border: 1px solid #d5deea; border-radius: 6px; padding: 10px 14px; margin-top: 12px; color: #2c5f8a; font-size: 0.98rem; }
+        .query-group { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+        .query-group-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; font-size: 1.02rem; }
+        .query-badge { background: #e8f1fb; color: #2c5f8a; border-radius: 10px; padding: 2px 10px; font-size: 0.85rem; }
+        .query-pub { color: #555; font-size: 0.88rem; }
+        .query-isbn { color: #777; font-size: 0.85rem; }
+        .query-copies { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+        .query-copies th, .query-copies td { border: 1px solid #e5e5e5; padding: 6px 8px; text-align: left; }
+        .query-copies th { background: #f7f7f7; }
+
         /* 清冊列印（財產清冊／報廢清冊） */
         .print-sheet-title { font-size: 18px; font-weight: bold; text-align: center; margin-bottom: 6px; }
         .print-sheet-meta { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 8px; }
@@ -215,7 +235,9 @@
     </div>
 
     <div class="nav no-print" id="mainNav">
+        <button onclick="changeTab('dashboardPage')" id="btn-dashboardPage">📊 儀表板</button>
         <button onclick="changeTab('loanPage')" id="btn-loanPage">借還書</button>
+        <button onclick="changeTab('queryPage')" id="btn-queryPage">🔍 館藏查詢</button>
         <button onclick="changeTab('classPage')" id="btn-classPage">班級成員</button>
         <button onclick="changeTab('managePage')" id="btn-managePage">圖書管理</button>
         <button onclick="changeTab('configPage')" id="btn-configPage">系統設定</button>
@@ -224,6 +246,57 @@
     </div>
 
     <div id="scanStatus"></div>
+
+    <!-- 📊 儀表板：全員可見的即時概況 -->
+    <div id="dashboardPage" class="page">
+        <h3 style="margin-top:0;">📊 館藏概況</h3>
+        <div id="dashboardCards" class="dashboard-grid">
+            <div class="dash-card"><div class="dash-num" id="dashTotal">–</div><div class="dash-label">📚 館藏總數</div></div>
+            <div class="dash-card dash-in"><div class="dash-num" id="dashInLibrary">–</div><div class="dash-label">🏠 在館</div></div>
+            <div class="dash-card dash-out"><div class="dash-num" id="dashLoaned">–</div><div class="dash-label">📤 借出</div></div>
+            <div class="dash-card dash-late"><div class="dash-num" id="dashOverdue">–</div><div class="dash-label">⏰ 逾期</div></div>
+            <div class="dash-card"><div class="dash-num" id="dashStudents">–</div><div class="dash-label">🧒 學生數</div></div>
+            <div class="dash-card"><div class="dash-num" id="dashTeachers">–</div><div class="dash-label">👨‍🏫 老師數</div></div>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:14px;">
+            <button onclick="loadDashboard()" style="padding:10px; background:var(--primary); color:white; border:none; border-radius:5px;">🔄 重新整理</button>
+            <button onclick="changeTab('loanPage')" style="padding:10px; background:var(--secondary); color:white; border:none; border-radius:5px;">📤 前往借還書</button>
+            <button onclick="changeTab('queryPage')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">🔍 館藏查詢</button>
+        </div>
+        <div id="dashboardHint" style="color:#666; font-size:0.9rem; margin-top:12px;"></div>
+    </div>
+
+    <!-- 🔍 F06 館藏查詢系統：老師可搜尋 ISBN／書名／出版社，複本彙整 -->
+    <div id="queryPage" class="page">
+        <h3 style="margin-top:0;">🔍 館藏查詢（F06）</h3>
+        <div class="input-group">
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <input type="text" id="queryKeyword" placeholder="輸入書名／ISBN／財產編號／索書號（可掃描 ISBN）" autocomplete="off"
+                       style="flex:1; min-width:220px;" onkeydown="if(event.key==='Enter') runBookQuery()">
+                <select id="queryPublisher" style="min-width:140px;"><option value="">全部出版社</option></select>
+                <button onclick="runBookQuery()" style="padding:10px 16px; background:var(--primary); color:white; border:none; border-radius:5px;">🔎 查詢</button>
+                <button onclick="clearBookQuery()" style="padding:10px 12px; background:#666; color:white; border:none; border-radius:5px;">✕ 清除</button>
+            </div>
+            <small style="color:#666;">支援直接掃描 ISBN 條碼或手動輸入書名檢索；相同 ISBN（或書名）的多本實體書會自動彙整。</small>
+        </div>
+        <div id="queryStats" class="query-stats" style="display:none;"></div>
+        <div id="queryResults" style="color:#666; margin-top:10px;">請輸入關鍵字或直接按「查詢」列出全部館藏。</div>
+
+        <hr style="margin:22px 0; border:none; border-top:1px solid #e0e0e0;">
+        <h3>📖 借還紀錄明細（已歸還歷史紀錄）</h3>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
+            <select id="queryHistoryClass" onchange="populateQueryHistoryMembers()" style="padding:8px; border-radius:5px; border:1px solid #ccc; min-width:130px;"></select>
+            <select id="queryHistoryMember" style="padding:8px; border-radius:5px; border:1px solid #ccc; min-width:130px;"></select>
+            <input type="text" id="queryHistoryYear" placeholder="學年 (如: 115)" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:130px;">
+            <button onclick="runHistoryQuery()" style="padding:10px; background:var(--primary); color:white; border:none; border-radius:5px;">📖 查詢紀錄</button>
+            <button onclick="downloadQueryHistoryPdf()" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 明細 PDF</button>
+        </div>
+        <div id="queryHistorySummary" style="color:#666; margin-bottom:6px;"></div>
+        <table>
+            <thead><tr><th>時間</th><th>書名</th><th>財產編號</th><th>動作</th></tr></thead>
+            <tbody id="queryHistoryBody"><tr><td colspan="4" style="color:#666;">請選擇班級與姓名後查詢</td></tr></tbody>
+        </table>
+    </div>
 
     <div id="loanPage" class="page">
         <div class="input-group">
@@ -356,6 +429,10 @@
                 <span>老師：最多借閱 <input type="number" id="loanTeacherLimit" min="0" value="90" style="width:70px;"> 本，期限 <input type="number" id="loanTeacherDays" min="0" value="180" style="width:70px;"> 天</span>
                 <button onclick="saveLoanRules()" style="background:var(--primary); color:white; padding:10px; border:none; border-radius:5px;">💾 儲存借閱設定</button>
             </div>
+            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:8px;">
+                <span>老師借閱至學期末：自 <input type="date" id="termTeacherStart" style="padding:6px; border:1px solid #ccc; border-radius:5px;"> 起，至 <input type="date" id="termTeacherEnd" style="padding:6px; border:1px solid #ccc; border-radius:5px;"> 止</span>
+                <small style="color:#666;">填寫「結束日」後，老師借書的應還日期將直接設為該學期結束日（取代固定天數）；留空則沿用天數設定。</small>
+            </div>
             <small style="color:#666; line-height:1.7;">
                 ⚠️ 借書時將依借閱人類別（學生／老師）套用對應的借閱上限與期限；超過上限者無法借出。
             </small>
@@ -364,11 +441,13 @@
         <div class="input-group">
             <label>📥 批次匯入（圖書 / 學生與老師名單）</label>
             <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <button onclick="downloadMemberTemplate()" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 下載名單 Excel／CSV 範本</button>
                 <button onclick="openMemberImportPicker()" style="padding:10px; background:var(--secondary); color:white; border:none; border-radius:5px;">📥 名單批次匯入</button>
+                <button onclick="downloadBookTemplate()" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 下載圖書 Excel 範本</button>
                 <button onclick="openBookImportPicker()" style="padding:10px; background:var(--secondary); color:white; border:none; border-radius:5px;">📥 圖書批次匯入</button>
             </div>
-            <input type="file" id="memberImportFile" accept=".json,.csv" style="display:none;">
-            <input type="file" id="bookImportFile" accept=".json,.csv" style="display:none;">
+            <input type="file" id="memberImportFile" accept=".json,.csv,.xlsx" style="display:none;">
+            <input type="file" id="bookImportFile" accept=".json,.csv,.xlsx" style="display:none;">
             <small style="color:#666; line-height:1.7;">
                 ⚠️ 批次匯入會依來源寫入資料庫；圖書欄位：條碼、書名、財產編號、狀態、ISBN（選填）；名單欄位：姓名、班級、類型（學生／老師）。
             </small>
@@ -485,8 +564,24 @@
 
         <div id="overdueReportSection" style="margin-top:20px;">
             <h3>⏰ 逾期未還清單</h3>
-            <button onclick="loadOverdueReport()" style="padding:10px; background:#f0ad4e; color:white; border:none; border-radius:5px;">🔄 載入逾期清單</button>
-            <button onclick="downloadPdf('/api/report/overdue.pdf')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 逾期清單 PDF</button>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
+                <select id="overdueClassFilter" style="padding:8px; border-radius:5px; border:1px solid #ccc; min-width:130px;"></select>
+                <select id="overdueTypeFilter" style="padding:8px; border-radius:5px; border:1px solid #ccc; min-width:120px;">
+                    <option value="">全部（師生）</option>
+                    <option value="student">僅學生</option>
+                    <option value="teacher">僅老師</option>
+                </select>
+                <button onclick="loadOverdueReport()" style="padding:10px; background:#f0ad4e; color:white; border:none; border-radius:5px;">🔄 載入逾期清單</button>
+                <button onclick="downloadPdf(overduePdfUrl('/api/report/overdue.pdf'))" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 逾期清單 PDF</button>
+                <button onclick="downloadPdf(overduePdfUrl('/api/report/overdue-returned.pdf'))" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 逾期已還清冊 PDF</button>
+            </div>
+            <div style="color:#666; font-size:0.9rem; margin-bottom:6px;">「逾期已還清冊」列出設定期間內曾逾期才歸還的紀錄，可搭配班級／師生篩選與下方日期區間。</div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
+                <span style="color:#555; font-size:0.9rem;">已還清冊期間</span>
+                <input type="date" id="overdueReturnedFrom" aria-label="起始日期" style="padding:8px; border-radius:5px; border:1px solid #ccc;">
+                <span style="color:#555;">～</span>
+                <input type="date" id="overdueReturnedTo" aria-label="結束日期" style="padding:8px; border-radius:5px; border:1px solid #ccc;">
+            </div>
             <table>
                 <thead><tr><th>書名</th><th>借閱人</th><th>應還日期</th><th>逾期天數</th></tr></thead>
                 <tbody id="overdueTableBody"></tbody>
@@ -495,17 +590,23 @@
 
         <div id="inventoryReportSection" style="margin-top:20px;">
             <h3>📋 清冊列印</h3>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
+                <span style="color:#555; font-size:0.9rem;">清冊日期區間（民國年 115/05/16，適用財產／報廢清冊）</span>
+                <input type="text" id="invDateFrom" placeholder="起 115/01/01" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:120px;">
+                <span style="color:#555;">～</span>
+                <input type="text" id="invDateTo" placeholder="迄 115/12/31" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:120px;">
+            </div>
             <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
                 <button onclick="printInventoryReport('all')" style="padding:10px; background:var(--primary); color:white; border:none; border-radius:5px;">📋 列印財產清冊</button>
-                <button onclick="downloadPdf('/api/report/inventory.pdf?kind=all')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 財產清冊 PDF</button>
+                <button onclick="downloadPdf(inventoryPdfUrl('all'))" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 財產清冊 PDF</button>
                 <button onclick="printInventoryReport('scrap')" style="padding:10px; background:var(--danger); color:white; border:none; border-radius:5px;">🗑️ 列印報廢清冊</button>
-                <button onclick="downloadPdf('/api/report/inventory.pdf?kind=scrap')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 報廢清冊 PDF</button>
+                <button onclick="downloadPdf(inventoryPdfUrl('scrap'))" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 報廢清冊 PDF</button>
                 <button onclick="printInventoryReport('checkedout')" style="padding:10px; background:var(--warning); color:white; border:none; border-radius:5px;">📤 列印已借出清單</button>
                 <button onclick="downloadPdf('/api/report/checked-out.pdf')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 已借出 PDF</button>
                 <button onclick="printInventoryReport('issues')" style="padding:10px; background:#8e24aa; color:white; border:none; border-radius:5px;">⚠️ 列印爭議/遺失/修繕清冊</button>
                 <button onclick="downloadPdf('/api/report/issues.pdf')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 爭議清冊 PDF</button>
             </div>
-            <div style="color:#666; font-size:0.9rem;">財產清冊排除報廢書籍；報廢清冊僅列報廢書籍；爭議清冊包含遺失、修繕中、爭議中。列印為 A4 表格，PDF 可直接下載留存。</div>
+            <div style="color:#666; font-size:0.9rem;">財產清冊排除報廢書籍，含出版社／單價／數量／總金額／購入日期／保管人／確認／盤點日期；報廢清冊另列報廢日期；爭議清冊包含遺失、修繕中、爭議中。列印為 A4 表格，PDF 可直接下載留存。</div>
         </div>
 
         <div id="memberHistorySection" style="margin-top:20px;">
@@ -652,6 +753,7 @@
         <button type="button" class="btn-primary" id="bookModalSave" onclick="submitBookModal()">💾 儲存</button>
         <button type="button" class="btn-secondary" id="bookModalScrap" onclick="scrapBook(bookModalState ? bookModalState.barcode : '')">⚠️ 報廢</button>
         <button type="button" class="btn-secondary" onclick="restoreBook(bookModalState ? bookModalState.barcode : '')">💡 取消報廢</button>
+        <button type="button" class="btn-secondary" id="bookModalRenew" onclick="renewBook(bookModalState ? bookModalState.barcode : '')">🔁 續借</button>
         <button type="button" class="btn-secondary" onclick="printSingleLabel(bookModalState ? bookModalState.barcode : '')">🏷️ 標籤</button>
         <button type="button" class="btn-secondary" onclick="closeBookModal()">✕ 取消</button>
     </div>
@@ -660,6 +762,8 @@
 <script>
     // 資料以伺服器端的 SQLite 為準；前端只保留本次操作所需的快取。
     let config = { classes: [] };
+    // 園所全稱：報表／清冊列印表頭使用（與 server.py 的 SCHOOL_FULL_NAME 一致）
+    const SCHOOL_FULL_NAME = '國防部海軍司令部海育員工子女非營利幼兒園（委託社團法人高雄市社區教育協會辦理）';
     let members = {};
     let memberAccounts = [];
     let memberSearchText = '';
@@ -711,6 +815,9 @@
     // 依權限顯示／隱藏導覽列按鈕
     function applyPermissionNav() {
         const p = currentUser.permissions || {};
+        document.getElementById('btn-dashboardPage').style.display = '';
+        document.getElementById('btn-queryPage').style.display =
+            (p.canLoan || p.canReport || p.canBook) ? '' : 'none';
         document.getElementById('btn-loanPage').style.display = p.canLoan ? '' : 'none';
         document.getElementById('btn-classPage').style.display = p.canMember ? '' : 'none';
         document.getElementById('btn-managePage').style.display = p.canBook ? '' : 'none';
@@ -724,6 +831,165 @@
         }
     }
 
+    // 📊 儀表板：館藏／人數即時概況
+    async function loadDashboard() {
+        try {
+            const data = await api('GET', '/api/dashboard');
+            const c = data.counts || {};
+            document.getElementById('dashTotal').textContent = (c.total ?? 0).toLocaleString();
+            document.getElementById('dashInLibrary').textContent = (c.inLibrary ?? 0).toLocaleString();
+            document.getElementById('dashLoaned').textContent = (c.loaned ?? 0).toLocaleString();
+            document.getElementById('dashOverdue').textContent = (c.overdue ?? 0).toLocaleString();
+            document.getElementById('dashStudents').textContent = (c.students ?? 0).toLocaleString();
+            document.getElementById('dashTeachers').textContent = (c.teachers ?? 0).toLocaleString();
+            const hint = document.getElementById('dashboardHint');
+            if (hint) {
+                hint.textContent = c.overdue
+                    ? '⚠️ 目前有 ' + c.overdue + ' 本書逾期未還，可到「報表/列印」載入逾期清單。'
+                    : '目前沒有逾期未還的書籍。';
+            }
+        } catch (err) {
+            const hint = document.getElementById('dashboardHint');
+            if (hint) hint.textContent = '⚠️ 儀表板載入失敗：' + err.message;
+        }
+    }
+
+    // 🔍 F06 館藏查詢
+    let queryHistoryInitialized = false;
+
+    function initQueryPage() {
+        if (!queryHistoryInitialized) {
+            queryHistoryInitialized = true;
+            populateQueryHistoryClasses();
+        }
+        if (!document.getElementById('queryResults').dataset.loaded) runBookQuery();
+    }
+
+    function populateQueryHistoryClasses() {
+        const sel = document.getElementById('queryHistoryClass');
+        if (!sel) return;
+        sel.innerHTML = (config.classes || []).map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('') || '<option value="">(無班級)</option>';
+        populateQueryHistoryMembers();
+    }
+
+    function populateQueryHistoryMembers() {
+        const cls = (document.getElementById('queryHistoryClass') || {}).value || '';
+        const sel = document.getElementById('queryHistoryMember');
+        if (!sel) return;
+        const list = members[cls] || [];
+        sel.innerHTML = list.length
+            ? list.map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('')
+            : '<option value="">(無成員)</option>';
+    }
+
+    function queryHistoryParams() {
+        const qs = new URLSearchParams();
+        const cls = ((document.getElementById('queryHistoryClass') || {}).value || '').trim();
+        const name = ((document.getElementById('queryHistoryMember') || {}).value || '').trim();
+        const year = ((document.getElementById('queryHistoryYear') || {}).value || '').trim();
+        if (cls) qs.set('className', cls);
+        if (name) qs.set('userName', name);
+        if (year) qs.set('schoolYear', year);
+        return qs;
+    }
+
+    async function runBookQuery() {
+        const box = document.getElementById('queryResults');
+        const kw = ((document.getElementById('queryKeyword') || {}).value || '').trim();
+        const pub = ((document.getElementById('queryPublisher') || {}).value || '').trim();
+        box.dataset.loaded = '1';
+        box.innerHTML = '<div style="color:#666;">查詢中…</div>';
+        try {
+            const qs = new URLSearchParams();
+            if (kw) qs.set('q', kw);
+            if (pub) qs.set('publisher', pub);
+            const data = await api('GET', '/api/query/books?' + qs.toString());
+            const pubSel = document.getElementById('queryPublisher');
+            const keep = pubSel.value;
+            pubSel.innerHTML = '<option value="">全部出版社</option>' +
+                (data.publishers || []).map(p => `<option value="${escapeHtml(p)}"${p === keep ? ' selected' : ''}>${escapeHtml(p)}</option>`).join('');
+            pubSel.value = keep;
+            const st = data.stats || {};
+            const statsEl = document.getElementById('queryStats');
+            if (data.publisher || data.keyword) {
+                statsEl.style.display = '';
+                statsEl.innerHTML = '您搜尋的條件為【' +
+                    escapeHtml(data.publisher || '（未指定出版社）') +
+                    (data.keyword ? '】＋關鍵字【' + escapeHtml(data.keyword) + '】' : '】') +
+                    '，本園共有 <b>' + st.kinds + '</b> 種書目，總計 <b>' + st.copies +
+                    '</b> 本實體複本（目前在館：' + st.inLibrary + ' 本，借出：' + st.loaned +
+                    ' 本' + (st.other ? '，其他狀態：' + st.other + ' 本' : '') + '）。';
+            } else {
+                statsEl.style.display = '';
+                statsEl.innerHTML = '全部館藏：共 <b>' + st.kinds + '</b> 種書目、<b>' + st.copies +
+                    '</b> 本實體複本（在館 ' + st.inLibrary + ' 本／借出 ' + st.loaned + ' 本）。';
+            }
+            const items = data.items || [];
+            if (!items.length) {
+                box.innerHTML = '<div style="color:#666;">查無符合的館藏。</div>';
+                return;
+            }
+            box.innerHTML = items.map(g => `
+                <div class="query-group">
+                    <div class="query-group-head">
+                        <b>${escapeHtml(g.title)}</b>
+                        <span class="query-badge">館藏 ${g.total} 本（在館 ${g.inLibrary}／借出 ${g.loaned}${g.other ? '／其他 ' + g.other : ''}）</span>
+                        ${g.publisher ? `<span class="query-pub">${escapeHtml(g.publisher)}</span>` : ''}
+                        ${g.isbn ? `<span class="query-isbn">ISBN：${escapeHtml(g.isbn)}</span>` : ''}
+                    </div>
+                    <table class="query-copies">
+                        <thead><tr><th>財產編號</th><th>條碼</th><th>索書號</th><th>狀態</th><th>位置／借閱人</th></tr></thead>
+                        <tbody>${g.copies.map(c => `<tr>
+                            <td>${escapeHtml(c.assetId || '—')}</td>
+                            <td>${escapeHtml(c.barcode)}</td>
+                            <td>${escapeHtml(c.callNo || '—')}</td>
+                            <td>${statusBadge(c.status)}</td>
+                            <td>${escapeHtml(c.status === '借出'
+                                ? (c.loanedTo || '') + (c.loanClass ? '（' + c.loanClass + '）' : '')
+                                : (c.status === '在館' ? '圖書室' : c.location))}</td>
+                        </tr>`).join('')}</tbody>
+                    </table>
+                </div>`).join('');
+        } catch (err) {
+            box.innerHTML = `<div style="color:#c62828;">查詢失敗：${escapeHtml(err.message)}</div>`;
+        }
+    }
+
+    function statusBadge(status) {
+        const map = { '在館': '#2e7d32', '借出': '#e65100', '遺失': '#c62828', '修繕中': '#6a1b9a', '爭議中': '#c62828', '報廢': '#455a64' };
+        const color = map[status] || '#555';
+        return `<span style="display:inline-block; padding:2px 8px; border-radius:10px; background:${color}; color:#fff; font-size:0.85rem;">${escapeHtml(status)}</span>`;
+    }
+
+    function clearBookQuery() {
+        document.getElementById('queryKeyword').value = '';
+        document.getElementById('queryPublisher').value = '';
+        runBookQuery();
+    }
+
+    async function runHistoryQuery() {
+        const tbody = document.getElementById('queryHistoryBody');
+        const summary = document.getElementById('queryHistorySummary');
+        tbody.innerHTML = '<tr><td colspan="4" style="color:#666;">查詢中…</td></tr>';
+        try {
+            const data = await api('GET', '/api/query/member-history?' + queryHistoryParams().toString());
+            if (summary) {
+                summary.textContent = `${data.className || ''} ${data.userName || ''}` +
+                    (data.schoolYear ? ` ${data.schoolYear} 學年` : '') +
+                    `：借書 ${data.totalBorrows} 次／還書 ${data.totalReturns} 次（共 ${data.logs.length} 筆）`;
+            }
+            tbody.innerHTML = data.logs.length
+                ? data.logs.map(l => `<tr><td>${escapeHtml(l.date)}</td><td>${escapeHtml(l.title)}</td><td>${escapeHtml(l.assetId || '')}</td><td>${escapeHtml(l.action)}</td></tr>`).join('')
+                : '<tr><td colspan="4" style="color:#666;">查無借還紀錄</td></tr>';
+        } catch (err) {
+            tbody.innerHTML = `<tr><td colspan="4" style="color:#c62828;">查詢失敗：${escapeHtml(err.message)}</td></tr>`;
+        }
+    }
+
+    function downloadQueryHistoryPdf() {
+        window.open('/api/query/member-history.pdf?' + queryHistoryParams().toString(), '_blank');
+    }
+
     function showApp() {
         document.getElementById('loginPage').classList.remove('active');
         document.getElementById('mainNav').style.display = 'flex';
@@ -731,7 +997,7 @@
         populateMemberQRClass();
         populateMemberHistoryClasses();
         applyPermissionNav();
-        changeTab('loanPage');
+        changeTab('dashboardPage');
         focusGunInput();
     }
 
@@ -1079,7 +1345,8 @@
         ).join('');
         const area = document.getElementById('singleLabelArea');
         area.innerHTML = `<div class="print-sheet">` +
-            `<div class="print-sheet-title">海育幼兒園圖書管理系統 — ${escapeHtml(title)}</div>` +
+            `<div class="print-sheet-title">${escapeHtml(SCHOOL_FULL_NAME)}</div>` +
+            `<div class="print-sheet-title" style="font-size:16px;">${escapeHtml(title)}</div>` +
             `<div class="print-sheet-meta">${meta.map(line => `<span>${escapeHtml(line)}</span>`).join('')}</div>` +
             `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>` +
             `<div class="print-sheet-foot"><span>製表人：＿＿＿＿＿＿</span><span>單位主管：＿＿＿＿＿＿</span></div>` +
@@ -1099,22 +1366,56 @@
         window.open(path, '_blank');
     }
 
+    function inventoryPdfUrl(kind) {
+        const qs = new URLSearchParams();
+        qs.set('kind', kind);
+        const from = ((document.getElementById('invDateFrom') || {}).value || '').trim();
+        const to = ((document.getElementById('invDateTo') || {}).value || '').trim();
+        if (from) qs.set('dateFrom', from);
+        if (to) qs.set('dateTo', to);
+        return '/api/report/inventory.pdf?' + qs.toString();
+    }
+
+    function rocDateInRange(value, from, to) {
+        // 民國年字串（115/05/16）字串序比較即可（固定補零由後端／輸入習慣保證）
+        if (!from && !to) return true;
+        const v = String(value || '').trim();
+        if (!v) return false;
+        if (from && v < from) return false;
+        if (to && v > to) return false;
+        return true;
+    }
+
     function printInventoryReport(kind) {
+        const invFrom = ((document.getElementById('invDateFrom') || {}).value || '').trim().replace(/-/g, '/');
+        const invTo = (((document.getElementById('invDateTo') || {}).value || '')).trim().replace(/-/g, '/');
         const configs = {
             all: {
                 title: '財產清冊',
-                filter: book => book.status !== '報廢',
-                columns: ['財產編號', '書名', '索書號', '狀態', '借閱人', '備註'],
-                widths: [0.14, 0.3, 0.16, 0.1, 0.12, 0.18],
-                cell: book => [book.assetId || book.barcode, book.title, book.callNo || '', book.status || '', book.loanedTo || '', book.remarks || ''],
+                filter: book => book.status !== '報廢' && rocDateInRange(book.purchaseDate, invFrom, invTo),
+                columns: ['財產編號', '書名', '出版社', '單價', '數量', '總金額', '書籍購入日期', '保管人', '確認', '盤點日期'],
+                widths: [0.12, 0.2, 0.1, 0.07, 0.05, 0.09, 0.11, 0.08, 0.07, 0.11],
+                cell: book => {
+                    const price = Number(book.price || 0);
+                    const qty = Number(book.quantity || 1);
+                    return [book.assetId || book.barcode, book.title, book.publisher || '', String(price),
+                        String(qty), String(price * qty), book.purchaseDate || '', book.keeper || '',
+                        book.confirmNote || '', book.inventoryDate || ''];
+                },
                 empty: '目前沒有可列入財產清冊的書籍。',
             },
             scrap: {
                 title: '報廢清冊',
-                filter: book => book.status === '報廢',
-                columns: ['財產編號', '書名', '索書號', '狀態', '借閱人', '備註'],
-                widths: [0.14, 0.3, 0.16, 0.1, 0.12, 0.18],
-                cell: book => [book.assetId || book.barcode, book.title, book.callNo || '', book.status || '', book.loanedTo || '', book.remarks || ''],
+                filter: book => book.status === '報廢' && rocDateInRange(book.scrapDate, invFrom, invTo),
+                columns: ['財產編號', '書名', '出版社', '單價', '數量', '總金額', '書籍購入日期', '保管人', '確認', '盤點日期', '報廢日期'],
+                widths: [0.12, 0.19, 0.1, 0.06, 0.05, 0.08, 0.1, 0.07, 0.07, 0.08, 0.08],
+                cell: book => {
+                    const price = Number(book.price || 0);
+                    const qty = Number(book.quantity || 1);
+                    return [book.assetId || book.barcode, book.title, book.publisher || '', String(price),
+                        String(qty), String(price * qty), book.purchaseDate || '', book.keeper || '',
+                        book.confirmNote || '', book.inventoryDate || '', book.scrapDate || ''];
+                },
                 empty: '目前沒有報廢書籍，無法列印報廢清冊。',
             },
             checkedout: {
@@ -1241,11 +1542,34 @@
         window.open('/api/report/stats.pdf' + qs, '_blank');
     }
 
+    function overdueFilterParams() {
+        const qs = new URLSearchParams();
+        const cls = ((document.getElementById('overdueClassFilter') || {}).value || '').trim();
+        const mtype = ((document.getElementById('overdueTypeFilter') || {}).value || '').trim();
+        if (cls) qs.set('className', cls);
+        if (mtype) qs.set('memberType', mtype);
+        return qs;
+    }
+
+    function overduePdfUrl(base) {
+        const qs = overdueFilterParams();
+        if (base.indexOf('overdue-returned') !== -1) {
+            const from = ((document.getElementById('overdueReturnedFrom') || {}).value || '').trim();
+            const to = ((document.getElementById('overdueReturnedTo') || {}).value || '').trim();
+            if (from) qs.set('dateFrom', from);
+            if (to) qs.set('dateTo', to);
+        }
+        const s = qs.toString();
+        return base + (s ? '?' + s : '');
+    }
+
     async function loadOverdueReport() {
         const tbody = document.getElementById('overdueTableBody');
         tbody.innerHTML = '<tr><td colspan="4" style="color:#666;">載入中…</td></tr>';
         try {
-            const data = await api('GET', '/api/report/overdue');
+            const qs = overdueFilterParams();
+            const s = qs.toString();
+            const data = await api('GET', '/api/report/overdue' + (s ? '?' + s : ''));
             const list = data.overdue || [];
             tbody.innerHTML = list.length
                 ? list.map(b => `<tr><td>${escapeHtml(b.title)}</td><td>${escapeHtml(b.loanedTo || '')}</td><td>${escapeHtml(b.dueAt || '')}</td><td>${escapeHtml(String(b.daysOverdue ?? ''))}</td></tr>`).join('')
@@ -1431,6 +1755,30 @@
             <input type="text" id="bfCallNo" data-name="callNo" value="${escapeHtml(book.callNo || '')}">
             <label for="bfIsbn">ISBN</label>
             <input type="text" id="bfIsbn" data-name="isbn" value="${escapeHtml(book.isbn || '')}">
+            <label for="bfPublisher">出版社</label>
+            <input type="text" id="bfPublisher" data-name="publisher" value="${escapeHtml(book.publisher || '')}">
+            <label for="bfPrice">單價（元）</label>
+            <input type="number" id="bfPrice" data-name="price" min="0" step="1" value="${escapeHtml(String(book.price != null ? book.price : 0))}">
+            <label for="bfQuantity">數量（固定 1）</label>
+            <input type="text" id="bfQuantity" data-name="quantity" value="1" readonly>
+            <label for="bfSource">來源</label>
+            <select id="bfSource" data-name="source">
+                <option value="">（未指定）</option>
+                ${['自購', '軍購', '捐贈', '英補', '署補'].map(s =>
+                    `<option value="${s}"${book.source === s ? ' selected' : ''}>${s}</option>`).join('')}
+            </select>
+            <label for="bfPurchaseDate">書籍購入日期（民國年，如 115/05/16）</label>
+            <input type="text" id="bfPurchaseDate" data-name="purchaseDate" value="${escapeHtml(book.purchaseDate || '')}">
+            <label for="bfKeeper">保管人</label>
+            <input type="text" id="bfKeeper" data-name="keeper" value="${escapeHtml(book.keeper || '')}">
+            <label for="bfConfirmNote">確認</label>
+            <input type="text" id="bfConfirmNote" data-name="confirmNote" value="${escapeHtml(book.confirmNote || '')}">
+            <label for="bfInventoryDate">盤點日期（民國年）</label>
+            <input type="text" id="bfInventoryDate" data-name="inventoryDate" value="${escapeHtml(book.inventoryDate || '')}">
+            <label for="bfScrapDate">報廢日期（民國年）</label>
+            <input type="text" id="bfScrapDate" data-name="scrapDate" value="${escapeHtml(book.scrapDate || '')}">
+            <label for="bfRemarks">備註</label>
+            <input type="text" id="bfRemarks" data-name="remarks" value="${escapeHtml(book.remarks || '')}">
         `;
         const first = container.querySelector('input:not([readonly]), select, textarea');
         if (first) {
@@ -1443,6 +1791,29 @@
         const isScrap = (book && book.status === '報廢');
         document.getElementById('bookModalScrap').style.display = isScrap ? 'none' : '';
         document.getElementById('bookModalScrap').nextElementSibling.style.display = isScrap ? '' : 'none';
+        // 「續借」僅在借出狀態顯示
+        document.getElementById('bookModalRenew').style.display =
+            (book && book.status === '借出' && book.loanedTo) ? '' : 'none';
+    }
+
+    // 續借：依借閱人身份（老師／學生）延長到期日
+    async function renewBook(barcode) {
+        if (!barcode) return;
+        const errorEl = document.getElementById('bookModalError');
+        errorEl.textContent = '';
+        try {
+            const res = await api('POST', '/api/books/' + encodeURIComponent(barcode) + '/renew', {});
+            const days = res.memberType === 'teacher' ? '一學期（180 天）' : (res.loanDays + ' 天');
+            bookDatabase[barcode] = res.book;
+            if (bookModalState && bookModalState.barcode === barcode) {
+                bookModalState.book = res.book;
+                renderBookModalFields();
+            }
+            renderBooks();
+            alert('✅ 已續借：新到期日 ' + res.newDueAt.slice(0, 10) + '（' + days + '）');
+        } catch (err) {
+            errorEl.textContent = err.message;
+        }
     }
 
     async function submitBookModal() {
@@ -1459,7 +1830,16 @@
                 title: values.title.trim(),
                 assetId: values.assetId.trim(),
                 callNo: (values.callNo || '').trim(),
-                isbn: (values.isbn || '').trim()
+                isbn: (values.isbn || '').trim(),
+                publisher: (values.publisher || '').trim(),
+                price: values.price,
+                source: (values.source || '').trim(),
+                purchaseDate: (values.purchaseDate || '').trim(),
+                keeper: (values.keeper || '').trim(),
+                confirmNote: (values.confirmNote || '').trim(),
+                inventoryDate: (values.inventoryDate || '').trim(),
+                scrapDate: (values.scrapDate || '').trim(),
+                remarks: (values.remarks || '').trim()
             });
             bookDatabase[barcode] = res.book;
             closeBookModal();
@@ -1574,9 +1954,11 @@
 
 
     function changeTab(pageId) {
-        // 權限檢查：無權限則不允許進入
+        // 權限檢查：無權限則不允許進入（儀表板全員可見；F06 館藏查詢開放給借還書／報表／圖書管理任一權限）
         const p = currentUser.permissions || {};
         const pagePerms = {
+            'dashboardPage': true,
+            'queryPage': !!(p.canLoan || p.canReport || p.canBook),
             'loanPage': p.canLoan,
             'classPage': p.canMember,
             'managePage': p.canBook,
@@ -1585,6 +1967,7 @@
         };
         if (!pagePerms[pageId]) {
             alert('⚠️ 此帳號未啟用「' + {
+                'queryPage': '館藏查詢',
                 'loanPage': '借還書',
                 'classPage': '班級成員',
                 'managePage': '圖書管理',
@@ -1598,6 +1981,8 @@
         document.querySelectorAll('.nav button').forEach(b => b.classList.remove('active'));
         document.getElementById(pageId).classList.add('active');
         document.getElementById('btn-' + pageId).classList.add('active');
+        if(pageId === 'dashboardPage') loadDashboard();
+        if(pageId === 'queryPage') initQueryPage();
         if(pageId === 'classPage') { loadMemberAccounts(); populateMemberQRClass(); }
         if(pageId === 'managePage') renderBookTable();
         if(pageId === 'loanPage') focusGunInput();
@@ -1625,6 +2010,15 @@
             staffSel.innerHTML += '<option value="__staff__">👨‍🏫 教職員（未分班）</option>';
         }
         document.getElementById('classListInput').value = config.classes.join(',');
+
+        // 逾期清單班級篩選（含「全部班級」）
+        const odSel = document.getElementById('overdueClassFilter');
+        if (odSel) {
+            const keep = odSel.value;
+            odSel.innerHTML = '<option value="">全部班級</option>' +
+                config.classes.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+            if (keep) odSel.value = keep;
+        }
     }
 
     function filterMembers(targetId, className) {
@@ -2298,6 +2692,10 @@
             if (tl) tl.value = rules.teacher_limit ?? 90;
             if (sd) sd.value = rules.student_days ?? 7;
             if (td) td.value = rules.teacher_days ?? 180;
+            const ts = document.getElementById('termTeacherStart');
+            const te = document.getElementById('termTeacherEnd');
+            if (ts) ts.value = rules.term_teacher_start || '';
+            if (te) te.value = rules.term_teacher_end || '';
         } catch (err) { /* 設定載入失敗不影響主要功能 */ }
     }
 
@@ -2306,13 +2704,18 @@
             student_limit: parseInt(document.getElementById('loanStudentLimit').value) || 0,
             teacher_limit: parseInt(document.getElementById('loanTeacherLimit').value) || 0,
             student_days: parseInt(document.getElementById('loanStudentDays').value) || 0,
-            teacher_days: parseInt(document.getElementById('loanTeacherDays').value) || 0
+            teacher_days: parseInt(document.getElementById('loanTeacherDays').value) || 0,
+            term_teacher_start: ((document.getElementById('termTeacherStart') || {}).value || '').trim(),
+            term_teacher_end: ((document.getElementById('termTeacherEnd') || {}).value || '').trim()
         };
         try {
             await api('PUT', '/api/loan-rules', body);
             alert("借閱設定已儲存");
         } catch (err) { alert("❌ " + err.message); }
     }
+
+    function downloadMemberTemplate() { window.open('/api/template/members.xlsx', '_blank'); }
+    function downloadBookTemplate() { window.open('/api/template/books.xlsx', '_blank'); }
 
     async function loadReservations() {
         const box = document.getElementById('reservationList');
@@ -2742,6 +3145,20 @@
         reader.readAsText(file);
     }
 
+    function readFileBase64(file, cb) {
+        const reader = new FileReader();
+        reader.onload = () => cb(String(reader.result || '').split(',').pop() || '');
+        reader.readAsDataURL(file);
+    }
+
+    // 依標題列映射欄位（名單：姓名／班級／角色；圖書：條碼／書名…），無標題列時回傳 null
+    function headerIndex(headers, names) {
+        for (let i = 0; i < headers.length; i++) {
+            if (names.includes(headers[i])) return i;
+        }
+        return -1;
+    }
+
     function looksLikeHeader(cells) {
         const joined = cells.join('');
         return /[姓學號員經編冊書名班名職稱]/.test(joined);
@@ -2750,53 +3167,143 @@
     function handleMemberImportFile(input) {
         const file = input.files && input.files[0];
         if (!file) return;
-        readFileText(file, async (text) => {
-            let members = [];
-            if (file.name.toLowerCase().endsWith('.json')) {
-                const parsed = JSON.parse(text);
-                members = parsed.members || parsed.list || parsed.items || [];
-            } else {
-                const lines = text.split(/\r\n|\n|\r/).map(s => s.trim()).filter(s => s);
-                for (let i = 0; i < lines.length; i++) {
-                    const parts = lines[i].split(',').map(s => s.trim());
-                    if (parts.length < 2) continue;
-                    if (looksLikeHeader(parts)) continue;
-                    members.push({ name: parts[0], className: parts[1], memberType: parts[2] || 'student' });
-                }
+        const finish = (members) => {
+            if (!members.length) { alert('❌ 沒有可匯入的資料（請確認檔案格式）'); input.value = ''; return; }
+            api('POST', '/api/members/import', { members })
+                .then(res => alert('名單批次匯入完成：成功 ' + (res.imported || 0) + ' / ' + (res.total || members.length)))
+                .catch(err => alert('❌ 匯入失敗：' + err.message))
+                .finally(() => { input.value = ''; });
+        };
+        const lower = file.name.toLowerCase();
+        const parseRows = (rows) => {
+            const members = [];
+            // 標題列優先（Excel 範本：姓名／班級／角色 或 員工編號／學號開頭）
+            let start = 0, iName = 0, iClass = 1, iType = -1;
+            if (rows.length && headerIndex(rows[0], ['姓名']) === 0) {
+                iName = 0;
+                iClass = headerIndex(rows[0], ['班級', '班級名稱']);
+                iType = headerIndex(rows[0], ['角色', '類型', 'memberType']);
+                start = 1;
+            } else if (rows.length > 1 && headerIndex(rows[0], ['姓名']) > 0) {
+                iName = headerIndex(rows[0], ['姓名']);
+                iClass = headerIndex(rows[0], ['班級', '班級名稱']);
+                iType = headerIndex(rows[0], ['角色', '類型', 'memberType']);
+                start = 1;
             }
-            const res = await api('POST', '/api/members/import', { members });
-            alert('名單批次匯入完成：成功 ' + (res.imported || 0) + ' / ' + (res.total || members.length));
-        });
-        input.value = '';
+            for (let r = start; r < rows.length; r++) {
+                const parts = rows[r];
+                if (!parts || parts.length < 2) continue;
+                if (looksLikeHeader(parts)) continue;
+                const name = (parts[iName] || '').trim();
+                const cls = (iClass >= 0 ? (parts[iClass] || '') : '').trim();
+                if (!name) continue;
+                members.push({ name, className: cls, memberType: (iType >= 0 && parts[iType]) ? parts[iType].trim() : 'student' });
+            }
+            return members;
+        };
+        if (lower.endsWith('.xlsx')) {
+            readFileBase64(file, async (b64) => {
+                try {
+                    const res = await api('POST', '/api/parse/xlsx', { content: b64 });
+                    finish(parseRows(res.rows || []));
+                } catch (err) { alert('❌ Excel 解析失敗：' + err.message); input.value = ''; }
+            });
+        } else if (lower.endsWith('.json')) {
+            readFileText(file, (text) => {
+                try {
+                    const parsed = JSON.parse(text);
+                    finish(parsed.members || parsed.list || parsed.items || []);
+                } catch (err) { alert('❌ JSON 解析失敗：' + err.message); input.value = ''; }
+            });
+        } else {
+            readFileText(file, (text) => {
+                const rows = text.split(/\r\n|\n|\r/).map(s => s.trim()).filter(s => s)
+                    .map(line => line.split(',').map(s => s.trim()));
+                finish(parseRows(rows));
+            });
+        }
     }
 
     function handleBookImportFile(input) {
         const file = input.files && input.files[0];
         if (!file) return;
-        readFileText(file, async (text) => {
-            let books = [];
-            if (file.name.toLowerCase().endsWith('.json')) {
-                const parsed = JSON.parse(text);
-                books = parsed.books || parsed.list || parsed.items || [];
-            } else {
-                const lines = text.split(/\r\n|\n|\r/).map(s => s.trim()).filter(s => s);
-                for (let i = 0; i < lines.length; i++) {
-                    const parts = lines[i].split(',').map(s => s.trim());
-                    if (parts.length < 2) continue;
-                    if (looksLikeHeader(parts)) continue;
-                    books.push({
-                        barcode: parts[0],
-                        title: parts[1],
-                        assetId: parts[2] || '',
-                        status: parts[3] || '在館',
-                        isbn: parts[4] || ''
-                    });
+        const finish = (books) => {
+            if (!books.length) { alert('❌ 沒有可匯入的書籍（請確認檔案格式）'); input.value = ''; return; }
+            api('POST', '/api/books/import', { books })
+                .then(res => alert('圖書批次匯入完成：成功 ' + (res.imported || 0) + ' / ' + (res.total || books.length)))
+                .catch(err => alert('❌ 匯入失敗：' + err.message))
+                .finally(() => { input.value = ''; });
+        };
+        // 圖書 Excel 範本欄位：條碼／書名／財產編號／出版社／單價／ISBN／索書號／來源／書籍購入日期／保管人／確認／盤點日期／備註
+        const BOOK_FIELDS = [
+            ['barcode', ['條碼', 'barcode']],
+            ['title', ['書名', 'title']],
+            ['assetId', ['財產編號', 'asset_id']],
+            ['publisher', ['出版社']],
+            ['price', ['單價']],
+            ['isbn', ['ISBN', 'isbn', '國際書號']],
+            ['callNo', ['索書號']],
+            ['source', ['來源']],
+            ['purchaseDate', ['書籍購入日期', '購入日期']],
+            ['keeper', ['保管人']],
+            ['confirmNote', ['確認']],
+            ['inventoryDate', ['盤點日期']],
+            ['scrapDate', ['報廢日期']],
+            ['status', ['狀態', 'status']],
+            ['remarks', ['備註']],
+        ];
+        const parseRows = (rows) => {
+            const books = [];
+            if (!rows.length) return books;
+            const head = rows[0];
+            const mapping = BOOK_FIELDS.map(([key, names]) => [key, headerIndex(head, names)])
+                .filter(([, idx]) => idx >= 0);
+            const hasHeader = mapping.length >= 2 && mapping.some(([, idx]) => idx === 0 || head[idx] === '書名');
+            const start = hasHeader ? 1 : 0;
+            for (let r = start; r < rows.length; r++) {
+                const parts = rows[r];
+                if (!parts || parts.length < 2) continue;
+                if (hasHeader && looksLikeHeader(parts)) continue;
+                let item;
+                if (hasHeader) {
+                    item = {};
+                    for (const [key, idx] of mapping) item[key] = (parts[idx] || '').trim();
+                } else {
+                    item = {
+                        barcode: (parts[0] || '').trim(),
+                        title: (parts[1] || '').trim(),
+                        assetId: (parts[2] || '').trim(),
+                        status: (parts[3] || '').trim() || '在館',
+                        isbn: (parts[4] || '').trim(),
+                    };
                 }
+                if (!item.barcode || !item.title) continue;
+                books.push(item);
             }
-            const res = await api('POST', '/api/books/import', { books });
-            alert('圖書批次匯入完成：成功 ' + (res.imported || 0) + ' / ' + (res.total || books.length));
-        });
-        input.value = '';
+            return books;
+        };
+        const lower = file.name.toLowerCase();
+        if (lower.endsWith('.xlsx')) {
+            readFileBase64(file, async (b64) => {
+                try {
+                    const res = await api('POST', '/api/parse/xlsx', { content: b64 });
+                    finish(parseRows(res.rows || []));
+                } catch (err) { alert('❌ Excel 解析失敗：' + err.message); input.value = ''; }
+            });
+        } else if (lower.endsWith('.json')) {
+            readFileText(file, (text) => {
+                try {
+                    const parsed = JSON.parse(text);
+                    finish(parsed.books || parsed.list || parsed.items || []);
+                } catch (err) { alert('❌ JSON 解析失敗：' + err.message); input.value = ''; }
+            });
+        } else {
+            readFileText(file, (text) => {
+                const rows = text.split(/\r\n|\n|\r/).map(s => s.trim()).filter(s => s)
+                    .map(line => line.split(',').map(s => s.trim()));
+                finish(parseRows(rows));
+            });
+        }
     }
 
     document.getElementById('memberImportFile').addEventListener('change', function (e) { handleMemberImportFile(e.target); });

@@ -44,9 +44,11 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_DB = os.path.join(BASE_DIR, "data", "library.db")
 
 APP_ID = "幼兒園圖書資訊管理系統"
+# 園所全稱：報表表頭使用
+SCHOOL_FULL_NAME = "國防部海軍司令部海育員工子女非營利幼兒園（委託社團法人高雄市社區教育協會辦理）"
 BACKUP_VERSION = 2
 BACKUP_DIR = os.path.join(BASE_DIR, "data", "backups")
-BACKUP_RETENTION = 7
+BACKUP_RETENTION = 10
 DEFAULT_CLASSES = ["太陽班", "月亮班", "星星班", "彩虹班", "白雲班", "小草班"]
 DEFAULT_PASSWORD = "1234"
 
@@ -329,6 +331,32 @@ def require_permission(conn, token, perm):
         raise ApiError(403, "此帳號未啟用「{}」功能".format(perm))
 
 
+def require_any_permission(conn, token, perms):
+    """多權限擇一通過（F06 館藏查詢：借還書／報表／圖書管理皆可）。"""
+    row = conn.execute(
+        "SELECT s.user_id, u.role, u.can_loan, u.can_member, u.can_book, u.can_config, u.can_report "
+        "FROM sessions s LEFT JOIN users u ON u.id = s.user_id WHERE s.token = ?",
+        (token,),
+    ).fetchone()
+    if not row:
+        raise ApiError(401, "請先登入")
+    if row["user_id"] is None:
+        return  # 共用管理員
+    if (row["role"] or "").strip() in ("admin", "root"):
+        return
+    for perm in perms:
+        if row["can_" + perm]:
+            return
+    labels = {"loan": "借還書", "report": "報表/列印", "book": "圖書管理",
+              "member": "班級成員", "config": "系統設定"}
+    raise ApiError(
+        403,
+        "此帳號未啟用「{}」任一功能".format(
+            "／".join(labels.get(p, p) for p in perms)
+        ),
+    )
+
+
 def log_audit(conn, action, actor_user_id=None, actor_name="", target="", detail="", ip=""):
     """盡力而為記錄管理操作；失敗不影響主流程（稽核紀錄只增不刪）。"""
     try:
@@ -512,6 +540,36 @@ def init_db(db_path):
         except Exception:
             pass
 
+        for _ddl in (
+            "ALTER TABLE books ADD COLUMN publisher TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE books ADD COLUMN price INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE books ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1",
+            "ALTER TABLE books ADD COLUMN source TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE books ADD COLUMN purchase_date TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE books ADD COLUMN keeper TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE books ADD COLUMN confirm_note TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE books ADD COLUMN inventory_date TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE books ADD COLUMN scrap_date TEXT NOT NULL DEFAULT ''",
+        ):
+            try:
+                conn.execute(_ddl)
+            except Exception:
+                pass
+
+        try:
+            conn.execute("ALTER TABLE loan_logs ADD COLUMN was_overdue INTEGER")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE loan_logs ADD COLUMN due_at TEXT")
+        except Exception:
+            pass
+        # 舊庫若在欄位新增前已存在，索引須在 ALTER 之後建立
+        try:
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_loan_logs_overdue ON loan_logs (was_overdue)")
+        except Exception:
+            pass
+
         try:
             conn.execute("ALTER TABLE books ADD COLUMN isbn TEXT NOT NULL DEFAULT ''")
         except Exception:
@@ -617,6 +675,7 @@ def book_json(row):
         "status": "報廢" if row["status"] == "報廢" else (
             "借出" if row["loaned_to"] else "在館"
         ),
+        "rawStatus": row["status"],
         "loanedTo": row["loaned_to"],
         "loanClass": row["loan_class"],
         "dueAt": row["due_at"],
@@ -624,6 +683,15 @@ def book_json(row):
         "remarks": row["remarks"],
         "callNo": row["call_no"] or "",
         "isbn": row["isbn"] or "",
+        "publisher": row["publisher"] or "",
+        "price": row["price"] or 0,
+        "quantity": row["quantity"] or 1,
+        "source": row["source"] or "",
+        "purchaseDate": row["purchase_date"] or "",
+        "keeper": row["keeper"] or "",
+        "confirmNote": row["confirm_note"] or "",
+        "inventoryDate": row["inventory_date"] or "",
+        "scrapDate": row["scrap_date"] or "",
     }
 
 
@@ -637,6 +705,8 @@ def log_json(row):
         "className": row["class_name"],
         "userName": row["user_name"],
         "action": row["action"],
+        "wasOverdue": bool(row["was_overdue"]) if row["was_overdue"] is not None else None,
+        "dueAt": row["due_at"],
     }
 
 
@@ -920,6 +990,21 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def send_xlsx(self, body, filename):
+        self.send_response(200)
+        self.send_header(
+            "Content-Type",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header(
+            "Content-Disposition",
+            'attachment; filename="template.xlsx"; filename*=UTF-8\'\'{}'.format(quote(filename)),
+        )
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
     def _read_body(self, limit):
         """在路由前先把請求內容讀完，避免未授權請求留下未讀內容破壞 keep-alive。"""
         length = self.headers.get("Content-Length")
@@ -1196,6 +1281,8 @@ class Handler(SimpleHTTPRequestHandler):
                     "teacher_limit": int(get_setting(conn, "loan_limit_teacher", "90")),
                     "student_days": int(get_setting(conn, "loan_days_student", "7")),
                     "teacher_days": int(get_setting(conn, "loan_days_teacher", "180")),
+                    "term_teacher_start": get_setting(conn, "term_teacher_start", ""),
+                    "term_teacher_end": get_setting(conn, "term_teacher_end", ""),
                 })
 
             if path == "/api/loan-rules" and method == "PUT":
@@ -1207,10 +1294,22 @@ class Handler(SimpleHTTPRequestHandler):
                 teacher_days = int(data.get("teacher_days") or 0)
                 if student_limit < 0 or teacher_limit < 0 or student_days < 0 or teacher_days < 0:
                     raise ApiError(400, "Borrowing settings cannot be negative")
+                term_start = _clean_text(data.get("term_teacher_start") or "", "老師本學期起始日期", 20)
+                term_end = _clean_text(data.get("term_teacher_end") or "", "老師本學期結束日期", 20)
+                for label, value in (("起始日期", term_start), ("結束日期", term_end)):
+                    if value:
+                        try:
+                            datetime.strptime(value, "%Y-%m-%d")
+                        except ValueError:
+                            raise ApiError(400, "老師本學期{}格式錯誤（請用 2026-09-01）".format(label))
+                if term_start and term_end and term_start > term_end:
+                    raise ApiError(400, "老師本學期起始日不可晚於結束日")
                 conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ("loan_limit_student", str(student_limit)))
                 conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ("loan_limit_teacher", str(teacher_limit)))
                 conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ("loan_days_student", str(student_days)))
                 conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ("loan_days_teacher", str(teacher_days)))
+                conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ("term_teacher_start", term_start))
+                conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ("term_teacher_end", term_end))
                 _audit_id, _audit_name = session_actor(conn, token)
                 log_audit(conn, "修改借閱規則", _audit_id, _audit_name,
                           detail="學生 {} 本／{} 天；教職員 {} 本／{} 天".format(
@@ -1282,7 +1381,7 @@ class Handler(SimpleHTTPRequestHandler):
 
             if method == "GET" and path == "/api/report/overdue":
                 require_permission(conn, token, "report")
-                return self.api_report_overdue(conn)
+                return self.api_report_overdue(conn, query)
 
             if method == "GET" and path == "/api/report/stats":
                 require_permission(conn, token, "report")
@@ -1318,11 +1417,33 @@ class Handler(SimpleHTTPRequestHandler):
 
             if method == "GET" and path == "/api/report/overdue.pdf":
                 require_permission(conn, token, "report")
-                return self.api_report_overdue_pdf(conn)
+                return self.api_report_overdue_pdf(conn, query)
+
+            if method == "GET" and path == "/api/report/overdue-returned.pdf":
+                require_permission(conn, token, "report")
+                return self.api_report_overdue_returned_pdf(conn, query)
 
             if method == "GET" and path == "/api/audit":
                 require_permission(conn, token, "config")
                 return self.api_audit(conn, query)
+
+            if method == "GET" and path == "/api/dashboard":
+                return self.api_dashboard(conn)
+
+            if method == "GET" and path == "/api/query/books":
+                require_any_permission(conn, token, ("loan", "report", "book"))
+                return self.api_query_books(conn, query)
+
+            if method == "GET" and path == "/api/query/member-history":
+                require_any_permission(conn, token, ("loan", "report"))
+                return self.api_report_member_history(conn, query)
+
+            if method == "GET" and path == "/api/query/member-history.pdf":
+                require_any_permission(conn, token, ("loan", "report"))
+                return self.api_report_member_history_pdf(conn, query)
+
+            if method == "POST" and path == "/api/verify-password":
+                return self.api_verify_password(conn)
 
             if method == "GET" and path == "/api/audit.csv":
                 require_permission(conn, token, "config")
@@ -1421,8 +1542,11 @@ class Handler(SimpleHTTPRequestHandler):
             if path.startswith("/api/books/"):
                 rest = path[len("/api/books/"):].rstrip("/")
                 action = None
-                if rest.endswith("/scrap") or rest.endswith("/restore"):
-                    rest, action = rest.rsplit("/", 1)
+                for suffix in ("/scrap", "/restore", "/renew"):
+                    if rest.endswith(suffix):
+                        rest = rest[: -len(suffix)].rstrip("/")
+                        action = suffix[1:]
+                        break
                 barcode = unquote(rest).strip()
                 if not barcode:
                     raise ApiError(400, "條碼不可空白")
@@ -1432,14 +1556,30 @@ class Handler(SimpleHTTPRequestHandler):
                 if method == "DELETE" and not action:
                     require_permission(conn, token, "book")
                     return self.api_book_delete(conn, barcode, token)
+                if method == "POST" and action == "renew":
+                    require_permission(conn, token, "loan")
+                    return self.api_book_renew(conn, barcode, token)
                 if method == "POST" and action:
                     require_permission(conn, token, "book")
                     return self.api_book_action(conn, barcode, action, token)
+                raise ApiError(404, "找不到此圖書 API")
 
             if method == "POST" and path == "/api/members/import":
                 require_staff(conn, token)
                 require_permission(conn, token, "member")
                 return self.api_members_import(conn, token)
+
+            if method == "GET" and path == "/api/template/members.xlsx":
+                require_permission(conn, token, "member")
+                return self.api_template_members_xlsx(conn)
+
+            if method == "GET" and path == "/api/template/books.xlsx":
+                require_permission(conn, token, "book")
+                return self.api_template_books_xlsx(conn)
+
+            if method == "POST" and path == "/api/parse/xlsx":
+                require_any_permission(conn, token, ("member", "book"))
+                return self.api_parse_xlsx()
 
             if method == "POST" and path == "/api/books/import":
                 require_permission(conn, token, "book")
@@ -1459,6 +1599,144 @@ class Handler(SimpleHTTPRequestHandler):
     # ------------------------------------------------------------------
     # API 實作
     # ------------------------------------------------------------------
+
+    def api_query_books(self, conn, query):
+        """F06 館藏查詢：關鍵字（書名／ISBN／條碼／財編／索書號）＋出版社篩選，複本彙整。"""
+        keyword = (query.get("q") or [""])[0].strip()
+        publisher = (query.get("publisher") or [""])[0].strip()
+        conds, params = [], []
+        if keyword:
+            like = "%" + keyword + "%"
+            conds.append(
+                "(title LIKE ? OR isbn LIKE ? OR barcode LIKE ? OR asset_id LIKE ? OR call_no LIKE ?)"
+            )
+            params.extend([like, like, like, like, like])
+        if publisher:
+            conds.append("publisher = ?")
+            params.append(publisher)
+        where = (" WHERE " + " AND ".join(conds)) if conds else ""
+        rows = conn.execute(
+            "SELECT * FROM books" + where + " ORDER BY title, asset_id", params
+        ).fetchall()
+        groups = {}
+        order = []
+        for r in rows:
+            status = r["status"]
+            if status not in ("在館", "借出"):
+                display = status
+            elif r["loaned_to"]:
+                display = "借出"
+            else:
+                display = "在館"
+            key = (r["isbn"] or "").strip() or (r["title"] or "").strip()
+            if key not in groups:
+                groups[key] = {
+                    "title": r["title"],
+                    "isbn": r["isbn"] or "",
+                    "publisher": r["publisher"] or "",
+                    "total": 0,
+                    "inLibrary": 0,
+                    "loaned": 0,
+                    "other": 0,
+                    "copies": [],
+                }
+                order.append(key)
+            g = groups[key]
+            g["total"] += 1
+            if display == "在館":
+                g["inLibrary"] += 1
+                location = "圖書室"
+            elif display == "借出":
+                g["loaned"] += 1
+                location = "班級代管（{}）".format(r["loan_class"] or "未指定")
+            else:
+                g["other"] += 1
+                location = "（{}）".format(display)
+            g["copies"].append({
+                "barcode": r["barcode"],
+                "assetId": r["asset_id"] or "",
+                "status": display,
+                "rawStatus": status,
+                "loanedTo": r["loaned_to"] or "",
+                "loanClass": r["loan_class"] or "",
+                "callNo": r["call_no"] or "",
+                "dueAt": r["due_at"] or "",
+                "location": location,
+            })
+            if not g["publisher"] and r["publisher"]:
+                g["publisher"] = r["publisher"]
+        items = [groups[k] for k in order]
+        stats = {
+            "kinds": len(items),
+            "copies": sum(g["total"] for g in items),
+            "inLibrary": sum(g["inLibrary"] for g in items),
+            "loaned": sum(g["loaned"] for g in items),
+            "other": sum(g["other"] for g in items),
+        }
+        publishers = [
+            r[0] for r in conn.execute(
+                "SELECT DISTINCT publisher FROM books WHERE publisher != '' ORDER BY publisher"
+            ).fetchall()
+        ]
+        return self.send_json({
+            "items": items,
+            "publishers": publishers,
+            "stats": stats,
+            "keyword": keyword,
+            "publisher": publisher,
+        })
+
+    def api_dashboard(self, conn):
+        total = conn.execute("SELECT COUNT(*) FROM books").fetchone()[0]
+        in_library = conn.execute("SELECT COUNT(*) FROM books WHERE status = '在館'").fetchone()[0]
+        loaned = conn.execute("SELECT COUNT(*) FROM books WHERE status = '借出'").fetchone()[0]
+        today = now_display()[:10]
+        overdue = conn.execute(
+            "SELECT COUNT(*) FROM books WHERE status = '借出' AND due_at IS NOT NULL AND due_at < ?",
+            (today + " 00:00:00",),
+        ).fetchone()[0]
+        students = conn.execute(
+            "SELECT COUNT(*) FROM users WHERE role = 'student' AND class_id IS NOT NULL AND active = 1"
+        ).fetchone()[0]
+        # 老師人數不含系統 Root／系統管理員／共用管理員
+        teachers = conn.execute(
+            "SELECT COUNT(*) FROM users WHERE role = 'teacher' AND active = 1"
+        ).fetchone()[0]
+        return self.send_json({
+            "counts": {
+                "total": total,
+                "inLibrary": in_library,
+                "loaned": loaned,
+                "overdue": overdue,
+                "students": students,
+                "teachers": teachers,
+            },
+        })
+
+    def api_verify_password(self, conn):
+        data = self.read_json()
+        password = data.get("password") or ""
+        if not isinstance(password, str) or not password:
+            raise ApiError(400, "請輸入密碼")
+        session = conn.execute(
+            "SELECT user_id FROM sessions s WHERE s.token = ?",
+            (self.cookies().get("sid"),),
+        ).fetchone()
+        if not session:
+            raise ApiError(401, "請先登入")
+        if session["user_id"] is None:
+            row = conn.execute(
+                "SELECT value FROM settings WHERE key = 'admin_password'"
+            ).fetchone()
+            if not row or not verify_password(password, row["value"]):
+                raise ApiError(403, "密碼錯誤")
+            return self.send_json({"ok": True})
+        row = conn.execute(
+            "SELECT password FROM users WHERE id = ?", (session["user_id"],)
+        ).fetchone()
+        if not row or not verify_password(password, row["password"]):
+            raise ApiError(403, "密碼錯誤")
+        return self.send_json({"ok": True})
 
     def _audit(self, conn, token, action, target="", detail=""):
         actor_id, actor_name = session_actor(conn, token)
@@ -1853,32 +2131,78 @@ class Handler(SimpleHTTPRequestHandler):
         )
         self.send_pdf(body, "借閱歷史紀錄-{}.pdf".format(datetime.now().strftime("%Y%m%d-%H%M")))
 
+    def _inventory_rows(self, conn, query, kind):
+        date_from = (query.get("dateFrom") or [""])[0].strip()
+        date_to = (query.get("dateTo") or [""])[0].strip()
+        range_col = "scrap_date" if kind == "scrap" else "purchase_date"
+        conds, params = [], []
+        if kind == "scrap":
+            conds.append("status = '報廢'")
+        else:
+            conds.append("status != '報廢'")
+        if date_from or date_to:
+            def roc(s, label):
+                text = s.replace("-", "/")
+                m = re.fullmatch(r"(\d{2,4})/(\d{1,2})/(\d{1,2})", text)
+                if not m:
+                    raise ApiError(400, "{}格式錯誤（民國年，如 115/05/16）".format(label))
+                y, mo, d = (int(g) for g in m.groups())
+                if y <= 300:
+                    y += 1911
+                try:
+                    datetime(y, mo, d)
+                except ValueError:
+                    raise ApiError(400, "{}不存在".format(label))
+                return "{:03d}/{:02d}/{:02d}".format(y - 1911, mo, d)
+            if date_from:
+                conds.append("{} >= ?".format(range_col))
+                params.append(roc(date_from, "起始日期"))
+            if date_to:
+                conds.append("{} <= ?".format(range_col))
+                params.append(roc(date_to, "結束日期"))
+        where = " WHERE " + " AND ".join(conds)
+        return conn.execute(
+            "SELECT asset_id, title, publisher, price, quantity, purchase_date, keeper, "
+            "confirm_note, inventory_date, scrap_date, remarks, call_no, loaned_to, status "
+            "FROM books" + where + " ORDER BY asset_id, barcode",
+            params,
+        ).fetchall()
+
     def api_report_inventory_pdf(self, conn, query):
         kind = (query.get("kind") or ["all"])[0].strip()
         if kind not in ("all", "scrap"):
             raise ApiError(400, "清冊類型錯誤")
-        if kind == "scrap":
-            where = " WHERE status = '報廢'"
-            title = "報廢清冊"
-        else:
-            where = " WHERE status != '報廢'"
-            title = "財產清冊"
-        rows = conn.execute(
-            "SELECT asset_id, title, call_no, status, loaned_to, remarks FROM books"
-            + where + " ORDER BY asset_id, barcode"
-        ).fetchall()
-        table = [[
-            r["asset_id"], r["title"], r["call_no"], r["status"],
-            r["loaned_to"] or "", r["remarks"] or "",
-        ] for r in rows]
+        title = "報廢清冊" if kind == "scrap" else "財產清冊"
+        rows = self._inventory_rows(conn, query, kind)
+        table = []
+        for r in rows:
+            price = r["price"] or 0
+            qty = r["quantity"] or 1
+            total_amount = price * qty
+            base = [
+                r["asset_id"], r["title"], r["publisher"] or "", str(price), str(qty),
+                str(total_amount), r["purchase_date"] or "", r["keeper"] or "",
+                r["confirm_note"] or "", r["inventory_date"] or "",
+            ]
+            if kind == "scrap":
+                base.append(r["scrap_date"] or "")
+            table.append(base)
         meta = [
             "列印時間：{}".format(datetime.now().strftime("%Y/%m/%d %H:%M")),
             "共 {} 筆".format(len(rows)),
         ]
+        if kind == "scrap":
+            columns = ["財產編號", "書名", "出版社", "單價", "數量", "總金額",
+                       "書籍購入日期", "保管人", "確認", "盤點日期", "報廢日期"]
+            widths = [0.12, 0.2, 0.1, 0.07, 0.05, 0.09, 0.11, 0.08, 0.07, 0.08, 0.08]
+        else:
+            columns = ["財產編號", "書名", "出版社", "單價", "數量", "總金額",
+                       "書籍購入日期", "保管人", "確認", "盤點日期"]
+            widths = [0.13, 0.22, 0.11, 0.07, 0.05, 0.1, 0.11, 0.09, 0.07, 0.09]
         body = build_table_pdf(
             title, meta,
-            ["財產編號", "書名", "索書號", "狀態", "借閱人", "備註"], table,
-            widths=[0.14, 0.3, 0.16, 0.1, 0.12, 0.18],
+            columns, table,
+            widths=widths, landscape=True,
         )
         self.send_pdf(body, "{}-{}.pdf".format(title, datetime.now().strftime("%Y%m%d-%H%M")))
 
@@ -2010,13 +2334,28 @@ class Handler(SimpleHTTPRequestHandler):
         )
         self.send_pdf(body, "全園閱讀歷程統計-{}.pdf".format(datetime.now().strftime("%Y%m%d-%H%M")))
 
-    def api_report_overdue_pdf(self, conn):
+    def api_report_overdue_pdf(self, conn, query):
+        cls = (query.get("className") or [""])[0].strip()
+        mtype = (query.get("memberType") or [""])[0].strip()
+        if mtype and mtype not in ("student", "teacher"):
+            raise ApiError(400, "memberType 無效")
         rows = conn.execute(
             "SELECT asset_id, title, loan_class, loaned_to, due_at "
-            "FROM books WHERE status = '借出' AND due_at IS NOT NULL ORDER BY due_at ASC"
+            "FROM books WHERE status = '借出' AND due_at IS NOT NULL AND due_at < ? "
+            "ORDER BY due_at ASC",
+            (now_display(),),
         ).fetchall()
-        table = []
         now = datetime.now()
+        filtered = []
+        for r in rows:
+            loan_class = r["loan_class"] or ""
+            if cls and loan_class != cls:
+                continue
+            if mtype and self._member_role(conn, loan_class, r["loaned_to"]) != mtype:
+                continue
+            filtered.append(r)
+        rows = filtered
+        table = []
         for r in rows:
             days = ""
             if r["due_at"]:
@@ -2031,7 +2370,7 @@ class Handler(SimpleHTTPRequestHandler):
             ])
         meta = [
             "列印時間：{}".format(now.strftime("%Y/%m/%d %H:%M")),
-            "共 {} 筆".format(len(rows)),
+            "共 {} 筆{}".format(len(rows), ("（班級：{}）".format(cls) if cls else "")),
         ]
         body = build_table_pdf(
             "逾期未還清單", meta,
@@ -2039,6 +2378,72 @@ class Handler(SimpleHTTPRequestHandler):
             widths=[0.15, 0.3, 0.12, 0.13, 0.2, 0.1],
         )
         self.send_pdf(body, "逾期清單-{}.pdf".format(now.strftime("%Y%m%d-%H%M")))
+
+    def api_report_overdue_returned_pdf(self, conn, query):
+        """逾期已還紀錄清冊（設定期間）：依班級／師生篩選，以借閱人為標題列出。"""
+        cls = (query.get("className") or [""])[0].strip()
+        mtype = (query.get("memberType") or [""])[0].strip()
+        if mtype and mtype not in ("student", "teacher"):
+            raise ApiError(400, "memberType 無效")
+        conds, params = ["action = '還書'", "was_overdue = 1"], []
+        if cls:
+            conds.append("class_name = ?")
+            params.append(cls)
+        date_conds, date_params, _ = self._date_range_conds(query)
+        conds.extend(date_conds)
+        params.extend(date_params)
+        rows = conn.execute(
+            "SELECT * FROM loan_logs WHERE " + " AND ".join(conds) + " "
+            "ORDER BY user_name, occurred_at DESC",
+            params,
+        ).fetchall()
+        # 依班級／師生過濾（以成員表為準）
+        filtered = []
+        for r in rows:
+            role = self._member_role(conn, r["class_name"], r["user_name"])
+            if mtype and role != mtype:
+                continue
+            filtered.append((r, role))
+        now = datetime.now()
+        # 聚合：以 (班級, 姓名, 角色) 分組，組內各列出逾期已還紀錄
+        groups = {}
+        for r, role in filtered:
+            groups.setdefault((r["class_name"], r["user_name"], role), []).append(r)
+        table = []
+        current = None
+        for (cls_name, user_name, role), items in sorted(groups.items()):
+            role_label = "老師" if role == "teacher" else "學生"
+            table.append(["■ {}｜{}（{}）".format(cls_name or "教職員", user_name, role_label), "", "", "", ""])
+            for r in items:
+                days = ""
+                if r["due_at"]:
+                    try:
+                        due = datetime.strptime(r["due_at"], "%Y/%m/%d %H:%M:%S")
+                        occurred = datetime.strptime(r["occurred_at"], "%Y/%m/%d %H:%M:%S")
+                        days = str(max(0, (occurred - due).days))
+                    except ValueError:
+                        days = ""
+                table.append([
+                    "　　{}".format(r["occurred_at"][:10]),
+                    "　　{}".format(r["title"]),
+                    r["asset_id"] or "",
+                    r["due_at"] or "",
+                    days,
+                ])
+        meta = [
+            "列印時間：{}".format(now.strftime("%Y/%m/%d %H:%M")),
+            "共 {} 位成員、{} 筆逾期紀錄{}".format(
+                len(groups), len(filtered),
+                ("（班級：{}）".format(cls) if cls else ""),
+            ),
+        ]
+        body = build_table_pdf(
+            "逾期已還紀錄清冊", meta,
+            ["還書日期", "書名", "財產編號", "應還日期", "逾期天數"], table,
+            widths=[0.16, 0.4, 0.16, 0.18, 0.1],
+            landscape=True,
+        )
+        self.send_pdf(body, "逾期已還清冊-{}.pdf".format(now.strftime("%Y%m%d-%H%M")))
 
     def api_report_issues(self, conn):
         from openpyxl import Workbook
@@ -2068,13 +2473,44 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def api_report_overdue(self, conn):
+    def _member_role(self, conn, class_name, user_name):
+        """依班級＋姓名找出該位成員的角色；找不到視為 student。"""
+        if not user_name:
+            return "student"
+        if not class_name or class_name.startswith("教職員"):
+            row = conn.execute(
+                "SELECT role FROM users WHERE active = 1 AND (username = ? OR name = ?) ORDER BY id LIMIT 1",
+                (user_name, user_name),
+            ).fetchone()
+            return (row["role"] or "student") if row else "student"
+        row = conn.execute(
+            "SELECT u.role FROM users u JOIN classes c ON c.id = u.class_id "
+            "WHERE u.active = 1 AND u.name = ? AND c.name = ?",
+            (user_name, class_name),
+        ).fetchone()
+        return (row["role"] or "student") if row else "student"
+
+    def api_report_overdue(self, conn, query):
+        cls = (query.get("className") or [""])[0].strip()
+        mtype = (query.get("memberType") or [""])[0].strip()
+        if mtype and mtype not in ("student", "teacher"):
+            raise ApiError(400, "memberType 無效")
         rows = conn.execute(
             "SELECT barcode, title, asset_id, status, loaned_to, loan_class, due_at "
-            "FROM books WHERE status = '借出' AND due_at IS NOT NULL ORDER BY due_at ASC"
+            "FROM books WHERE status = '借出' AND due_at IS NOT NULL AND due_at < ? "
+            "ORDER BY due_at ASC",
+            (now_display(),),
         ).fetchall()
         overdue = []
         for r in rows:
+            loan_class = r["loan_class"] or ""
+            role = self._member_role(conn, loan_class, r["loaned_to"])
+            if cls and loan_class != cls:
+                continue
+            if mtype == "student" and role != "student":
+                continue
+            if mtype == "teacher" and role != "teacher":
+                continue
             due_at = None
             days_over = 0
             if r["due_at"]:
@@ -2092,6 +2528,7 @@ class Handler(SimpleHTTPRequestHandler):
                 "loanClass": r["loan_class"],
                 "dueAt": r["due_at"],
                 "daysOverdue": days_over,
+                "memberType": role,
             })
         return self.send_json({"overdue": overdue, "total": len(overdue)})
 
@@ -2155,10 +2592,21 @@ class Handler(SimpleHTTPRequestHandler):
             raise ApiError(400, "memberType must be student or teacher")
         if member_type == "teacher":
             limit = int(get_setting(conn, "loan_limit_teacher", "90"))
-            loan_days = int(get_setting(conn, "loan_days_teacher", "180"))
+            teacher_term_end = get_setting(conn, "term_teacher_end", "")
+            if teacher_term_end:
+                try:
+                    due_at = datetime.strptime(teacher_term_end, "%Y-%m-%d").strftime("%Y/%m/%d 23:59:59")
+                except ValueError:
+                    due_at = None
+            else:
+                due_at = None
+            if due_at is None:
+                loan_days = int(get_setting(conn, "loan_days_teacher", "180"))
+                due_at = (datetime.now() + timedelta(days=loan_days)).strftime("%Y/%m/%d %H:%M:%S")
         else:
             limit = int(get_setting(conn, "loan_limit_student", "3"))
             loan_days = int(get_setting(conn, "loan_days_student", "7"))
+            due_at = (datetime.now() + timedelta(days=loan_days)).strftime("%Y/%m/%d %H:%M:%S")
 
         try:
             conn.execute("BEGIN IMMEDIATE")
@@ -2175,6 +2623,8 @@ class Handler(SimpleHTTPRequestHandler):
             if row["status"] in ("遺失", "修繕中", "爭議中"):
                 raise ApiError(409, "《{}》目前狀態為「{}」，不可借出".format(row["title"], row["status"]))
 
+            overdue_at_return = False
+            due_at_snapshot = None
             if action == "借書":
                 # 多人候取中的書：僅輪到的人可先借閱
                 ready = conn.execute(
@@ -2200,16 +2650,24 @@ class Handler(SimpleHTTPRequestHandler):
                 ).fetchone()[0]
                 if active_count + 1 > limit:
                     raise ApiError(409, "《{}》借閱上限已達（{} 本），無法再借".format(row["title"], limit))
-
                 conn.execute(
                     "UPDATE books SET status = '借出', loaned_to = ?, loan_class = ?, "
                     "due_at = ?, borrow_count = borrow_count + 1, updated_at = ? WHERE barcode = ?",
-                    (user_name, class_name, (datetime.now() + timedelta(days=loan_days)).strftime("%Y/%m/%d %H:%M:%S"), now_display(), barcode),
+                    (user_name, class_name, due_at, now_display(), barcode),
                 )
                 action_text = "借書"
             else:
                 if row["status"] != "借出" and not row["loaned_to"]:
                     raise ApiError(409, "《{}》目前在館內，無需歸還".format(row["title"]))
+                # 還書時間與逾期快照：交付「逾期已還紀錄清冊」使用
+                returned_at = datetime.now()
+                overdue_at_return = False
+                if row["due_at"]:
+                    try:
+                        overdue_at_return = returned_at > datetime.strptime(row["due_at"], "%Y/%m/%d %H:%M:%S")
+                    except ValueError:
+                        pass
+                due_at_snapshot = row["due_at"]
                 conn.execute(
                     "UPDATE books SET status = '在館', loaned_to = NULL, loan_class = NULL, due_at = NULL, "
                     "updated_at = ? WHERE barcode = ?",
@@ -2219,10 +2677,13 @@ class Handler(SimpleHTTPRequestHandler):
 
             cursor = conn.execute(
                 "INSERT INTO loan_logs (occurred_at, barcode, title, asset_id, "
-                "class_name, user_name, action) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "class_name, user_name, action, was_overdue, due_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     now_display(), barcode, row["title"], row["asset_id"],
                     class_name, user_name, action_text,
+                    (1 if action_text == "還書" and overdue_at_return else
+                     (0 if action_text == "還書" else None)),
+                    (due_at_snapshot if action_text == "還書" else None),
                 ),
             )
             log_id = cursor.lastrowid
@@ -2395,8 +2856,12 @@ class Handler(SimpleHTTPRequestHandler):
         # 過期預約自動失效，避免清單累積永遠不會成立的「進行中」預約
         self.expire_reservations(conn)
         status_filter = (query.get("status") or [""])[0].strip()
+        barcode_filter = (query.get("barcode") or [""])[0].strip()
         conditions = []
         params = []
+        if barcode_filter:
+            conditions.append("barcode = ?")
+            params.append(barcode_filter)
         if status_filter == "active":
             conditions.append("status IN ('pending', 'ready')")
         elif status_filter:
@@ -2514,15 +2979,24 @@ class Handler(SimpleHTTPRequestHandler):
                     raise ApiError(404, "館藏中查不到這本書：{}".format(barcode))
                 if row["status"] != "借出" and not row["loaned_to"]:
                     raise ApiError(409, "《{}》目前在館內，無需歸還".format(row["title"]))
+                returned_at = datetime.now()
+                overdue_at_return = False
+                if row["due_at"]:
+                    try:
+                        overdue_at_return = returned_at > datetime.strptime(row["due_at"], "%Y/%m/%d %H:%M:%S")
+                    except ValueError:
+                        pass
+                due_at_snapshot = row["due_at"]
                 conn.execute(
                     "UPDATE books SET status = '在館', loaned_to = NULL, loan_class = NULL, due_at = NULL, "
                     "updated_at = ? WHERE barcode = ?",
                     (now_display(), barcode),
                 )
                 conn.execute(
-                    "INSERT INTO loan_logs (occurred_at, barcode, title, asset_id, class_name, user_name, action) "
-                    "VALUES (?, ?, ?, ?, ?, ?, '還書')",
-                    (now_display(), barcode, row["title"], row["asset_id"], row["loan_class"] or "", row["loaned_to"] or ""),
+                    "INSERT INTO loan_logs (occurred_at, barcode, title, asset_id, class_name, user_name, action, was_overdue, due_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, '還書', ?, ?)",
+                    (now_display(), barcode, row["title"], row["asset_id"], row["loan_class"] or "", row["loaned_to"] or "",
+                     1 if overdue_at_return else 0, due_at_snapshot),
                 )
                 returned.append(barcode)
             promoted = self._promote_ready(conn, returned)
@@ -2537,6 +3011,22 @@ class Handler(SimpleHTTPRequestHandler):
             raise
         return self.send_json({"ok": True, "returned": returned, "total": len(returned), "promoted": promoted})
 
+    def _roc_date(self, value, label):
+        """驗證民國年日期格式（115/05/16）；空字串回傳空字串。"""
+        text = (value or "").strip()
+        if not text:
+            return ""
+        if not re.fullmatch(r"\d{2,4}/\d{1,2}/\d{1,2}", text):
+            raise ApiError(400, "{}格式錯誤（請用民國年，如 115/05/16）".format(label))
+        y, mo, d = (int(g) for g in text.split("/"))
+        try:
+            if y > 300:  # 西元年也接受但存為未來值，不允許
+                raise ValueError()
+            datetime(y + 1911, mo, d)
+        except ValueError:
+            raise ApiError(400, "{}不存在（如 115/02/31）".format(label))
+        return "{:03d}/{:02d}/{:02d}".format(y, mo, d)
+
     def api_book_upsert(self, conn, barcode, token=None):
         data = self.read_json()
         title = _clean_text(data.get("title"), "書名", 200, required=True)
@@ -2544,6 +3034,22 @@ class Handler(SimpleHTTPRequestHandler):
         remarks = _clean_text(data.get("remarks") or "", "備註", 500)
         call_no = _clean_text(data.get("callNo") or data.get("call_no") or "", "索書號", 50)
         isbn = _clean_text(data.get("isbn") or data.get("ISBN") or "", "ISBN", 32)
+        publisher = _clean_text(data.get("publisher") or "", "出版社", 100)
+        source = _clean_text(data.get("source") or "", "來源", 20)
+        if source and source not in ("自購", "軍購", "捐贈", "英補", "署補"):
+            raise ApiError(400, "來源必須是「自購／軍購／捐贈／英補／署補」")
+        try:
+            price = int(data.get("price") or 0)
+        except (TypeError, ValueError):
+            raise ApiError(400, "單價格式錯誤")
+        if price < 0 or price > 10_000_000:
+            raise ApiError(400, "單價需為 0–10,000,000 元")
+        purchase_date = self._roc_date(data.get("purchaseDate"), "書籍購入日期")
+        keeper = _clean_text(data.get("keeper") or "", "保管人", 50)
+        confirm_note = _clean_text(data.get("confirmNote") or "", "確認", 200)
+        inventory_date = self._roc_date(data.get("inventoryDate"), "盤點日期")
+        scrap_date = self._roc_date(data.get("scrapDate"), "報廢日期")
+        quantity = 1  # 固定為 1（規格要求不可更改）
         status = None
         raw_status = data.get("status")
         if isinstance(raw_status, str) and raw_status.strip():
@@ -2559,9 +3065,11 @@ class Handler(SimpleHTTPRequestHandler):
             ).fetchone()
             if row:
                 conn.execute(
-                    "UPDATE books SET title = ?, asset_id = ?, call_no = ?, isbn = ?, remarks = ?, updated_at = ? "
+                    "UPDATE books SET title = ?, asset_id = ?, call_no = ?, isbn = ?, remarks = ?, publisher = ?, price = ?, quantity = ?, source = ?, purchase_date = ?, keeper = ?, confirm_note = ?, inventory_date = ?, scrap_date = ?, updated_at = ? "
                     "WHERE barcode = ?",
-                    (title, asset, call_no, isbn, remarks, now_display(), barcode),
+                    (title, asset, call_no, isbn, remarks, publisher, price, quantity, source,
+                     purchase_date, keeper, confirm_note, inventory_date, scrap_date,
+                     now_display(), barcode),
                 )
                 if status:
                     conn.execute(
@@ -2570,9 +3078,12 @@ class Handler(SimpleHTTPRequestHandler):
                     )
             else:
                 conn.execute(
-                    "INSERT INTO books (barcode, title, asset_id, status, remarks, call_no, isbn, created_at, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (barcode, title, asset, status or "在館", remarks, call_no, isbn, now_display(), now_display()),
+                    "INSERT INTO books (barcode, title, asset_id, status, remarks, call_no, isbn, publisher, price, quantity, source, purchase_date, keeper, confirm_note, inventory_date, scrap_date, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (barcode, title, asset, status or "在館", remarks, call_no, isbn,
+                     publisher, price, quantity, source, purchase_date, keeper,
+                     confirm_note, inventory_date, scrap_date,
+                     now_display(), now_display()),
                 )
                 was_insert = True
             conn.execute("COMMIT")
@@ -2586,6 +3097,46 @@ class Handler(SimpleHTTPRequestHandler):
             "SELECT * FROM books WHERE barcode = ?", (barcode,)
         ).fetchone()
         return self.send_json({"ok": True, "barcode": barcode, "book": book_json(book)})
+
+    def api_book_renew(self, conn, barcode, token=None):
+        row = conn.execute(
+            "SELECT * FROM books WHERE barcode = ?", (barcode,)
+        ).fetchone()
+        if not row:
+            raise ApiError(404, "找不到此圖書")
+        if row["status"] != "借出" or not row["loaned_to"]:
+            raise ApiError(400, "這本書目前未被借出")
+        borrower = row["loaned_to"]
+        # 依借閱人決定新到期日：老師（含有任何教師角色的同名帳號）→ 180 天，否則 7 天
+        rows = conn.execute(
+            "SELECT DISTINCT role FROM users WHERE active = 1 AND name = ?",
+            (borrower,),
+        ).fetchall()
+        roles = {(r["role"] or "") for r in rows}
+        is_teacher = "teacher" in roles or (row["loan_class"] or "").startswith("教職員")
+        if is_teacher:
+            loan_days = int(get_setting(conn, "loan_days_teacher", "180"))
+            member_type = "teacher"
+        else:
+            loan_days = int(get_setting(conn, "loan_days_student", "7"))
+            member_type = "student"
+        new_due = (datetime.now() + timedelta(days=loan_days)).strftime("%Y/%m/%d %H:%M:%S")
+        conn.execute(
+            "UPDATE books SET due_at = ?, updated_at = ? WHERE barcode = ?",
+            (new_due, now_display(), barcode),
+        )
+        self._audit(conn, token, "續借", target=barcode,
+                    detail="{}（{}）到期日延長至 {}".format(row["title"] or "", borrower, new_due[:10]))
+        book = conn.execute(
+            "SELECT * FROM books WHERE barcode = ?", (barcode,)
+        ).fetchone()
+        return self.send_json({
+            "ok": True,
+            "book": book_json(book),
+            "newDueAt": new_due,
+            "loanDays": loan_days,
+            "memberType": member_type,
+        })
 
     def api_book_action(self, conn, barcode, action, token=None):
         if action not in ("scrap", "restore"):
@@ -2674,6 +3225,90 @@ class Handler(SimpleHTTPRequestHandler):
                 "copies": copies,
             })
         return self.send_json({"books": books, "total": len(books)})
+
+    def api_parse_xlsx(self):
+        """前端上傳 xlsx（base64）→ 回傳第一張工作表的列陣列，供名單／圖書批次匯入使用。"""
+        data = self.read_json(limit=MAX_BODY)
+        import base64
+        content = data.get("content") or ""
+        if not isinstance(content, str) or not content:
+            raise ApiError(400, "缺少檔案內容")
+        try:
+            raw = base64.b64decode(content)
+            from openpyxl import load_workbook
+            wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+            ws = wb.worksheets[0]
+            rows = []
+            for row in ws.iter_rows(values_only=True):
+                cells = ["" if v is None else str(v).strip() for v in row]
+                if any(cells):
+                    rows.append(cells)
+            wb.close()
+        except ApiError:
+            raise
+        except Exception:
+            raise ApiError(400, "Excel 檔案無法解析，請確認是 .xlsx 格式")
+        if len(rows) > 5000:
+            raise ApiError(400, "單次最多 5000 列")
+        return self.send_json({"rows": rows})
+
+    def api_template_members_xlsx(self, conn):
+        """規格 2.1：提供名單 Excel 範本（老師＝員工編號、學生＝學號 a01…）。"""
+        from openpyxl import Workbook
+        from openpyxl.styles import Font
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "老師名單"
+        ws.append(["員工編號", "姓名", "班級（可留空）", "角色"])
+        ws.append(["T001", "（範例）王老師", "太陽班", "teacher"])
+        for cell in ws[1]:
+            cell.font = Font(bold=True)
+        ws2 = wb.create_sheet("學生名單")
+        ws2.append(["學號", "姓名", "班級", "角色"])
+        ws2.append(["a01", "（範例）林小明", "太陽班", "student"])
+        for cell in ws2[1]:
+            cell.font = Font(bold=True)
+        ws3 = wb.create_sheet("填寫說明")
+        for line in [
+            "1. 老師名單：每學年以「員工編號」為帳號（如 T001），姓名請填真實稱呼。",
+            "2. 學生名單：每學年重新編班後重新編號（如 a01、a02…），第一碼為小寫英文字母＋兩碼數字。",
+            "3. 「班級」需與系統「班級清單」完全一致，否則該列會被略過。",
+            "4. 角色填 teacher 或 student；留空則依工作表判斷（老師名單＝teacher，學生名單＝student）。",
+            "5. 完成後請另存為 CSV（UTF-8）或直接將工作表貼入名單批次匯入。",
+        ]:
+            ws3.append([line])
+        buf = io.BytesIO()
+        wb.save(buf)
+        self.send_xlsx(buf.getvalue(), "名單匯入範本.xlsx")
+
+    def api_template_books_xlsx(self, conn):
+        """規格 4.1：圖書資料 Excel 範本（含 10 個財產欄位）。"""
+        from openpyxl import Workbook
+        from openpyxl.styles import Font
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "圖書匯入"
+        headers = ["條碼", "書名", "財產編號", "出版社", "單價", "ISBN", "索書號",
+                   "來源", "書籍購入日期", "保管人", "確認", "盤點日期", "備註"]
+        ws.append(headers)
+        ws.append(["B0001", "（範例）好餓的毛毛蟲", "圖0001", "上誼", "280",
+                   "9789577624505", "注01", "自購", "115/05/16", "總務處", "", "", ""])
+        for cell in ws[1]:
+            cell.font = Font(bold=True)
+        ws2 = wb.create_sheet("填寫說明")
+        for line in [
+            "1. 條碼必填且不可重複（同條碼視為同一本書的更新）；書名必填。",
+            "2. 來源限填：自購／軍購／捐贈／英補／署補（或留空）。",
+            "3. 日期欄位使用民國年格式，如 115/05/16。",
+            "4. 單價為整數元；數量固定為 1，不需填寫。",
+            "5. 報廢日期僅在書籍報廢時填寫。",
+        ]:
+            ws2.append([line])
+        buf = io.BytesIO()
+        wb.save(buf)
+        self.send_xlsx(buf.getvalue(), "圖書匯入範本.xlsx")
 
     def api_members_import(self, conn, token):
         data = self.read_json()
@@ -2790,13 +3425,25 @@ class Handler(SimpleHTTPRequestHandler):
             asset_id = _clean_text(item.get("assetId") or item.get("財產編號") or "", "財產編號", 64)
             isbn = _clean_text(item.get("isbn") or item.get("ISBN") or item.get("國際書號") or "", "ISBN", 32)
             status = _clean_text(item.get("status") or "在館", "狀態", 20) or "在館"
+            publisher = _clean_text(item.get("publisher") or item.get("出版社") or "", "出版社", 100)
+            source = _clean_text(item.get("source") or item.get("來源") or "", "來源", 20)
+            purchase_date = self._roc_date(item.get("purchaseDate") or item.get("書籍購入日期") or item.get("購入日期") or "", "書籍購入日期")
+            keeper = _clean_text(item.get("keeper") or item.get("保管人") or "", "保管人", 50)
+            confirm_note = _clean_text(item.get("confirmNote") or item.get("確認") or "", "確認", 200)
+            inventory_date = self._roc_date(item.get("inventoryDate") or item.get("盤點日期") or "", "盤點日期")
+            try:
+                price = int(item.get("price") or item.get("單價") or 0)
+            except (TypeError, ValueError):
+                price = 0
             if not barcode or not title:
                 continue
             conn.execute(
-                "INSERT INTO books (barcode, title, asset_id, status, remarks, isbn, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
-                "ON CONFLICT(barcode) DO UPDATE SET title = excluded.title, asset_id = excluded.asset_id, isbn = excluded.isbn, status = excluded.status, updated_at = excluded.updated_at",
-                (barcode, title, asset_id, status, "", isbn, now_display(), now_display()),
+                "INSERT INTO books (barcode, title, asset_id, status, remarks, isbn, publisher, source, price, purchase_date, keeper, confirm_note, inventory_date, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(barcode) DO UPDATE SET title = excluded.title, asset_id = excluded.asset_id, isbn = excluded.isbn, status = excluded.status, publisher = excluded.publisher, source = excluded.source, price = excluded.price, purchase_date = excluded.purchase_date, keeper = excluded.keeper, confirm_note = excluded.confirm_note, inventory_date = excluded.inventory_date, updated_at = excluded.updated_at",
+                (barcode, title, asset_id, status, "", isbn, publisher, source, price,
+                 purchase_date, keeper, confirm_note, inventory_date,
+                 now_display(), now_display()),
             )
             imported += 1
         self._audit(conn, token, "批次匯入圖書",
