@@ -1516,6 +1516,10 @@ class Handler(SimpleHTTPRequestHandler):
                 require_permission(conn, token, "report")
                 return self.api_report_command_codes_pdf(conn)
 
+            if method == "GET" and path == "/api/report/publisher-stats.pdf":
+                require_permission(conn, token, "report")
+                return self.api_report_publisher_stats_pdf(conn, query)
+
             if method == "GET" and path == "/api/report/issues.pdf":
                 require_permission(conn, token, "report")
                 return self.api_report_issues_pdf(conn)
@@ -2481,6 +2485,48 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
+
+    def api_report_publisher_stats_pdf(self, conn, query):
+        """出版社統計：按出版社統計館藏複本數與借閱次數（6.x）。"""
+        # 館藏複本數（不含報廢）
+        book_rows = conn.execute(
+            "SELECT publisher, COUNT(*) AS n "
+            "FROM books WHERE publisher != '' AND status != '報廢' "
+            "GROUP BY publisher ORDER BY n DESC, publisher"
+        ).fetchall()
+        book_map = {r["publisher"]: r["n"] for r in book_rows}
+
+        # 借閱次數（所有歷史紀錄）
+        loan_rows = conn.execute(
+            "SELECT b.publisher, COUNT(*) AS n "
+            "FROM loan_logs l JOIN books b ON b.barcode = l.barcode "
+            "WHERE l.action = '借書' AND b.publisher != '' "
+            "GROUP BY b.publisher ORDER BY n DESC, b.publisher"
+        ).fetchall()
+        loan_map = {r["publisher"]: r["n"] for r in loan_rows}
+
+        publishers = sorted(set(book_map.keys()) | set(loan_map.keys()),
+                            key=lambda p: -(book_map.get(p, 0) + loan_map.get(p, 0)))
+        table = []
+        total_books = 0
+        total_loans = 0
+        for p in publishers:
+            bc = book_map.get(p, 0)
+            lc = loan_map.get(p, 0)
+            total_books += bc
+            total_loans += lc
+            table.append([p, str(bc), str(lc)])
+        meta = [
+            "列印時間：{}".format(datetime.now().strftime("%Y/%m/%d %H:%M")),
+            "館藏複本總數：{} 本".format(total_books),
+            "借閱總次數：{} 次".format(total_loans),
+        ]
+        body = build_table_pdf(
+            "出版社統計", meta,
+            ["出版社", "館藏複本數", "借閱次數"], table,
+            widths=[0.4, 0.3, 0.3],
+        )
+        self.send_pdf(body, "出版社統計-{}.pdf".format(datetime.now().strftime("%Y%m%d-%H%M")))
 
     def api_report_issues_pdf(self, conn):
         rows = conn.execute(
