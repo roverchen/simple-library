@@ -6,6 +6,9 @@ body { font-family: -apple-system, "PingFang TC", "Microsoft JhengHei", sans-ser
        max-width: 820px; margin: 0 auto; padding: 20px; line-height: 1.8; color: #223; }
 h1,h2,h3 { color: #2c5f8a; }
 img { max-width: 100%; border: 1px solid #d5dde6; border-radius: 8px; margin: 6px 0; }
+blockquote { margin: 12px 0; padding: 10px 16px; background: #f3f8fd;
+             border-left: 4px solid #4a90d9; border-radius: 0 8px 8px 0; }
+blockquote p { margin: 0.3em 0; }
 code, pre { background: #f3f6fa; border-radius: 4px; }
 pre { padding: 10px; overflow-x: auto; }
 hr { border: none; border-top: 2px solid #e3e8ee; margin: 24px 0; }
@@ -36,20 +39,17 @@ hr { border: none; border-top: 2px solid #e3e8ee; margin: 24px 0; }
     選擇後輸入框下方會顯示成員姓名、班級與角色（學生／老師）。</p>
 <p>步驟二：選模式
     在條碼輸入框左邊的下拉選單選擇「借書」、「還書」或「預約」。</p>
-<p>步驟三：掃描
-    ┌─ 有條碼槍 ─────────────────────────────┐
-    │ 對準書背條碼「嗶」一下即可。            │
-    │ 可以連續掃，不用放開、也不用按任何鍵。   │
-    └────────────────────────────────────────┘</p>
-<pre><code>┌─ 沒有條碼槍，用相機 ────────────────────┐
-│ 點「借書」或「還書」按鈕開啟相機，       │
-│ 將 QR Code 對準方框，掃完會自動回應。   │
-└────────────────────────────────────────┘
-
-┌─ 手動輸入 ─────────────────────────────┐
-│ 在輸入框直接輸入條碼數字，按 Enter。     │
-└────────────────────────────────────────┘
-</code></pre>
+<p>步驟三：掃描</p>
+<blockquote>
+<p>🖨️ <strong>有條碼槍</strong>
+對準書背條碼「嗶」一下即可。
+可以連續掃，不用放開、也不用按任何鍵。</p>
+<p>📷 <strong>沒有條碼槍，用相機</strong>
+點「借書」或「還書」按鈕開啟相機，
+將 QR Code 對準方框，掃完會自動回應。</p>
+<p>⌨️ <strong>手動輸入</strong>
+在輸入框直接輸入條碼數字，按 Enter。</p>
+</blockquote>
 <p>掃描結果會顯示在畫面上方：</p>
 <pre><code>綠色 ✅  已成功借出／歸還
 黃色 ⚠️  這本書目前借出中／已在館內，不必重複處理
