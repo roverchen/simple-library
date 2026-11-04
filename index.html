@@ -1954,7 +1954,7 @@
                 canConfig: isStaff ? (values.canConfig === 'on') : false,
                 canReport: isStaff ? (values.canReport === 'on') : false,
             }).then(() => api('GET', '/api/state')).then(s => { applyState(s); return loadMemberAccounts(); })
-              .then(() => { alert('✅ 已修改帳號'); })
+              .then(() => { closeMemberModal(); alert('✅ 已修改帳號'); })
               .catch(err => { errorEl.textContent = '儲存失敗：' + err.message; });
         }
     }

@@ -2176,7 +2176,7 @@ class Handler(SimpleHTTPRequestHandler):
         if isinstance(raw_status, str) and raw_status.strip():
             status = raw_status.strip()
             if status not in ("在館", "借出", "遺失", "修繕中", "爭議中", "報廢"):
-                raise ApiError(400, "請求状態不合法，{}".format(status))
+                raise ApiError(400, "請求狀態不合法，{}".format(status))
 
         conn.execute("BEGIN IMMEDIATE")
         try:
