@@ -1462,9 +1462,8 @@ class Handler(SimpleHTTPRequestHandler):
                 try:
                     # 歸檔該學年的借閱紀錄
                     conn.execute(
-                        "UPDATE loan_logs SET archived = 1, archived_at = ? "
-                        "WHERE archived = 0 AND class_name IS NOT NULL AND archived = 0",
-                        (now_display(),)
+                        "UPDATE loan_logs SET archived = 1 "
+                        "WHERE archived = 0"
                     )
                     # 將該學年逾期未還的書標記為歸檔（不再顯示在逾期清單）
                     conn.execute(
