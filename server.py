@@ -329,6 +329,40 @@ def require_permission(conn, token, perm):
         raise ApiError(403, "此帳號未啟用「{}」功能".format(perm))
 
 
+def log_audit(conn, action, actor_user_id=None, actor_name="", target="", detail="", ip=""):
+    """盡力而為記錄管理操作；失敗不影響主流程（稽核紀錄只增不刪）。"""
+    try:
+        conn.execute(
+            "INSERT INTO audit_log (occurred_at, actor_user_id, actor_name, action, target, detail, ip) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                datetime.now().strftime("%Y/%m/%d %H:%M:%S"),
+                actor_user_id,
+                (actor_name or "")[:50],
+                action,
+                (target or "")[:200],
+                (detail or "")[:500],
+                (ip or "")[:64],
+            ),
+        )
+    except Exception:
+        pass
+
+
+def session_actor(conn, token):
+    """由 session token 回傳 (user_id, 顯示名稱)；共用管理員為 (None, "共用管理員")。"""
+    row = conn.execute(
+        "SELECT s.user_id, u.name, u.username, u.role FROM sessions s "
+        "LEFT JOIN users u ON u.id = s.user_id WHERE s.token = ?",
+        (token,),
+    ).fetchone()
+    if not row:
+        return None, ""
+    if row["user_id"] is None:
+        return None, "共用管理員"
+    return row["user_id"], (row["name"] or row["username"] or "").strip() or (row["username"] or "").strip()
+
+
 def next_username(conn):
     """產生下一個未被使用的數字帳號（例如 026）。"""
     max_num = 0
@@ -1145,6 +1179,11 @@ class Handler(SimpleHTTPRequestHandler):
                 conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ("loan_limit_teacher", str(teacher_limit)))
                 conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ("loan_days_student", str(student_days)))
                 conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ("loan_days_teacher", str(teacher_days)))
+                _audit_id, _audit_name = session_actor(conn, token)
+                log_audit(conn, "修改借閱規則", _audit_id, _audit_name,
+                          detail="學生 {} 本／{} 天；教職員 {} 本／{} 天".format(
+                              student_limit, student_days, teacher_limit, teacher_days),
+                          ip=self.client_address[0])
                 return self.send_json({"ok": True})
             if method == "GET" and path == "/api/state":
                 return self.send_json(build_state(conn))
@@ -1172,7 +1211,12 @@ class Handler(SimpleHTTPRequestHandler):
 
             if method == "POST" and path == "/api/backup/run":
                 require_admin(conn, token)
-                return self.send_json({"ok": True, "filename": run_auto_backup()})
+                filename = run_auto_backup()
+                _audit_id, _audit_name = session_actor(conn, token)
+                log_audit(conn, "手動備份", _audit_id, _audit_name,
+                          target=filename or "", detail="手動執行自動備份",
+                          ip=self.client_address[0])
+                return self.send_json({"ok": True, "filename": filename})
 
             if method == "GET" and path == "/api/logs":
                 require_permission(conn, token, "report")
@@ -1184,7 +1228,7 @@ class Handler(SimpleHTTPRequestHandler):
 
             if method == "POST" and path == "/api/reservations":
                 require_permission(conn, token, "loan")
-                return self.api_reservation_add(conn)
+                return self.api_reservation_add(conn, token)
 
             if method == "POST" and path.startswith("/api/reservations/"):
                 require_permission(conn, token, "loan")
@@ -1194,7 +1238,7 @@ class Handler(SimpleHTTPRequestHandler):
                 reservation_id = unquote(rest).strip()
                 if not reservation_id.isdigit():
                     raise ApiError(400, "預約編號不合法")
-                return self.api_reservation_cancel(conn, int(reservation_id))
+                return self.api_reservation_cancel(conn, int(reservation_id), token)
 
             if method == "POST" and path == "/api/logs/clear":
                 require_permission(conn, token, "report")
@@ -1244,6 +1288,14 @@ class Handler(SimpleHTTPRequestHandler):
                 require_permission(conn, token, "report")
                 return self.api_report_overdue_pdf(conn)
 
+            if method == "GET" and path == "/api/audit":
+                require_permission(conn, token, "config")
+                return self.api_audit(conn, query)
+
+            if method == "GET" and path == "/api/audit.csv":
+                require_permission(conn, token, "config")
+                return self.api_audit_csv(conn, query)
+
             if method == "GET" and path == "/api/logs.csv":
                 require_permission(conn, token, "report")
                 return self.api_logs_csv(conn, query)
@@ -1289,7 +1341,7 @@ class Handler(SimpleHTTPRequestHandler):
 
             if method == "PUT" and path == "/api/classes":
                 require_admin(conn, token)
-                return self.api_classes(conn)
+                return self.api_classes(conn, token)
 
             if path == "/api/member-accounts":
                 require_staff(conn, token)
@@ -1324,7 +1376,7 @@ class Handler(SimpleHTTPRequestHandler):
             if method == "DELETE" and path == "/api/members":
                 require_staff(conn, token)
                 require_permission(conn, token, "member")
-                return self.api_member_delete(conn, query)
+                return self.api_member_delete(conn, query, token)
 
             if path == "/api/loan" and method == "POST":
                 require_permission(conn, token, "loan")
@@ -1332,7 +1384,7 @@ class Handler(SimpleHTTPRequestHandler):
 
             if path == "/api/loan/batch-return" and method == "POST":
                 require_permission(conn, token, "loan")
-                return self.api_loan_batch_return(conn)
+                return self.api_loan_batch_return(conn, token)
 
             if path.startswith("/api/books/"):
                 rest = path[len("/api/books/"):].rstrip("/")
@@ -1344,13 +1396,13 @@ class Handler(SimpleHTTPRequestHandler):
                     raise ApiError(400, "條碼不可空白")
                 if method == "PUT" and not action:
                     require_permission(conn, token, "book")
-                    return self.api_book_upsert(conn, barcode)
+                    return self.api_book_upsert(conn, barcode, token)
                 if method == "DELETE" and not action:
                     require_permission(conn, token, "book")
-                    return self.api_book_delete(conn, barcode)
+                    return self.api_book_delete(conn, barcode, token)
                 if method == "POST" and action:
                     require_permission(conn, token, "book")
-                    return self.api_book_action(conn, barcode, action)
+                    return self.api_book_action(conn, barcode, action, token)
 
             if method == "POST" and path == "/api/members/import":
                 require_staff(conn, token)
@@ -1375,6 +1427,93 @@ class Handler(SimpleHTTPRequestHandler):
     # ------------------------------------------------------------------
     # API 實作
     # ------------------------------------------------------------------
+
+    def _audit(self, conn, token, action, target="", detail=""):
+        actor_id, actor_name = session_actor(conn, token)
+        log_audit(conn, action, actor_id, actor_name, target=target, detail=detail,
+                  ip=(self.client_address[0] if self.client_address else ""))
+
+    def api_audit(self, conn, query):
+        try:
+            page = int(query.get("page", ["1"])[0])
+            page_size = int(query.get("pageSize", ["100"])[0])
+        except ValueError:
+            raise ApiError(400, "分頁參數錯誤")
+        page = max(1, page)
+        page_size = max(1, min(500, page_size))
+        action = (query.get("action") or [""])[0].strip()[:50]
+        conditions, params = [], []
+        if action:
+            conditions.append("action = ?")
+            params.append(action)
+        date_conds, date_params, _ = self._date_range_conds(query)
+        conditions.extend(date_conds)
+        params.extend(date_params)
+        where_sql = (" WHERE " + " AND ".join(conditions)) if conditions else ""
+
+        total = conn.execute(
+            "SELECT COUNT(*) FROM audit_log" + where_sql, params
+        ).fetchone()[0]
+        pages = max(1, math.ceil(total / page_size))
+        page = min(page, pages)
+        offset = (page - 1) * page_size
+
+        rows = conn.execute(
+            "SELECT * FROM audit_log" + where_sql +
+            " ORDER BY id DESC LIMIT ? OFFSET ?",
+            params + [page_size, offset],
+        ).fetchall()
+        return self.send_json({
+            "logs": [{
+                "id": r["id"],
+                "occurredAt": r["occurred_at"],
+                "actor": r["actor_name"] or "（未知）",
+                "action": r["action"],
+                "target": r["target"] or "",
+                "detail": r["detail"] or "",
+                "ip": r["ip"] or "",
+            } for r in rows],
+            "total": total,
+            "page": page,
+            "pages": pages,
+            "pageSize": page_size,
+        })
+
+    def api_audit_csv(self, conn, query):
+        action = (query.get("action") or [""])[0].strip()[:50]
+        conditions, params = [], []
+        if action:
+            conditions.append("action = ?")
+            params.append(action)
+        date_conds, date_params, _ = self._date_range_conds(query)
+        conditions.extend(date_conds)
+        params.extend(date_params)
+        where_sql = (" WHERE " + " AND ".join(conditions)) if conditions else ""
+        output = io.StringIO()
+        writer = csv.writer(output, lineterminator="\r\n")
+        writer.writerow(["時間", "操作人", "動作", "目標", "內容", "IP"])
+        for r in conn.execute(
+            "SELECT * FROM audit_log" + where_sql + " ORDER BY id DESC",
+            params,
+        ):
+            writer.writerow([
+                r["occurred_at"], r["actor_name"] or "", r["action"],
+                r["target"] or "", r["detail"] or "", r["ip"] or "",
+            ])
+        body = ("\ufeff" + output.getvalue()).encode("utf-8")
+        filename = "稽核紀錄-{}.csv".format(datetime.now().strftime("%Y%m%d-%H%M"))
+        self.send_response(200)
+        self.send_header("Content-Type", "text/csv; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header(
+            "Content-Disposition",
+            'attachment; filename="audit.csv"; filename*=UTF-8\'\'{}'.format(
+                quote(filename)
+            ),
+        )
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
 
     def api_login(self):
         data = self.read_json()
@@ -1403,6 +1542,8 @@ class Handler(SimpleHTTPRequestHandler):
                 # 登入識別碼依序比對：帳號（完全相符）→ Email（不分大小寫）→ 姓名（完全相符）
                 user = find_login_user(conn, username)
                 if not user or not verify_password(password, user["password"]):
+                    log_audit(conn, "登入失敗", None, username or "",
+                              detail="帳號或密碼錯誤", ip=ip)
                     raise ApiError(401, "帳號或密碼錯誤")
                 role = user["role"] or "teacher"
             else:
@@ -1410,6 +1551,8 @@ class Handler(SimpleHTTPRequestHandler):
                     "SELECT value FROM settings WHERE key = 'admin_password'"
                 ).fetchone()
                 if not row or not verify_password(password, row["value"]):
+                    log_audit(conn, "登入失敗", None, "共用管理員",
+                              detail="密碼錯誤", ip=ip)
                     raise ApiError(401, "密碼錯誤")
 
             with _lock:
@@ -1462,6 +1605,12 @@ class Handler(SimpleHTTPRequestHandler):
             conn.execute(
                 "INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
                 (token, user_id, now, now + SESSION_TTL),
+            )
+            log_audit(
+                conn, "登入", user_id,
+                (user["name"] or user["username"] if user else "共用管理員"),
+                target=(user["username"] if user else "共用管理員"),
+                ip=self.client_address[0],
             )
             return self.send_json(
                 {
@@ -1549,6 +1698,8 @@ class Handler(SimpleHTTPRequestHandler):
 
     def api_logs_clear(self, conn, token):
         cursor = conn.execute("DELETE FROM loan_logs")
+        self._audit(conn, token, "清除借閱紀錄",
+                    detail="已清除 {} 筆借閱紀錄".format(cursor.rowcount))
         return self.send_json({"ok": True, "deleted": cursor.rowcount})
 
     def api_report_stats(self, conn, query):
@@ -2121,7 +2272,7 @@ class Handler(SimpleHTTPRequestHandler):
             reservations.append(self.reservation_json(r))
         return self.send_json({"reservations": reservations, "total": len(reservations)})
 
-    def api_reservation_add(self, conn):
+    def api_reservation_add(self, conn, token=None):
         data = self.read_json()
         barcode = _clean_text(data.get("barcode"), "條碼", 128, required=True)
         class_name = _clean_text(data.get("className", ""), "班級", 50)
@@ -2156,6 +2307,8 @@ class Handler(SimpleHTTPRequestHandler):
             )
             reservation_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
             conn.execute("COMMIT")
+            self._audit(conn, token, "新增預約", target=barcode,
+                        detail="{}（{}）".format(row["title"] or "", user_name))
             res = conn.execute("SELECT * FROM reservations WHERE id = ?", (reservation_id,)).fetchone()
             return self.send_json({"ok": True, "reservation": self.reservation_json(res)})
         except ApiError as err:
@@ -2165,7 +2318,7 @@ class Handler(SimpleHTTPRequestHandler):
             safe_rollback(conn)
             raise
 
-    def api_reservation_cancel(self, conn, reservation_id):
+    def api_reservation_cancel(self, conn, reservation_id, token=None):
         conn.execute("BEGIN IMMEDIATE")
         try:
             res = conn.execute("SELECT * FROM reservations WHERE id = ?", (reservation_id,)).fetchone()
@@ -2173,6 +2326,8 @@ class Handler(SimpleHTTPRequestHandler):
                 raise ApiError(404, "找不到此預約紀錄")
             if res["status"] == "pending":
                 conn.execute("UPDATE reservations SET status = 'cancelled' WHERE id = ?", (reservation_id,))
+                self._audit(conn, token, "取消預約", target=res["barcode"],
+                            detail="{}（{}）".format(res["title"] or "", res["user_name"] or ""))
             conn.execute("COMMIT")
             res = conn.execute("SELECT * FROM reservations WHERE id = ?", (reservation_id,)).fetchone()
             return self.send_json({"ok": True, "reservation": self.reservation_json(res)})
@@ -2183,7 +2338,7 @@ class Handler(SimpleHTTPRequestHandler):
             safe_rollback(conn)
             raise
 
-    def api_loan_batch_return(self, conn):
+    def api_loan_batch_return(self, conn, token=None):
         data = self.read_json()
         raw_barcodes = data.get("barcodes")
         if not isinstance(raw_barcodes, list) or not raw_barcodes:
@@ -2217,6 +2372,8 @@ class Handler(SimpleHTTPRequestHandler):
                 )
                 returned.append(barcode)
             conn.execute("COMMIT")
+            self._audit(conn, token, "批次還書", detail="共 {} 本：{}".format(
+                len(returned), "、".join(returned[:10]) + ("…" if len(returned) > 10 else "")))
         except ApiError as err:
             safe_rollback(conn)
             raise
@@ -2225,7 +2382,7 @@ class Handler(SimpleHTTPRequestHandler):
             raise
         return self.send_json({"ok": True, "returned": returned, "total": len(returned)})
 
-    def api_book_upsert(self, conn, barcode):
+    def api_book_upsert(self, conn, barcode, token=None):
         data = self.read_json()
         title = _clean_text(data.get("title"), "書名", 200, required=True)
         asset = _clean_text(data.get("assetId", ""), "財產編號", 64)
@@ -2240,6 +2397,7 @@ class Handler(SimpleHTTPRequestHandler):
                 raise ApiError(400, "請求狀態不合法，{}".format(status))
 
         conn.execute("BEGIN IMMEDIATE")
+        was_insert = False
         try:
             row = conn.execute(
                 "SELECT * FROM books WHERE barcode = ?", (barcode,)
@@ -2261,17 +2419,20 @@ class Handler(SimpleHTTPRequestHandler):
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (barcode, title, asset, status or "在館", remarks, call_no, isbn, now_display(), now_display()),
                 )
+                was_insert = True
             conn.execute("COMMIT")
         except Exception:
             safe_rollback(conn)
             raise
+        self._audit(conn, token, "新增圖書" if was_insert else "編輯圖書",
+                    target=barcode, detail=title)
 
         book = conn.execute(
             "SELECT * FROM books WHERE barcode = ?", (barcode,)
         ).fetchone()
         return self.send_json({"ok": True, "barcode": barcode, "book": book_json(book)})
 
-    def api_book_action(self, conn, barcode, action):
+    def api_book_action(self, conn, barcode, action, token=None):
         if action not in ("scrap", "restore"):
             raise ApiError(404, "找不到動作：{}".format(action))
 
@@ -2293,13 +2454,15 @@ class Handler(SimpleHTTPRequestHandler):
                 "updated_at = ? WHERE barcode = ?",
                 (now_display(), barcode),
             )
+        self._audit(conn, token, "報廢圖書" if action == "scrap" else "復原圖書",
+                    target=barcode, detail=(row["title"] or ""))
 
         book = conn.execute(
             "SELECT * FROM books WHERE barcode = ?", (barcode,)
         ).fetchone()
         return self.send_json({"ok": True, "book": book_json(book)})
 
-    def api_book_delete(self, conn, barcode):
+    def api_book_delete(self, conn, barcode, token=None):
         row = conn.execute(
             "SELECT * FROM books WHERE barcode = ?", (barcode,)
         ).fetchone()
@@ -2308,6 +2471,7 @@ class Handler(SimpleHTTPRequestHandler):
         if row["status"] != "報廢":
             raise ApiError(409, "只有已報廢的圖書可以永久刪除")
         conn.execute("DELETE FROM books WHERE barcode = ?", (barcode,))
+        self._audit(conn, token, "刪除圖書", target=barcode, detail=(row["title"] or ""))
         return self.send_json({"ok": True})
 
     def api_books_search(self, conn, query):
@@ -2385,6 +2549,8 @@ class Handler(SimpleHTTPRequestHandler):
             ensure_member_user(conn, row["id"], name)
             if not exists:
                 imported += 1
+        self._audit(conn, token, "批次匯入成員",
+                    detail="匯入 {} 筆／總數 {}".format(imported, len(raw)))
         return self.send_json({"ok": True, "imported": imported, "total": len(raw)})
 
     def api_member_add(self, conn, token):
@@ -2413,6 +2579,8 @@ class Handler(SimpleHTTPRequestHandler):
                     1 if (is_admin_role or data.get("canReport")) else 0,
                 ),
             )
+            self._audit(conn, token, "新增教職員帳號", target=username,
+                        detail="{}｜角色 {}".format(name, raw_role or "teacher"))
             return self.send_json({
                 "ok": True,
                 "memberDB": build_state(conn)["memberDB"],
@@ -2435,6 +2603,12 @@ class Handler(SimpleHTTPRequestHandler):
         user_id = ensure_member_user(conn, row["id"], name, member_flags)
         if raw_role and raw_role != "student":
             conn.execute("UPDATE users SET role = ? WHERE id = ?", (raw_role, user_id))
+        account = conn.execute(
+            "SELECT username FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+        self._audit(conn, token, "新增成員", target=name,
+                    detail="{}班（帳號 {}）".format(class_name,
+                        account["username"] if account else ""))
         account = conn.execute(
             "SELECT username FROM users WHERE id = ?", (user_id,)
         ).fetchone()
@@ -2470,9 +2644,11 @@ class Handler(SimpleHTTPRequestHandler):
                 (barcode, title, asset_id, status, "", isbn, now_display(), now_display()),
             )
             imported += 1
+        self._audit(conn, token, "批次匯入圖書",
+                    detail="匯入 {} 筆／總數 {}".format(imported, len(raw)))
         return self.send_json({"ok": True, "imported": imported, "total": len(raw)})
 
-    def api_member_delete(self, conn, query):
+    def api_member_delete(self, conn, query, token=None):
         class_name = _clean_text(query.get("className", [""])[0], "班級", 50, required=True)
         name = _clean_text(query.get("name", [""])[0], "姓名", 50, required=True)
         # 不直接刪除帳號：改為停用，保留密碼、Email 與歷史；日後重新加入可恢復。
@@ -2492,9 +2668,11 @@ class Handler(SimpleHTTPRequestHandler):
             "WHERE u.name = ? AND c.name = ?)",
             (name, class_name),
         )
+        self._audit(conn, token, "停用成員", target=name,
+                    detail="{}班｜停用帳號 {} 個".format(class_name, len(ids)))
         return self.send_json({"ok": True, "memberDB": build_state(conn)["memberDB"]})
 
-    def api_classes(self, conn):
+    def api_classes(self, conn, token=None):
         data = self.read_json()
         raw = data.get("classes")
         if not isinstance(raw, list):
@@ -2537,6 +2715,8 @@ class Handler(SimpleHTTPRequestHandler):
             safe_rollback(conn)
             raise
 
+        self._audit(conn, token, "修改班級清單",
+                    detail="班級 {} 個：{}".format(len(classes), "、".join(classes[:12]) + ("…" if len(classes) > 12 else "")))
         return self.send_json({"ok": True, **build_state(conn)})
 
     def api_password(self, conn, token):
@@ -2570,6 +2750,9 @@ class Handler(SimpleHTTPRequestHandler):
                 "DELETE FROM sessions WHERE user_id = ? AND token != ?",
                 (session["user_id"], token),
             )
+        self._audit(conn, token, "修改密碼",
+                    detail=("共用管理員密碼已變更" if session["user_id"] is None
+                            else "個人密碼已變更"))
         return self.send_json({"ok": True})
 
     def api_password_reset(self, conn):
@@ -2641,6 +2824,8 @@ class Handler(SimpleHTTPRequestHandler):
             conn.execute("DELETE FROM password_resets WHERE id = ?", (cursor.lastrowid,))
             raise
 
+        log_audit(conn, "申請密碼救援", None, label or username,
+                  target=username, detail="已寄出驗證碼", ip=ip)
         return self.send_json({
             "ok": True,
             "maskedEmail": mask_email(email),
@@ -2695,6 +2880,9 @@ class Handler(SimpleHTTPRequestHandler):
         conn.execute("UPDATE password_resets SET used = 1 WHERE target_key = ? AND used = 0", (target_key,))
         conn.execute("DELETE FROM sessions")
         clear_rate_limit("forgot-verify", ip)
+        log_audit(conn, "密碼救援重設", target_id if target_key != "admin" else None,
+                  _label or username, target=username,
+                  detail="密碼已重設（電子郵件驗證碼）", ip=ip)
         return self.send_json({"ok": True})
 
     def api_recovery_code(self, conn):
@@ -2721,6 +2909,8 @@ class Handler(SimpleHTTPRequestHandler):
         )
         conn.execute("DELETE FROM sessions")
         clear_rate_limit("recovery-code", ip)
+        log_audit(conn, "本機復原碼重設", None, "共用管理員",
+                  detail="以復原碼重設共用管理員密碼", ip=ip)
         return self.send_json({"ok": True})
 
     def api_recovery_settings_get(self, conn):
@@ -2783,10 +2973,19 @@ class Handler(SimpleHTTPRequestHandler):
         elif isinstance(password, str) and password:
             conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('smtp_password', ?)", (password,))
 
+        self._audit(conn, self.cookies().get("sid"), "修改密碼救援設定",
+                    target=(email or "（共用管理員）"),
+                    detail="SMTP／救援信箱已更新（密碼欄位{}變更）".format("已" if smtp.get("password") or smtp.get("clearPassword") else "未"))
         return self.send_json({"ok": True})
 
     def api_recovery_code_regenerate(self):
         code = regenerate_recovery_code()
+        conn = connect()
+        try:
+            log_audit(conn, "重新產生本機復原碼", None, "共用管理員",
+                      detail="舊復原碼已失效", ip=self.client_address[0])
+        finally:
+            conn.close()
         return self.send_json({"ok": True, "code": code, "filename": "data/recovery_code.txt"})
 
     def api_accounts_list(self, conn):
@@ -2859,12 +3058,12 @@ class Handler(SimpleHTTPRequestHandler):
             conn.execute("DELETE FROM sessions WHERE user_id = ?", (account_id,))
         return self.send_json({"ok": True, "id": account_id})
 
-    def api_account_reset_password(self, conn, account_id):
+    def api_account_reset_password(self, conn, account_id, token=None):
         data = self.read_json()
         password = data.get("password")
         if not isinstance(password, str) or len(password) < 4 or len(password) > 128:
             raise ApiError(400, "密碼需為 4–128 個字元")
-        row = conn.execute("SELECT id FROM users WHERE id = ?", (account_id,)).fetchone()
+        row = conn.execute("SELECT id, username FROM users WHERE id = ?", (account_id,)).fetchone()
         if not row:
             raise ApiError(404, "找不到帳號")
         conn.execute(
@@ -2872,6 +3071,8 @@ class Handler(SimpleHTTPRequestHandler):
             (hash_password(password), account_id),
         )
         conn.execute("DELETE FROM sessions WHERE user_id = ?", (account_id,))
+        self._audit(conn, token, "重設帳號密碼", target=row["username"],
+                    detail="密碼已重設，該帳號所有裝置已登出")
         return self.send_json({"ok": True})
 
     def api_member_accounts_list(self, conn):
@@ -3003,12 +3204,18 @@ class Handler(SimpleHTTPRequestHandler):
                 (hash_password(password), account_id),
             )
             conn.execute("DELETE FROM sessions WHERE user_id = ?", (account_id,))
+        self._audit(conn, token, "修改帳號", target=username,
+                    detail="姓名「{}」｜角色 {}｜權限 借還書:{} 成員:{} 圖書:{} 設定:{} 報表:{}".format(
+                        name, new_role,
+                        "✓" if can_flags[0] else "✗", "✓" if can_flags[1] else "✗",
+                        "✓" if can_flags[2] else "✗", "✓" if can_flags[3] else "✗",
+                        "✓" if can_flags[4] else "✗") + ("｜密碼已同改" if password else ""))
         return self.send_json({"ok": True, "id": account_id})
 
     def api_member_account_reset_password(self, conn, account_id, token):
         row = self._member_account_row(conn, account_id)
         self._require_account_manager(conn, token, row)
-        return self.api_account_reset_password(conn, account_id)
+        return self.api_account_reset_password(conn, account_id, token)
 
     def api_member_account_delete(self, conn, account_id, token):
         row = self._member_account_row(conn, account_id)
@@ -3018,6 +3225,8 @@ class Handler(SimpleHTTPRequestHandler):
             "UPDATE users SET active = 0, updated_at = datetime('now', 'localtime') WHERE id = ?",
             (account_id,),
         )
+        self._audit(conn, token, "停用帳號", target=row["username"],
+                    detail="帳號 {}（{}）已停用".format(row["username"], row["name"] or ""))
         return self.send_json({"ok": True, "memberDB": build_state(conn)["memberDB"]})
 
     def api_import(self, conn, token):
@@ -3097,6 +3306,7 @@ class Handler(SimpleHTTPRequestHandler):
             safe_rollback(conn)
             raise
 
+        self._audit(conn, token, "匯入備份", detail="還原書籍、成員與借閱紀錄")
         return self.send_json({"ok": True, **build_state(conn)})
 
 

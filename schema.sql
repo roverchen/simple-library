@@ -139,3 +139,20 @@ CREATE TABLE IF NOT EXISTS password_resets (
 
 CREATE INDEX IF NOT EXISTS idx_password_resets_target
     ON password_resets (target_key, used, expires_at);
+
+-- 稽核紀錄：僅記錄管理／設定／帳號操作，不記借還書（借還書有 loan_logs）。
+-- 只增不刪、不改，供日後稽核。actor_user_id 為 NULL 代表共用管理員。
+CREATE TABLE IF NOT EXISTS audit_log (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    occurred_at    TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    actor_user_id  INTEGER,
+    actor_name       TEXT NOT NULL DEFAULT '',
+    action           TEXT NOT NULL,
+    target           TEXT NOT NULL DEFAULT '',
+    detail           TEXT NOT NULL DEFAULT '',
+    ip               TEXT NOT NULL DEFAULT '',
+    FOREIGN KEY (actor_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_log_occurred ON audit_log (occurred_at);
+CREATE INDEX IF NOT EXISTS idx_audit_log_action   ON audit_log (action);

@@ -379,6 +379,69 @@
                 匯入備份會覆蓋目前所有資料（管理密碼不會被覆蓋）。
             </small>
         </div>
+        <hr>
+        <div class="input-group" id="auditSection">
+            <label>🔍 稽核紀錄</label>
+            <p style="font-size:0.9rem; color:#555; margin:4px 0 10px;">
+                僅記錄管理／設定／帳號操作（借還書紀錄另在「報表／列印」）。記錄只增不刪，無法從網頁移除。
+            </p>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                <input type="date" id="auditFrom" aria-label="起始日期" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:150px;">
+                <span style="color:#555;">～</span>
+                <input type="date" id="auditTo" aria-label="結束日期" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:150px;">
+                <select id="auditAction" style="padding:8px; border-radius:5px; border:1px solid #ccc; max-width:190px;">
+                    <option value="">全部動作</option>
+                    <option value="登入">登入</option>
+                    <option value="登入失敗">登入失敗</option>
+                    <option value="修改密碼">修改密碼</option>
+                    <option value="密碼救援重設">密碼救援重設</option>
+                    <option value="本機復原碼重設">本機復原碼重設</option>
+                    <option value="申請密碼救援">申請密碼救援</option>
+                    <option value="修改帳號">修改帳號</option>
+                    <option value="新增教職員帳號">新增教職員帳號</option>
+                    <option value="停用帳號">停用帳號</option>
+                    <option value="重設帳號密碼">重設帳號密碼</option>
+                    <option value="新增成員">新增成員</option>
+                    <option value="停用成員">停用成員</option>
+                    <option value="批次匯入成員">批次匯入成員</option>
+                    <option value="新增圖書">新增圖書</option>
+                    <option value="編輯圖書">編輯圖書</option>
+                    <option value="刪除圖書">刪除圖書</option>
+                    <option value="報廢圖書">報廢圖書</option>
+                    <option value="復原圖書">復原圖書</option>
+                    <option value="批次匯入圖書">批次匯入圖書</option>
+                    <option value="修改借閱規則">修改借閱規則</option>
+                    <option value="修改班級清單">修改班級清單</option>
+                    <option value="修改密碼救援設定">修改密碼救援設定</option>
+                    <option value="重新產生本機復原碼">重新產生本機復原碼</option>
+                    <option value="手動備份">手動備份</option>
+                    <option value="匯入備份">匯入備份</option>
+                    <option value="批次還書">批次還書</option>
+                    <option value="新增預約">新增預約</option>
+                    <option value="取消預約">取消預約</option>
+                    <option value="清除借閱紀錄">清除借閱紀錄</option>
+                </select>
+                <button onclick="renderAuditTable()" style="padding:8px 12px; background:var(--secondary); color:white; border:none; border-radius:5px;">🔍 查詢</button>
+                <button onclick="exportAuditCsv()" style="padding:8px 12px; background:var(--primary); color:white; border:none; border-radius:5px;">⬇️ 匯出 CSV</button>
+            </div>
+            <div style="overflow-x:auto; margin-top:10px;">
+                <table id="auditTable" style="width:100%; border-collapse:collapse; font-size:0.9rem;">
+                    <thead>
+                        <tr style="background:#f0f3f6;">
+                            <th style="padding:8px; text-align:left;">時間</th>
+                            <th style="padding:8px; text-align:left;">操作人</th>
+                            <th style="padding:8px; text-align:left;">動作</th>
+                            <th style="padding:8px; text-align:left;">目標／內容</th>
+                            <th style="padding:8px; text-align:left;">IP</th>
+                        </tr>
+                    </thead>
+                    <tbody id="auditTableBody">
+                        <tr><td colspan="5" style="color:#666;">尚無紀錄</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div id="auditPager" style="display:flex; gap:10px; justify-content:center; margin-top:8px; font-size:0.95rem;"></div>
+        </div>
     </div>
 
     <div id="reportPage" class="page">
@@ -1528,7 +1591,7 @@
         if(pageId === 'classPage') { loadMemberAccounts(); populateMemberQRClass(); }
         if(pageId === 'managePage') renderBookTable();
         if(pageId === 'loanPage') focusGunInput();
-        if(pageId === 'configPage') { loadRecoverySettings(); }
+        if(pageId === 'configPage') { loadRecoverySettings(); renderAuditTable(); }
         if(pageId === 'reportPage') {
             isLabelMode = false;
             document.getElementById('logReportSection').style.display = 'block';
@@ -2449,6 +2512,66 @@
         };
         reader.onerror = () => { alert("❌ 讀取檔案失敗。"); input.value = ''; };
         reader.readAsText(file, 'utf-8');
+    }
+
+    // 稽核紀錄（系統設定頁）
+    let auditPage = 1, auditPages = 1, auditTotal = 0;
+    const AUDIT_PAGE_SIZE = 50;
+
+    function auditQS() {
+        const action = (document.getElementById('auditAction') || {}).value || '';
+        const from = (document.getElementById('auditFrom') || {}).value || '';
+        const to = (document.getElementById('auditTo') || {}).value || '';
+        const qs = new URLSearchParams();
+        if (action) qs.set('action', action);
+        if (from) qs.set('dateFrom', from);
+        if (to) qs.set('dateTo', to);
+        return qs;
+    }
+
+    async function renderAuditTable() {
+        const tbody = document.getElementById('auditTableBody');
+        const pager = document.getElementById('auditPager');
+        if (!tbody) return;
+        tbody.innerHTML = '<tr><td colspan="5" style="color:#666;">載入中…</td></tr>';
+        try {
+            const qs = auditQS();
+            qs.set('page', String(auditPage));
+            qs.set('pageSize', String(AUDIT_PAGE_SIZE));
+            const data = await api('GET', '/api/audit?' + qs.toString());
+            auditPage = data.page;
+            auditPages = data.pages;
+            auditTotal = data.total;
+            tbody.innerHTML = data.logs.length
+                ? data.logs.map(r =>
+                    `<tr style="border-bottom:1px solid #eee;"><td style="padding:6px 8px;">${escapeHtml(r.occurredAt)}</td>` +
+                    `<td style="padding:6px 8px;">${escapeHtml(r.actor)}</td>` +
+                    `<td style="padding:6px 8px;">${escapeHtml(r.action)}</td>` +
+                    `<td style="padding:6px 8px; font-size:0.85rem;">${escapeHtml([r.target, r.detail].filter(Boolean).join('｜'))}</td>` +
+                    `<td style="padding:6px 8px; font-size:0.85rem; color:#666;">${escapeHtml(r.ip)}</td></tr>`).join('')
+                : '<tr><td colspan="5" style="color:#666;">沒有符合條件的紀錄</td></tr>';
+            if (pager) {
+                pager.innerHTML =
+                    `<button onclick="auditGoto(${auditPage - 1})" ${auditPage <= 1 ? 'disabled' : ''} style="padding:6px 10px; border:1px solid #ccc; border-radius:5px; background:#fff;">上一頁</button>` +
+                    `<span style="align-self:center;">第 ${auditPage} / ${auditPages} 頁（共 ${auditTotal} 筆）</span>` +
+                    `<button onclick="auditGoto(${auditPage + 1})" ${auditPage >= auditPages ? 'disabled' : ''} style="padding:6px 10px; border:1px solid #ccc; border-radius:5px; background:#fff;">下一頁</button>`;
+            }
+        } catch (err) {
+            tbody.innerHTML = `<tr><td colspan="5" style="color:#c62828;">載入失敗：${escapeHtml(err.message)}</td></tr>`;
+            if (pager) pager.innerHTML = '';
+        }
+    }
+
+    function auditGoto(page) {
+        if (page >= 1 && page <= auditPages) {
+            auditPage = page;
+            renderAuditTable();
+        }
+    }
+
+    function exportAuditCsv() {
+        const qs = auditQS();
+        window.open('/api/audit.csv' + (qs.toString() ? '?' + qs.toString() : ''), '_blank');
     }
 
     // 匯出借閱紀錄為 CSV（由後端產生，含 UTF-8 BOM，Excel 可直接開啟）
