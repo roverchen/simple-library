@@ -149,9 +149,16 @@
             /* 單本標籤列印：只輸出標籤本身，隱藏所有頁面內容 */
             body.printing-label .page, body.printing-label .nav { display: none !important; }
             body.printing-label #singleLabelArea { display: block !important; }
-            .qr-label-grid { grid-template-columns: repeat(3, 1fr); gap: 6mm; } /* A4 3 欄 */
+            .qr-label-grid { grid-template-columns: repeat(3, 1fr); gap: 6mm; } /* A4 3 欄，AK308 預設 */
             .qr-card { width: auto; padding: 4px; }
             .qr-code-img canvas, .qr-code-img img { max-width: 90px; }
+
+            /* 五款自黏貼紙格式（規格 v2.1 7.2） */
+            .qr-label-grid[data-format="ak308"] { grid-template-columns: repeat(3, 1fr); gap: 6mm; } /* 3×8 張/A4 */
+            .qr-label-grid[data-format="ak307"] { grid-template-columns: repeat(3, 1fr); gap: 7mm; } /* 3×7 張/A4 */
+            .qr-label-grid[data-format="ak306"] { grid-template-columns: repeat(3, 1fr); gap: 9mm; } /* 3×6 張/A4 */
+            .qr-label-grid[data-format="af414"] { grid-template-columns: repeat(4, 1fr); gap: 5mm; } /* 4×14 張/A4 */
+            .qr-label-grid[data-format="af410"] { grid-template-columns: repeat(4, 1fr); gap: 7mm; } /* 4×10 張/A4 */
         }
 
         /* 帳號對話框：功能權限卡片與勾選格線 */
@@ -666,7 +673,15 @@
                 <label for="labelPrintMode" style="font-size:0.95rem;">標籤內容：</label>
                 <select id="labelPrintMode" onchange="renderQRLabels()" style="padding:8px; border-radius:5px; border:1px solid #ccc;">
                     <option value="qr">書名 QR Code＋財產編號</option>
-                    <option value="callno">索書號條碼（Code 128）</option>
+                    <option value="callno">索書號 QR Code</option>
+                </select>
+                <label for="labelFormat" style="font-size:0.95rem; margin-left:10px;">貼紙格式：</label>
+                <select id="labelFormat" onchange="renderQRLabels()" style="padding:8px; border-radius:5px; border:1px solid #ccc;">
+                    <option value="ak308">AK308：3×8 張/A4（預設）</option>
+                    <option value="ak307">AK307：3×7 張/A4</option>
+                    <option value="ak306">AK306：3×6 張/A4</option>
+                    <option value="af414">AF414：4×14 張/A4</option>
+                    <option value="af410">AF410：4×10 張/A4</option>
                 </select>
                 <button onclick="renderQRLabels()" style="padding:8px 12px; background:var(--secondary); color:white; border:none; border-radius:5px;">🔄 重新產生</button>
             </div>
@@ -1199,7 +1214,10 @@
         const summary = document.getElementById('labelPrintSummary');
         const modeEl = document.getElementById('labelPrintMode');
         const mode = modeEl ? modeEl.value : 'qr';
+        const fmtEl = document.getElementById('labelFormat');
+        const fmt = fmtEl ? fmtEl.value : 'ak308';
         container.innerHTML = '';
+        container.setAttribute('data-format', fmt);
 
         // 排除報廢書
         const entries = Object.keys(bookDatabase)
