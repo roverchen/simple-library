@@ -311,7 +311,7 @@ def require_staff(conn, token):
 
 
 def require_permission(conn, token, perm):
-    """依功能權限欄位檢查；admin/root/共用管理員一律允許，教職員需對應權限，學生一律拒絕。"""
+    """依功能權限欄位檢查；admin/root/共用管理員一律允許，教職員與學生照旗標判斷。"""
     row = conn.execute(
         "SELECT s.user_id, u.role, u.can_loan, u.can_member, u.can_book, u.can_config, u.can_report "
         "FROM sessions s LEFT JOIN users u ON u.id = s.user_id WHERE s.token = ?",
@@ -324,8 +324,6 @@ def require_permission(conn, token, perm):
     role = (row["role"] or "").strip()
     if role in ("admin", "root"):
         return
-    if role != "teacher":
-        raise ApiError(403, "需要{}權限".format(perm))
     col = "can_" + perm
     if not row[col]:
         raise ApiError(403, "此帳號未啟用「{}」功能".format(perm))
@@ -472,26 +470,21 @@ def init_db(db_path):
                 pass
 
         # 現有帳號預設權限：僅在首次導入權限欄位時設定一次，避免每次啟動覆蓋管理員的自訂設定。
+        # 所有啟用帳號一律可使用借還書畫面（含學生；規格「學生帳號僅能登入使用借還書」），
+        # 其餘系統功能照舊：教職員可由管理員勾選、學生不開放。
         migrated = conn.execute(
             "SELECT value FROM settings WHERE key = 'permissions_migrated'"
         ).fetchone()
         if not migrated:
-            for r in conn.execute("SELECT id, role, class_id FROM users").fetchall():
+            for r in conn.execute("SELECT id, role FROM users").fetchall():
                 if (r["role"] or "") in ("admin", "root"):
                     conn.execute(
                         "UPDATE users SET can_loan = 1, can_member = 1, can_book = 1, can_config = 1, can_report = 1 WHERE id = ?",
                         (r["id"],),
                     )
-                elif r["class_id"] is None:
-                    # 教職員：預設可借還書，其餘由管理員於帳號管理中開啟
+                else:
                     conn.execute(
                         "UPDATE users SET can_loan = 1, can_member = 0, can_book = 0, can_config = 0, can_report = 0 WHERE id = ?",
-                        (r["id"],),
-                    )
-                else:
-                    # 班級成員（學生）：無系統操作權限
-                    conn.execute(
-                        "UPDATE users SET can_loan = 0, can_member = 0, can_book = 0, can_config = 0, can_report = 0 WHERE id = ?",
                         (r["id"],),
                     )
             conn.execute(
