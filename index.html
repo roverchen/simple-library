@@ -463,6 +463,17 @@
         </div>
         <hr>
         <div class="input-group">
+            <label>🔢 學年編號重置（2.1）</label>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <button onclick="resetStudentIds()" style="background:var(--warning); color:white; padding:10px 16px; border:none; border-radius:5px;">🔄 重設本學年所有學生學號</button>
+            </div>
+            <small style="color:#666; line-height:1.7;">
+                每學年重新編班後使用，將所有學生學號從各班 a01 起重新編排（格式：S＋班級代碼＋序號，如 SA01、SB01）。
+                依班級排序，班內依姓名排序。重設後會影響條碼掃描識別，請確認後再執行。
+            </small>
+        </div>
+        <hr>
+        <div class="input-group">
             <label>📥 批次匯入（圖書 / 學生與老師名單）</label>
             <div style="display:flex; gap:8px; flex-wrap:wrap;">
                 <button onclick="downloadMemberTemplate()" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 下載名單 Excel／CSV 範本</button>
@@ -490,6 +501,22 @@
                 ⚠️ 資料儲存在本機後端資料庫（data/library.db），不再只存在瀏覽器中。
                 仍請定期匯出備份並另存至隨身碟或雲端硬碟，以防硬碟損壞。<br>
                 匯入備份會覆蓋目前所有資料（管理密碼不會被覆蓋）。
+            </small>
+        </div>
+        <hr>
+        <div class="input-group">
+            <label>⏰ 自動備份設定（3.1）</label>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <span>備份目錄：</span>
+                <input type="text" id="backupDir" placeholder="data/backups（可為網路磁碟路徑）" style="padding:8px; border:1px solid #ccc; border-radius:5px; min-width:240px;">
+                <span>備份時間：</span>
+                <input type="time" id="backupTime" style="padding:8px; border:1px solid #ccc; border-radius:5px; width:110px;">
+                <button onclick="saveBackupSettings()" style="background:var(--primary); color:white; padding:8px 14px; border:none; border-radius:5px;">💾 儲存備份設定</button>
+            </div>
+            <div id="backupSettingsDisplay" style="margin-top:6px; font-size:0.92rem; color:#333;"></div>
+            <small style="color:#666; line-height:1.7;">
+                系統會於每日設定時間自動執行備份，備份檔儲存於指定目錄（可為 NAS／雲端磁碟掛載點，即實現「雲端備份」）。
+                僅保留最近 10 份備份，較舊者會自動刪除。
             </small>
         </div>
         <hr>
@@ -578,6 +605,10 @@
                 <button onclick="clearLoanLogs()" style="padding:8px 12px; background:#c62828; color:white; border:none; border-radius:5px;">🧹 一鍵清除借閱紀錄</button>
                 <button onclick="exportIssuesReport()" style="padding:8px 12px; background:var(--primary); color:white; border:none; border-radius:5px;">📄 匯出爭議/遺失/修繕借閱紀錄 (xlsx)</button>
                 <button onclick="exportLogsPdf()" style="padding:8px 12px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 匯出借閱紀錄 PDF</button>
+                <button onclick="downloadPdf('/api/report/publisher-stats.pdf')" style="padding:8px 12px; background:#607d8b; color:white; border:none; border-radius:5px;">📊 出版社統計 PDF</button>
+                <button onclick="downloadPdf('/api/report/full-catalog.pdf')" style="padding:8px 12px; background:#607d8b; color:white; border:none; border-radius:5px;">📚 全圖名冊 PDF</button>
+                <button onclick="downloadPdf('/api/report/callno-catalog.pdf')" style="padding:8px 12px; background:#607d8b; color:white; border:none; border-radius:5px;">🔤 索書號清冊 PDF</button>
+                <button onclick="downloadPdf('/api/report/command-codes.pdf')" style="padding:8px 12px; background:#607d8b; color:white; border:none; border-radius:5px;">📱 指令條碼名冊 PDF</button>
             </div>
             <table>
                 <thead><tr><th>時間</th><th>班級</th><th>姓名</th><th>書名</th><th>動作</th></tr></thead>
@@ -2105,7 +2136,7 @@
         if(pageId === 'classPage') { loadMemberAccounts(); populateMemberQRClass(); }
         if(pageId === 'managePage') renderBookTable();
         if(pageId === 'loanPage') focusGunInput();
-        if(pageId === 'configPage') { loadRecoverySettings(); renderAuditTable(); loadCategories(); }
+        if(pageId === 'configPage') { loadRecoverySettings(); renderAuditTable(); loadBackupSettings(); loadCategories(); }
         if(pageId === 'reportPage') {
             isLabelMode = false;
             document.getElementById('logReportSection').style.display = 'block';
@@ -2908,6 +2939,40 @@
                 bcSel.value = keep;
             }
         } catch (err) { /* 分類載入失敗不阻斷 */ }
+    }
+
+    async function loadBackupSettings() {
+        const display = document.getElementById('backupSettingsDisplay');
+        try {
+            const data = await api('GET', '/api/settings/backup');
+            const dirEl = document.getElementById('backupDir');
+            const timeEl = document.getElementById('backupTime');
+            if (dirEl) dirEl.value = data.backupDir || '';
+            if (timeEl) timeEl.value = data.backupTime || '';
+            if (display) {
+                display.innerHTML = '目前設定：目錄「' + escapeHtml(data.backupDir || '') + '」，每日 ' +
+                    escapeHtml(data.backupTime || '') + ' 自動備份，保留最近 ' +
+                    (data.backupRetention || 10) + ' 份。';
+            }
+        } catch (err) { /* 備份設定載入失敗不阻斷 */ }
+    }
+
+    async function saveBackupSettings() {
+        const dir = (document.getElementById('backupDir') || {}).value.trim();
+        const time = (document.getElementById('backupTime') || {}).value.trim();
+        try {
+            await api('PUT', '/api/settings/backup', { backupDir: dir, backupTime: time });
+            alert('✅ 備份設定已儲存');
+            loadBackupSettings();
+        } catch (err) { alert("❌ " + err.message); }
+    }
+
+    async function resetStudentIds() {
+        if (!confirm('確定要重設所有學生學號嗎？這會影響條碼掃描識別，請確認後再執行。')) return;
+        try {
+            const res = await api('POST', '/api/settings/reset-student-ids');
+            alert('✅ 已重設 ' + (res.updated || 0) + ' 位學生的學號。');
+        } catch (err) { alert("❌ " + err.message); }
     }
 
     async function saveCategory() {
