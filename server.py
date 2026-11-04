@@ -1612,6 +1612,10 @@ class Handler(SimpleHTTPRequestHandler):
                 if method == "PUT":
                     return self.api_backup_settings_put(conn)
 
+            if path == "/api/settings/reset-student-ids" and method == "POST":
+                require_admin(conn, token)
+                return self.api_reset_student_ids(conn)
+
             if path == "/api/accounts":
                 require_admin(conn, token)
                 if method == "GET":
@@ -4352,6 +4356,50 @@ class Handler(SimpleHTTPRequestHandler):
         self._audit(conn, token, "修改備份設定",
                     detail="目錄：{}，時間：{}".format(backup_dir or "(預設)", backup_time or "(預設 02:00)"))
         return self.send_json({"ok": True})
+
+    def api_reset_student_ids(self, conn):
+        """學年編號重置機制（2.1）：將所有學生學號從各班 a01 起重新編號。
+        格式：S + 班級代碼(A/B/C…) + 序號(01/02/…)；依班級排序、班內依姓名排序。
+        僅限 role = student 且有 class_id 的帳號。
+        """
+        token = self.cookies().get("sid")
+        classes = conn.execute(
+            "SELECT id, name FROM classes WHERE active = 1 ORDER BY sort_order, id"
+        ).fetchall()
+        class_code = {}
+        for idx, c in enumerate(classes):
+            class_code[c["id"]] = chr(ord("A") + idx)
+
+        students = conn.execute(
+            "SELECT id, name, class_id FROM users WHERE role = 'student' AND class_id IS NOT NULL AND active = 1 "
+            "ORDER BY class_id, name"
+        ).fetchall()
+
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            updated = 0
+            current_class = None
+            seq = 0
+            for s in students:
+                if s["class_id"] != current_class:
+                    current_class = s["class_id"]
+                    seq = 0
+                seq += 1
+                code = class_code.get(current_class, "?")
+                new_barcode = "S{}{:02d}".format(code, seq)
+                conn.execute(
+                    "UPDATE users SET barcode = ?, updated_at = datetime('now', 'localtime') WHERE id = ?",
+                    (new_barcode, s["id"]),
+                )
+                updated += 1
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+
+        self._audit(conn, token, "重置學生學號",
+                    detail="共 {} 位學生學號已重設".format(updated))
+        return self.send_json({"ok": True, "updated": updated})
 
     def api_recovery_code_regenerate(self):
         code = regenerate_recovery_code()
