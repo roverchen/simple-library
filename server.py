@@ -1246,7 +1246,7 @@ class Handler(SimpleHTTPRequestHandler):
 
             if method == "GET" and path == "/api/logs.csv":
                 require_permission(conn, token, "report")
-                return self.api_logs_csv(conn)
+                return self.api_logs_csv(conn, query)
 
             if method == "POST" and path == "/api/import":
                 require_admin(conn, token)
@@ -1523,6 +1523,9 @@ class Handler(SimpleHTTPRequestHandler):
             # 學年以民國年表示（例如 115 學年 = 2026/08/01 起至 2027/08/01 前）
             conditions.append("occurred_at >= ? AND occurred_at < ?")
             params.extend(["{}/08/01".format(sy + 1911), "{}/08/01".format(sy + 1912)])
+        date_conds, date_params, _ = self._date_range_conds(query)
+        conditions.extend(date_conds)
+        params.extend(date_params)
         where_sql = (" WHERE " + " AND ".join(conditions)) if conditions else ""
 
         total = conn.execute(
@@ -1588,6 +1591,42 @@ class Handler(SimpleHTTPRequestHandler):
             raise ApiError(400, "學年格式錯誤")
         return "{}/08/01".format(sy + 1911), "{}/08/01".format(sy + 1912)
 
+    def _date_range_conds(self, query, prefix=""):
+        """解析 dateFrom／dateTo（YYYY-MM-DD 或 YYYY/MM/DD）為 occurred_at 條件。"""
+        raw_from = (query.get("dateFrom") or [""])[0].strip().replace("-", "/")
+        raw_to = (query.get("dateTo") or [""])[0].strip().replace("-", "/")
+        conds, params, meta = [], [], []
+
+        def parse_date(s, label):
+            m = re.fullmatch(r"(\d{4})/(\d{2})/(\d{2})", s)
+            if not m:
+                raise ApiError(400, "{}格式錯誤（請用 西元/月/日）".format(label))
+            y, mo, d = (int(g) for g in m.groups())
+            try:
+                datetime(y, mo, d)
+            except ValueError:
+                raise ApiError(400, "{}不存在（如 2026/02/31）".format(label))
+            return "{:04d}/{:02d}/{:02d}".format(y, mo, d)
+
+        start = parse_date(raw_from, "起始日期") if raw_from else None
+        end = parse_date(raw_to, "結束日期") if raw_to else None
+        if start and end and start > end:
+            raise ApiError(400, "起始日期不可晚於結束日期")
+        if start:
+            conds.append("{}occurred_at >= ?".format(prefix))
+            params.append(start + " 00:00:00")
+        if end:
+            # 結束日含當天：occurred_at < 次日 00:00
+            next_day = (
+                datetime(int(end[:4]), int(end[5:7]), int(end[8:10])) +
+                timedelta(days=1)
+            ).strftime("%Y/%m/%d %H:%M:%S")
+            conds.append("{}occurred_at < ?".format(prefix))
+            params.append(next_day)
+        if start or end:
+            meta.append("期間：{} ～ {}".format(start or "最初", end or "今日"))
+        return conds, params, meta
+
     def api_report_logs_pdf(self, conn, query):
         teacher = (query.get("teacher") or [""])[0].strip()
         year = (query.get("year") or [""])[0].strip()
@@ -1608,6 +1647,10 @@ class Handler(SimpleHTTPRequestHandler):
             conditions.append("l.occurred_at >= ? AND l.occurred_at < ?")
             params.extend([start, end])
             meta.append("學年：{}".format(school_year))
+        date_conds, date_params, date_meta = self._date_range_conds(query, prefix="l.")
+        conditions.extend(date_conds)
+        params.extend(date_params)
+        meta.extend(date_meta)
         where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
         rows = conn.execute(
             "SELECT l.occurred_at, l.class_name, l.user_name, l.title, l.asset_id, l.action "
@@ -1869,11 +1912,32 @@ class Handler(SimpleHTTPRequestHandler):
             })
         return self.send_json({"overdue": overdue, "total": len(overdue)})
 
-    def api_logs_csv(self, conn):
+    def api_logs_csv(self, conn, query):
         output = io.StringIO()
         writer = csv.writer(output, lineterminator="\r\n")
         writer.writerow(["時間", "班級", "姓名", "書名", "財產編號", "條碼", "動作"])
-        for r in conn.execute("SELECT * FROM loan_logs ORDER BY id DESC"):
+        teacher = (query.get("teacher") or [""])[0].strip()
+        year = (query.get("year") or [""])[0].strip()
+        school_year = (query.get("schoolYear") or [""])[0].strip()
+        conditions, params = [], []
+        if teacher:
+            conditions.append("user_name = ?")
+            params.append(teacher)
+        if year:
+            conditions.append("occurred_at LIKE ?")
+            params.append(year + "%")
+        if school_year:
+            start, end = self._school_year_bounds(school_year)
+            conditions.append("occurred_at >= ? AND occurred_at < ?")
+            params.extend([start, end])
+        date_conds, date_params, _ = self._date_range_conds(query)
+        conditions.extend(date_conds)
+        params.extend(date_params)
+        where_sql = (" WHERE " + " AND ".join(conditions)) if conditions else ""
+        for r in conn.execute(
+            "SELECT * FROM loan_logs" + where_sql + " ORDER BY id DESC",
+            params,
+        ):
             writer.writerow([
                 r["occurred_at"], r["class_name"], r["user_name"],
                 r["title"], r["asset_id"], r["barcode"], r["action"],

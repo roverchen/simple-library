@@ -393,6 +393,11 @@
                 <input type="text" id="logTeacherFilter" placeholder="老師姓名 (留空為全部)" style="padding:8px; border-radius:5px; border:1px solid #ccc; min-width:140px;">
                 <input type="text" id="logYearFilter" placeholder="年度 (如: 2026)" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:110px;">
                 <input type="text" id="logSchoolYearFilter" placeholder="學年 (如: 115)" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:120px;">
+                <span style="display:inline-flex; align-items:center; gap:6px; color:#555; font-size:0.9rem;">起迄
+                    <input type="date" id="logDateFromFilter" aria-label="起始日期" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:140px;">
+                    <span>～</span>
+                    <input type="date" id="logDateToFilter" aria-label="結束日期" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:140px;">
+                </span>
                 <button onclick="renderReportTable()" style="padding:8px 12px; background:var(--secondary); color:white; border:none; border-radius:5px;">🔍 查詢</button>
                 <button onclick="clearLoanLogs()" style="padding:8px 12px; background:#c62828; color:white; border:none; border-radius:5px;">🧹 一鍵清除借閱紀錄</button>
                 <button onclick="exportIssuesReport()" style="padding:8px 12px; background:var(--primary); color:white; border:none; border-radius:5px;">📄 匯出爭議/遺失/修繕借閱紀錄 (xlsx)</button>
@@ -918,10 +923,14 @@
             const teacher = (document.getElementById('logTeacherFilter') ? document.getElementById('logTeacherFilter').value : '') || '';
             const year = (document.getElementById('logYearFilter') ? document.getElementById('logYearFilter').value : '') || '';
             const schoolYear = (document.getElementById('logSchoolYearFilter') ? document.getElementById('logSchoolYearFilter').value : '') || '';
+            const dateFrom = logDateValue('logDateFromFilter');
+            const dateTo = logDateValue('logDateToFilter');
             const qs = new URLSearchParams();
             if (teacher) qs.set('teacher', teacher);
             if (year) qs.set('year', year);
             if (schoolYear) qs.set('schoolYear', schoolYear);
+            if (dateFrom) qs.set('dateFrom', dateFrom);
+            if (dateTo) qs.set('dateTo', dateTo);
             const data = await api('GET', `/api/logs?page=${reportPage}&pageSize=${REPORT_PAGE_SIZE}${qs.toString() ? '&' + qs.toString() : ''}`);
             reportPage = data.page;
             reportPages = data.pages;
@@ -1132,14 +1141,23 @@
         } catch (err) { alert('❌ ' + err.message); }
     }
 
+    function logDateValue(id) {
+        const el = document.getElementById(id);
+        return el && el.value ? el.value : '';
+    }
+
     function exportLogsPdf() {
         const teacher = (document.getElementById('logTeacherFilter') || {}).value || '';
         const year = (document.getElementById('logYearFilter') || {}).value || '';
         const schoolYear = (document.getElementById('logSchoolYearFilter') || {}).value || '';
+        const dateFrom = logDateValue('logDateFromFilter');
+        const dateTo = logDateValue('logDateToFilter');
         const qs = new URLSearchParams();
         if (teacher) qs.set('teacher', teacher);
         if (year) qs.set('year', year);
         if (schoolYear) qs.set('schoolYear', schoolYear);
+        if (dateFrom) qs.set('dateFrom', dateFrom);
+        if (dateTo) qs.set('dateTo', dateTo);
         window.open('/api/report/logs.pdf' + (qs.toString() ? '?' + qs.toString() : ''), '_blank');
     }
 
@@ -2436,7 +2454,18 @@
     // 匯出借閱紀錄為 CSV（由後端產生，含 UTF-8 BOM，Excel 可直接開啟）
     async function exportLoanCSV() {
         try {
-            const res = await fetch('/api/logs.csv', { credentials: 'same-origin' });
+            const qs = new URLSearchParams();
+            const teacher = (document.getElementById('logTeacherFilter') || {}).value || '';
+            const year = (document.getElementById('logYearFilter') || {}).value || '';
+            const schoolYear = (document.getElementById('logSchoolYearFilter') || {}).value || '';
+            const dateFrom = logDateValue('logDateFromFilter');
+            const dateTo = logDateValue('logDateToFilter');
+            if (teacher) qs.set('teacher', teacher);
+            if (year) qs.set('year', year);
+            if (schoolYear) qs.set('schoolYear', schoolYear);
+            if (dateFrom) qs.set('dateFrom', dateFrom);
+            if (dateTo) qs.set('dateTo', dateTo);
+            const res = await fetch('/api/logs.csv' + (qs.toString() ? '?' + qs.toString() : ''), { credentials: 'same-origin' });
             if (!res.ok) {
                 const data = await res.json().catch(() => ({}));
                 throw new Error(data.error || `HTTP ${res.status}`);
