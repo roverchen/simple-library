@@ -439,6 +439,23 @@
         </div>
         <hr>
         <div class="input-group">
+            <label>🏷️ 主題分類與索書號（4.5）</label>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
+                <select id="categorySelect" style="min-width:170px; padding:8px; border:1px solid #ccc; border-radius:5px;"></select>
+                <input type="text" id="categoryName" placeholder="分類名稱（如 語文與故事）" style="padding:8px; border:1px solid #ccc; border-radius:5px; min-width:140px;">
+                <input type="text" id="categoryCode" placeholder="代碼（如 D）" style="padding:8px; border:1px solid #ccc; border-radius:5px; width:70px;">
+                <input type="text" id="categoryColor" placeholder="顏色（如 綠色）" style="padding:8px; border:1px solid #ccc; border-radius:5px; min-width:110px;">
+                <button onclick="saveCategory()" style="background:var(--primary); color:white; padding:8px 14px; border:none; border-radius:5px;">💾 儲存分類</button>
+                <button onclick="deleteCategory()" style="background:var(--danger); color:white; padding:8px 14px; border:none; border-radius:5px;">🗑️ 刪除分類</button>
+            </div>
+            <div id="categoryList" style="margin-top:6px; font-size:0.92rem; color:#333;"></div>
+            <small style="color:#666; line-height:1.7;">
+                主題分類用於索書號自動產生：[主分類代碼]-[書名首字注音]，例如「自然與科學（D）」＋《好餓的毛毛蟲》＝「D-ㄏ」。
+                建立分類後，於「圖書管理」新增/編輯圖書時選擇分類即可自動產生索書號（可手動更正）。
+            </small>
+        </div>
+        <hr>
+        <div class="input-group">
             <label>📥 批次匯入（圖書 / 學生與老師名單）</label>
             <div style="display:flex; gap:8px; flex-wrap:wrap;">
                 <button onclick="downloadMemberTemplate()" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 下載名單 Excel／CSV 範本</button>
@@ -1169,30 +1186,28 @@
 
         if (mode === 'callno') {
             const printable = entries.filter(([, book]) => (book.callNo || '').trim());
-            const unsupported = [];
             printable.forEach(([barcode, book]) => {
                 const callNo = (book.callNo || '').trim();
-                const canvas = document.createElement('canvas');
-                try {
-                    drawCode128(canvas, callNo);
-                } catch (err) {
-                    unsupported.push(book.title + '（' + callNo + '）');
-                    return;
-                }
                 const card = document.createElement('div');
                 card.className = 'qr-card';
                 card.innerHTML = `<div style="font-size:13px; font-weight:bold;">${escapeHtml(book.title)}</div>` +
-                                 `<div class="qr-code-img"></div>` +
+                                 `<div class="qr-code-img" id="qr-gen-callno-${escapeHtml(barcode)}"></div>` +
                                  `<div style="font-size:12px; font-weight:bold; letter-spacing:1px; margin-top:4px;">${escapeHtml(callNo)}</div>` +
-                                 `<div style="font-size:10px; color:#555;">財編: ${escapeHtml(book.assetId)}</div>`;
-                card.querySelector('.qr-code-img').appendChild(canvas);
+                                 `<div style="font-size:10px; color:#555;">財編: ${escapeHtml(book.assetId || barcode)}</div>`;
                 container.appendChild(card);
+                new QRCode(document.getElementById(`qr-gen-callno-${barcode}`), {
+                    text: callNo,
+                    width: 120,
+                    height: 120,
+                    colorDark: "#000000",
+                    colorLight: "#ffffff",
+                    correctLevel: QRCode.CorrectLevel.H
+                });
             });
             if (summary) {
-                let msg = `索書號條碼標籤：${printable.length - unsupported.length} 張`;
+                let msg = `索書號 QR 標籤：${printable.length} 張`;
                 const missing = entries.length - printable.length;
                 if (missing > 0) msg += `；未填索書號 ${missing} 本已略過`;
-                if (unsupported.length) msg += `；含不支援字元 ${unsupported.length} 本：${unsupported.join('、')}`;
                 summary.textContent = msg;
             }
             if (!printable.length) {
@@ -1733,6 +1748,7 @@
         document.getElementById('bookModalTitle').textContent = '✏️ 編輯圖書';
         document.getElementById('bookModalError').textContent = '';
         renderBookModalFields();
+        loadCategories();
         document.getElementById('bookModal').classList.add('open');
     }
 
@@ -1751,6 +1767,10 @@
             <input type="text" id="bfAssetId" data-name="assetId" value="${escapeHtml(book.assetId || '')}">
             <label for="bfTitle">書名</label>
             <input type="text" id="bfTitle" data-name="title" value="${escapeHtml(book.title || '')}">
+            <label for="bfCategory">主題分類（4.5 索書號自動產生）</label>
+            <select id="bfCategory" data-name="category">
+                <option value="">（未設定分類）</option>
+            </select>
             <label for="bfCallNo">索書號（call_no）</label>
             <input type="text" id="bfCallNo" data-name="callNo" value="${escapeHtml(book.callNo || '')}">
             <label for="bfIsbn">ISBN</label>
@@ -1986,7 +2006,7 @@
         if(pageId === 'classPage') { loadMemberAccounts(); populateMemberQRClass(); }
         if(pageId === 'managePage') renderBookTable();
         if(pageId === 'loanPage') focusGunInput();
-        if(pageId === 'configPage') { loadRecoverySettings(); renderAuditTable(); }
+        if(pageId === 'configPage') { loadRecoverySettings(); renderAuditTable(); loadCategories(); }
         if(pageId === 'reportPage') {
             isLabelMode = false;
             document.getElementById('logReportSection').style.display = 'block';
@@ -2157,10 +2177,61 @@
     }
 
     // 掃描事件可能連續觸發，統一排入佇列依序處理，避免同一本書被同時借出兩次
-    function handleScanSuccess(raw) {
+    async function handleScanSuccess(raw) {
         const code = (raw || '').trim();
         let barcode = code;
         let mode = currentMode;
+        // 功能指令條碼（v2.1 5.2）：「啟動借書模式」「啟動還書模式」「清除重來」
+        if (code === '啟動借書模式') {
+            mode = 'borrow'; currentLoanMember = null; currentMode = mode;
+            const gunMode = document.getElementById('gunMode');
+            if (gunMode) gunMode.value = 'borrow';
+            const infoEl = document.getElementById('loanMemberInfo');
+            if (infoEl) infoEl.textContent = '⚠️ 已進入借書模式，請掃描借閱者條碼';
+            showScanStatus('✅ 已啟動借書模式', 'ok');
+            return;
+        }
+        if (code === '啟動還書模式') {
+            mode = 'return'; currentMode = mode;
+            const gunMode = document.getElementById('gunMode');
+            if (gunMode) gunMode.value = 'return';
+            showScanStatus('✅ 已啟動還書模式', 'ok');
+            return;
+        }
+        if (code === '清除重來') {
+            currentLoanMember = null;
+            const infoEl = document.getElementById('loanMemberInfo');
+            if (infoEl) infoEl.textContent = '';
+            showScanStatus('✅ 已清除重來', 'ok');
+            return;
+        }
+        // 成員條碼（SA01 / T001 等）：先檢查本機圖書（快），再查詢成員條碼 API
+        if (bookDatabase[barcode]) {
+            // 圖書條碼：交給 processScan 處理
+        } else {
+            try {
+                const m = await api('GET', '/api/member/by-barcode?barcode=' + encodeURIComponent(barcode));
+                currentLoanMember = {
+                    className: m.className || '',
+                    userName: m.userName,
+                    memberType: m.memberType || 'student',
+                };
+                const infoEl = document.getElementById('loanMemberInfo');
+                if (infoEl) {
+                    infoEl.textContent = `✅ 已選擇：${m.userName}` +
+                        (m.className ? `（${m.className}）` : '') +
+                        `，${m.memberType === 'teacher' ? '老師' : '學生'}`;
+                }
+                showScanStatus(`✅ 已選擇成員：${m.userName}`, 'ok');
+                return;
+            } catch (e) {
+                if (e.status === 404) {
+                    showScanStatus('❌ 無此圖書或成員條碼，請先至「圖書管理」建檔', 'err');
+                    return;
+                }
+                throw e;
+            }
+        }
         // 功能指令條碼（v2.1 5.2）：支援 "borrow:<條碼>" 與 "return:<條碼>" 開頭的指令 QR
         if (code.startsWith('member:')) {
             // 成員條碼指令（v2.1 5.1）：member:<班級>:<姓名> -> 選定借閱人後等待下一個書條碼
@@ -2711,6 +2782,58 @@
         try {
             await api('PUT', '/api/loan-rules', body);
             alert("借閱設定已儲存");
+        } catch (err) { alert("❌ " + err.message); }
+    }
+
+    // --- 主題分類（4.5 索書號自動產生） ---
+    async function loadCategories() {
+        const sel = document.getElementById('categorySelect');
+        const listEl = document.getElementById('categoryList');
+        const bcSel = document.getElementById('bfCategory');
+        try {
+            const data = await api('GET', '/api/categories');
+            const cats = data.categories || [];
+            if (sel) {
+                sel.innerHTML = '<option value="">（未選擇分類）</option>' +
+                    cats.map(c => `<option value="${escapeHtml(c.code)}">${escapeHtml(c.code)} ${escapeHtml(c.name)}（${escapeHtml(c.color)}）</option>`).join('');
+            }
+            if (listEl) {
+                listEl.innerHTML = cats.map(c =>
+                    `<span style="display:inline-block; margin:2px 6px; padding:2px 8px; border:1px solid #ccc; border-radius:10px; font-size:0.85rem;">
+                    ${escapeHtml(c.code)} ${escapeHtml(c.name)}（${escapeHtml(c.color)}）</span>`).join('') || '<span style="color:#999;">尚無分類</span>';
+            }
+            if (bcSel) {
+                const keep = bcSel.value;
+                bcSel.innerHTML = '<option value="">（未設定分類）</option>' +
+                    cats.map(c => `<option value="${escapeHtml(c.code)}"${c.code === keep ? ' selected' : ''}>${escapeHtml(c.code)} ${escapeHtml(c.name)}</option>`).join('');
+                bcSel.value = keep;
+            }
+        } catch (err) { /* 分類載入失敗不阻斷 */ }
+    }
+
+    async function saveCategory() {
+        const name = (document.getElementById('categoryName') || {}).value.trim();
+        const code = (document.getElementById('categoryCode') || {}).value.trim().toUpperCase();
+        const color = (document.getElementById('categoryColor') || {}).value.trim();
+        if (!name || !code) { alert('❌ 分類名稱與代碼不可空白'); return; }
+        if (!/^[A-Z]{1,2}$/.test(code)) { alert('❌ 代碼需為 1–2 個大寫英文字母'); return; }
+        try {
+            await api('PUT', '/api/categories', { name, code, color, sortOrder: 99 });
+            document.getElementById('categoryName').value = '';
+            document.getElementById('categoryCode').value = '';
+            document.getElementById('categoryColor').value = '';
+            loadCategories();
+        } catch (err) { alert("❌ " + err.message); }
+    }
+
+    async function deleteCategory() {
+        const code = (document.getElementById('categoryCode') || {}).value.trim().toUpperCase();
+        if (!code) { alert('❌ 請輸入要刪除的分類代碼'); return; }
+        if (!confirm('確定刪除分類 ' + code + '？若有書籍採用此分類將無法刪除。')) return;
+        try {
+            await api('DELETE', '/api/categories/' + encodeURIComponent(code));
+            document.getElementById('categoryCode').value = '';
+            loadCategories();
         } catch (err) { alert("❌ " + err.message); }
     }
 
