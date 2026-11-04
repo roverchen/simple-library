@@ -133,6 +133,58 @@
             .qr-card { width: auto; padding: 4px; }
             .qr-code-img canvas, .qr-code-img img { max-width: 90px; }
         }
+
+        /* 帳號對話框：功能權限卡片與勾選格線 */
+        #memberModalFields .permBox {
+            border: 1px solid #e0e6ee;
+            border-radius: 10px;
+            background: #f8fafd;
+            padding: 10px 12px 12px;
+            margin-top: 12px;
+        }
+        #memberModalFields .permBox .permTitle {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #445;
+            margin-bottom: 8px;
+        }
+        #memberModalFields .permBox .permGrid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 6px 10px;
+        }
+        @media (max-width: 540px) {
+            #memberModalFields .permBox .permGrid { grid-template-columns: 1fr; }
+        }
+        #memberModalFields .permBox .permGrid label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #fff;
+            border: 1px solid #e3e8eef7;
+            border-radius: 8px;
+            padding: 7px 10px;
+            cursor: pointer;
+            font-size: 0.92rem;
+            color: #223;
+            transition: border-color .15s, background-color .15s;
+        }
+        #memberModalFields .permBox .permGrid label:hover { border-color: #b9cbe4; }
+        #memberModalFields .permBox .permGrid label:has(input:checked) {
+            border-color: #4a90d9;
+            background: #eef5fd;
+        }
+        #memberModalFields .permBox .permGrid input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            accent-color: #4a90d9;
+            flex: none;
+        }
+        #memberModalFields .permBox .permNote {
+            font-size: 0.8rem;
+            color: #889;
+            margin-top: 8px;
+        }
     </style>
 </head>
 <body>
@@ -1803,15 +1855,7 @@
                     <option value="teacher"${String(addRole) === 'teacher' ? ' selected' : ''}>👨‍🏫 老師</option>
                     <option value="student"${String(addRole) === 'student' ? ' selected' : ''}>🎒 學生</option>
                 </select>
-                <div id="memberPermBlock" style="display:${String(v.className || '') === '__staff__' ? '' : 'none'}; margin-top:10px;">
-                <hr style="margin:12px 0; border:none; border-top:1px solid #ddd;">
-                <div style="font-size:0.9rem; color:#666; margin-bottom:8px;">功能權限（僅教職員帳號可設定）：</div>
-                <label style="display:block; margin:4px 0;"><input type="checkbox" data-name="canLoan"${v.canLoan ? ' checked' : ''}> 📖 借還書</label>
-                <label style="display:block; margin:4px 0;"><input type="checkbox" data-name="canMember"${v.canMember ? ' checked' : ''}> 👥 班級成員</label>
-                <label style="display:block; margin:4px 0;"><input type="checkbox" data-name="canBook"${v.canBook ? ' checked' : ''}> 📚 圖書管理</label>
-                <label style="display:block; margin:4px 0;"><input type="checkbox" data-name="canConfig"${v.canConfig ? ' checked' : ''}> ⚙️ 系統設定</label>
-                <label style="display:block; margin:4px 0;"><input type="checkbox" data-name="canReport"${v.canReport ? ' checked' : ''}> 📊 報告／列印</label>
-                </div>
+                <div id="memberPermBlock">${memberPermBoxHtml(v)}</div>
             `;
         } else {
             container.innerHTML = `
@@ -1829,21 +1873,7 @@
                     <option value="student"${String(v.role || 'teacher') === 'student' ? ' selected' : ''}>🎒 學生</option>
                     ${(v.role === 'admin' || v.role === 'root') ? `<option value="${v.role}" selected>🛡️ ${roleLabel(v.role)}</option>` : ''}
                 </select>
-                <div id="memberPermBlock" style="margin-top:10px;">
-                <hr style="margin:12px 0; border:none; border-top:1px solid #ddd;">
-                ${String(v.className || '') === '__staff__' ? `
-                <div style="font-size:0.9rem; color:#666; margin-bottom:8px;">功能權限（僅教職員帳號可設定）：</div>
-                <label style="display:block; margin:4px 0;"><input type="checkbox" data-name="canLoan"${v.canLoan ? ' checked' : ''}> 📖 借還書</label>
-                <label style="display:block; margin:4px 0;"><input type="checkbox" data-name="canMember"${v.canMember ? ' checked' : ''}> 👥 班級成員</label>
-                <label style="display:block; margin:4px 0;"><input type="checkbox" data-name="canBook"${v.canBook ? ' checked' : ''}> 📚 圖書管理</label>
-                <label style="display:block; margin:4px 0;"><input type="checkbox" data-name="canConfig"${v.canConfig ? ' checked' : ''}> ⚙️ 系統設定</label>
-                <label style="display:block; margin:4px 0;"><input type="checkbox" data-name="canReport"${v.canReport ? ' checked' : ''}> 📊 報告／列印</label>
-                ` : `
-                <div style="font-size:0.9rem; color:#666; margin-bottom:8px;">功能權限（班級成員固定僅開放借還書）：</div>
-                <label style="display:block; margin:4px 0;"><input type="checkbox" checked disabled> 📖 借還書</label>
-                <div style="font-size:0.8rem; color:#999; margin-top:4px;">班級成員（學生）帳號不開放其他系統功能；如需讓班級人員協助管理，請改在「教職員（未分班）」新增帳號。</div>
-                `}
-                </div>
+                <div id="memberPermBlock">${memberPermBoxHtml(v)}</div>
             `;
         }
         document.getElementById('memberModalSave').style.display = '';
@@ -1889,7 +1919,7 @@
     function openMemberModalAdd() {
         const defaultClass = (config.classes || [])[0] || '__staff__';
         const isStaff = defaultClass === '__staff__';
-        memberModalState = { mode: 'add', id: null, values: { className: defaultClass, name: '', email: '', role: defaultClass === '__staff__' ? 'teacher' : 'student', canLoan: isStaff, canMember: false, canBook: false, canConfig: false, canReport: false } };
+        memberModalState = { mode: 'add', id: null, values: { className: defaultClass, name: '', email: '', role: defaultClass === '__staff__' ? 'teacher' : 'student', canLoan: true, canMember: false, canBook: false, canConfig: false, canReport: false } };
         document.getElementById('memberModalTitle').textContent = '\u279C \u65B0\u589E\u6210\u50A8';
         document.getElementById('memberModalError').textContent = '';
         renderMemberModalFields();
@@ -1902,11 +1932,24 @@
         document.getElementById('memberModalError').textContent = '';
     }
 
+    function memberPermBoxHtml(v) {
+        return `
+            <div class="permBox">
+                <div class="permTitle">🔐 功能權限</div>
+                <div class="permGrid">
+                    <label><input type="checkbox" data-name="canLoan"${v.canLoan ? ' checked' : ''}> 📖 借還書</label>
+                    <label><input type="checkbox" data-name="canMember"${v.canMember ? ' checked' : ''}> 👥 班級成員</label>
+                    <label><input type="checkbox" data-name="canBook"${v.canBook ? ' checked' : ''}> 📚 圖書管理</label>
+                    <label><input type="checkbox" data-name="canConfig"${v.canConfig ? ' checked' : ''}> ⚙️ 系統設定</label>
+                    <label><input type="checkbox" data-name="canReport"${v.canReport ? ' checked' : ''}> 📊 報告／列印</label>
+                </div>
+                <div class="permNote">admin／root 與共用管理員不受勾選影響，一律全權限。</div>
+            </div>
+        `;
+    }
+
     function onMemberClassChange() {
-        const sel = document.getElementById('mmClass');
-        const isStaff = sel && sel.value === '__staff__';
-        const permBlock = document.getElementById('memberPermBlock');
-        if (permBlock) permBlock.style.display = isStaff ? '' : 'none';
+        // 權限現在對所有帳號可設定（卡片常駐顯示），切換班級僅影響角色預設。
     }
 
     function submitMemberModal() {
@@ -1930,11 +1973,11 @@
                 name: values.name.trim(),
                 email: values.email.trim(),
                 role: values.role || 'student',
-                canLoan: isStaffAdd ? (values.canLoan === 'on') : false,
-                canMember: isStaffAdd ? (values.canMember === 'on') : false,
-                canBook: isStaffAdd ? (values.canBook === 'on') : false,
-                canConfig: isStaffAdd ? (values.canConfig === 'on') : false,
-                canReport: isStaffAdd ? (values.canReport === 'on') : false,
+                canLoan: values.canLoan === 'on',
+                canMember: values.canMember === 'on',
+                canBook: values.canBook === 'on',
+                canConfig: values.canConfig === 'on',
+                canReport: values.canReport === 'on',
             }).then(res => {
                 closeMemberModal();
                 members = res.memberDB;
@@ -1946,18 +1989,17 @@
             const role = values.role || 'teacher';
             const className = values.className || '__staff__';
             const classId = className === '__staff__' ? null : undefined;
-            const isStaff = classId === null;
             return api('PUT', '/api/member-accounts/' + memberModalState.id, {
                 name: values.name,
                 email: values.email,
                 className: className,
                 classId: classId,
                 role: role,
-                canLoan: isStaff ? (values.canLoan === 'on') : true,
-                canMember: isStaff ? (values.canMember === 'on') : false,
-                canBook: isStaff ? (values.canBook === 'on') : false,
-                canConfig: isStaff ? (values.canConfig === 'on') : false,
-                canReport: isStaff ? (values.canReport === 'on') : false,
+                canLoan: values.canLoan === 'on',
+                canMember: values.canMember === 'on',
+                canBook: values.canBook === 'on',
+                canConfig: values.canConfig === 'on',
+                canReport: values.canReport === 'on',
             }).then(() => api('GET', '/api/state')).then(s => { applyState(s); return loadMemberAccounts(); })
               .then(() => { closeMemberModal(); alert('✅ 已修改帳號'); })
               .catch(err => { errorEl.textContent = '儲存失敗：' + err.message; });

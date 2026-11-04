@@ -344,11 +344,13 @@ def next_username(conn):
         num += 1
 
 
-def ensure_member_user(conn, class_id, name):
+def ensure_member_user(conn, class_id, name, flags=None):
     """確保班級成員有對應的 users 資料列；回傳 user id。
 
     成員與帳號已整併到 users 表：class_id 有值即為班級成員，
     老師／管理員則為 class_id IS NULL。
+    新建帳號時以 flags 套用功能權限（預設僅開借還書）；
+    重新加入既有（曾停用）成員時保留原權限，不覆蓋。
     """
     row = conn.execute(
         "SELECT id FROM users WHERE class_id = ? AND name = ? ORDER BY active DESC, id LIMIT 1",
@@ -362,11 +364,13 @@ def ensure_member_user(conn, class_id, name):
         )
         return row["id"]
 
+    default_flags = flags if isinstance(flags, (list, tuple)) and len(flags) == 5 else (1, 0, 0, 0, 0)
     username = next_username(conn)
     cursor = conn.execute(
-        "INSERT INTO users (username, name, password, role, class_id, email, active) "
-        "VALUES (?, ?, ?, 'student', ?, '', 1)",
-        (username, name, hash_password(DEFAULT_PASSWORD), class_id),
+        "INSERT INTO users (username, name, password, role, class_id, email, active, "
+        "can_loan, can_member, can_book, can_config, can_report) "
+        "VALUES (?, ?, ?, 'student', ?, '', 1, ?, ?, ?, ?, ?)",
+        (username, name, hash_password(DEFAULT_PASSWORD), class_id, *default_flags),
     )
     return cursor.lastrowid
 
@@ -2338,7 +2342,7 @@ class Handler(SimpleHTTPRequestHandler):
                 "VALUES (?, ?, ?, ?, NULL, ?, 1, ?, ?, ?, ?, ?)",
                 (
                     username, name, hash_password(DEFAULT_PASSWORD), raw_role or "teacher", email,
-                    1,
+                    1 if (is_admin_role or data.get("canLoan", True)) else 0,
                     1 if (is_admin_role or data.get("canMember")) else 0,
                     1 if (is_admin_role or data.get("canBook")) else 0,
                     1 if (is_admin_role or data.get("canConfig")) else 0,
@@ -2357,7 +2361,14 @@ class Handler(SimpleHTTPRequestHandler):
         ).fetchone()
         if not row:
             raise ApiError(404, "找不到班級：{}".format(class_name))
-        user_id = ensure_member_user(conn, row["id"], name)
+        member_flags = (
+            1 if data.get("canLoan", True) else 0,
+            1 if data.get("canMember") else 0,
+            1 if data.get("canBook") else 0,
+            1 if data.get("canConfig") else 0,
+            1 if data.get("canReport") else 0,
+        )
+        user_id = ensure_member_user(conn, row["id"], name, member_flags)
         if raw_role and raw_role != "student":
             conn.execute("UPDATE users SET role = ? WHERE id = ?", (raw_role, user_id))
         account = conn.execute(
@@ -2907,8 +2918,8 @@ class Handler(SimpleHTTPRequestHandler):
         ):
             raise ApiError(400, "密碼需為 4–128 個字元")
 
-        can_flags = [1, 0, 0, 0, 0] if new_class_id is not None else [
-            1 if data.get("canLoan", False) else 0,
+        can_flags = [
+            1 if data.get("canLoan", True) else 0,
             1 if data.get("canMember", False) else 0,
             1 if data.get("canBook", False) else 0,
             1 if data.get("canConfig", False) else 0,
