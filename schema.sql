@@ -143,6 +143,8 @@ CREATE TABLE IF NOT EXISTS users (
     can_book   INTEGER NOT NULL DEFAULT 0,
     can_config INTEGER NOT NULL DEFAULT 0,
     can_report INTEGER NOT NULL DEFAULT 0,
+    security_question TEXT NOT NULL DEFAULT '',   -- 離線安全提問題目（3.3 離線密碼救援）
+    security_answer_hash TEXT NOT NULL DEFAULT '', -- 安全提問答案的雜湊值
     created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );

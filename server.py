@@ -611,6 +611,16 @@ def init_db(db_path):
             pass
 
         try:
+            conn.execute("ALTER TABLE users ADD COLUMN security_question TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass
+
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN security_answer_hash TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass
+
+        try:
             conn.execute("ALTER TABLE books ADD COLUMN category TEXT NOT NULL DEFAULT ''")
         except Exception:
             pass
@@ -1347,9 +1357,24 @@ class Handler(SimpleHTTPRequestHandler):
             finally:
                 public_conn.close()
 
+        if path == "/api/password/forgot/security-verify" and method == "POST":
+            public_conn = connect()
+            try:
+                return self.api_forgot_security_verify(public_conn)
+            finally:
+                public_conn.close()
+
         conn = connect()
         try:
             token = self.require_session(conn)
+
+            if path == "/api/security-question" and method == "GET":
+                require_permission(conn, token, "loan")
+                return self.api_security_question_get(conn)
+
+            if path == "/api/security-question" and method == "PUT":
+                require_permission(conn, token, "loan")
+                return self.api_security_question_put(conn)
 
             if path == "/api/loan-rules" and method == "GET":
                 return self.send_json({
@@ -3887,6 +3912,105 @@ class Handler(SimpleHTTPRequestHandler):
         log_audit(conn, "密碼救援重設", target_id if target_key != "admin" else None,
                   _label or username, target=username,
                   detail="密碼已重設（電子郵件驗證碼）", ip=ip)
+        return self.send_json({"ok": True})
+
+    # ------------------------------------------------------------------
+    # 離線安全提問（3.3）：無 Email/SMTP 時的密碼救援備援機制
+    # ------------------------------------------------------------------
+    DEFAULT_SECURITY_QUESTIONS = [
+        "你國小就讀的學校名稱是什麼？",
+        "你寵物的名字是什麼？",
+        "你母親的娘家姓氏是什麼？",
+        "你出生的城市是哪裡？",
+        "你最好的朋友的名字是什麼？",
+    ]
+
+    def api_security_question_get(self, conn):
+        """取得當前登入使用者的安全提問題目（不回傳答案）。"""
+        token = self.cookies().get("sid")
+        row = conn.execute(
+            "SELECT s.user_id FROM sessions s WHERE s.token = ? AND s.expires_at >= ?",
+            (token, time.time()),
+        ).fetchone()
+        if not row or row["user_id"] is None:
+            raise ApiError(401, "請先登入")
+        user = conn.execute(
+            "SELECT security_question FROM users WHERE id = ? AND active = 1",
+            (row["user_id"],),
+        ).fetchone()
+        if not user:
+            raise ApiError(404, "查無此使用者")
+        return self.send_json({
+            "hasQuestion": bool(user["security_question"]),
+            "question": user["security_question"] or "",
+        })
+
+    def api_security_question_put(self, conn):
+        """設定安全提問題目與答案（需登入）。"""
+        token = self.cookies().get("sid")
+        row = conn.execute(
+            "SELECT s.user_id FROM sessions s WHERE s.token = ? AND s.expires_at >= ?",
+            (token, time.time()),
+        ).fetchone()
+        if not row or row["user_id"] is None:
+            raise ApiError(401, "請先登入")
+        user_id = row["user_id"]
+
+        data = self.read_json()
+        question = _clean_text(data.get("securityQuestion") or "", "安全提問", 200)
+        answer = _clean_text(data.get("securityAnswer") or "", "安全提問答案", 100)
+        if not question or not answer:
+            raise ApiError(400, "提問與答案皆不可空白")
+        if question not in self.DEFAULT_SECURITY_QUESTIONS:
+            raise ApiError(400, "請從系統提供的提問中選擇")
+        conn.execute(
+            "UPDATE users SET security_question = ?, security_answer_hash = ?, updated_at = datetime('now', 'localtime') WHERE id = ?",
+            (question, hash_password(answer), user_id),
+        )
+        self._audit(conn, token, "設定安全提問", target=str(user_id),
+                    detail="已設定離線安全提問救援")
+        return self.send_json({"ok": True})
+
+    def api_forgot_security_verify(self, conn):
+        """驗證安全提問答案並重設密碼（離線救援，不需 Email）。"""
+        ip = self.client_address[0]
+        rate_limit("forgot-security", ip, 5)
+        data = self.read_json()
+        username = _clean_text(data.get("username") or "", "帳號", 50)
+        question = _clean_text(data.get("securityQuestion") or "", "安全提問", 200)
+        answer = _clean_text(data.get("securityAnswer") or "", "安全提問答案", 100)
+        new_password = data.get("newPassword") or data.get("password")
+        if not username:
+            raise ApiError(400, "請輸入帳號")
+        if not question or not answer:
+            raise ApiError(400, "提問與答案皆不可空白")
+        if not isinstance(new_password, str) or len(new_password) < 4:
+            raise ApiError(400, "新密碼至少需 4 個字元")
+        if len(new_password) > 128:
+            raise ApiError(400, "新密碼過長")
+
+        user = conn.execute(
+            "SELECT * FROM users WHERE (username = ? OR name = ?) AND active = 1 ORDER BY id LIMIT 1",
+            (username, username),
+        ).fetchone()
+        if not user:
+            raise ApiError(400, "查無此啟用中的使用者")
+        if not user["security_question"]:
+            raise ApiError(400, "此帳號尚未設定安全提問，請先登入後設定，或改用其他救援方式")
+        if user["security_question"] != question:
+            raise ApiError(400, "安全提問題目不符，請確認後再試")
+        if not verify_password(answer, user["security_answer_hash"]):
+            raise ApiError(400, "安全提問答案錯誤")
+
+        hashed = hash_password(new_password)
+        conn.execute(
+            "UPDATE users SET password = ?, updated_at = datetime('now', 'localtime') WHERE id = ?",
+            (hashed, user["id"]),
+        )
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (user["id"],))
+        clear_rate_limit("forgot-security", ip)
+        log_audit(conn, "密碼救援重設（安全提問）", user["id"], user["name"] or username,
+                  target=username, detail="以離線安全提問重設密碼", ip=ip)
         return self.send_json({"ok": True})
 
     def api_recovery_code(self, conn):
