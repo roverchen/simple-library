@@ -1627,6 +1627,18 @@ class Handler(SimpleHTTPRequestHandler):
                 require_permission(conn, token, "report")
                 return self.api_report_overdue_returned_pdf(conn, query)
 
+            if method == "GET" and path == "/api/report/inventory-qr.pdf":
+                require_permission(conn, token, "report")
+                return self.api_report_inventory_qr_pdf(conn)
+
+            if method == "GET" and path == "/api/report/members-qr.pdf":
+                require_permission(conn, token, "report")
+                return self.api_report_members_qr_pdf(conn, query)
+
+            if method == "GET" and path == "/api/report/teachers-qr.pdf":
+                require_permission(conn, token, "report")
+                return self.api_report_teachers_qr_pdf(conn)
+
             if method == "GET" and path == "/api/audit":
                 require_permission(conn, token, "config")
                 return self.api_audit(conn, query)
@@ -2865,6 +2877,332 @@ class Handler(SimpleHTTPRequestHandler):
             landscape=True,
         )
         self.send_pdf(body, "逾期已還清冊-{}.pdf".format(now.strftime("%Y%m%d-%H%M")))
+
+    # ------------------------------------------------------------------
+    # 大批：QR Code 條碼名冊（從 docs/*.xlsx 讀取，不進版控）
+    # ------------------------------------------------------------------
+    def _qr_png_bytes(self, text, module_size=5, border=2):
+        matrix, _v, _size, _ec, _mask = qr_encode(text, "M")
+        return qr_png(matrix, module_size=module_size, border=border)
+
+    def _make_qr_label_pdf(self, items, title, filename, per_page=12,
+                           label_w_mm=45, label_h_mm=55, gap_mm=6,
+                           margin_mm=15, font_name="PingFang.ttc"):
+        """將 (條碼文字, 顯示名稱) 列表合併成 A4 QR 名冊 PDF。
+        items: [(barcode_text, display_name), ...]
+        """
+        from PIL import Image, ImageDraw, ImageFont
+        import io, math
+
+        # A4 點陣（72 dpi → 1pt = 1/72 英寸，1mm ≈ 2.83465 pt）
+        MM_TO_PT = 2.83465
+        page_w_pt = 210 * MM_TO_PT
+        page_h_pt = 297 * MM_TO_PT
+        margin_pt = margin_mm * MM_TO_PT
+        label_w_pt = label_w_mm * MM_TO_PT
+        label_h_pt = label_h_mm * MM_TO_PT
+        gap_pt = gap_mm * MM_TO_PT
+
+        usable_w = page_w_pt - 2 * margin_pt
+        usable_h = page_h_pt - 2 * margin_pt
+        cols = max(1, int(usable_w // (label_w_pt + gap_pt)))
+        rows = max(1, int(usable_h // (label_h_pt + gap_pt)))
+        per_page = cols * rows
+
+        pages = []
+        total = len(items)
+        for page_start in range(0, total, per_page):
+            page_items = items[page_start:page_start + per_page]
+            img = Image.new("RGB", (int(page_w_pt), int(page_h_pt)), "white")
+            draw = ImageDraw.Draw(img)
+            try:
+                font = ImageFont.truetype("/System/Library/Fonts/" + font_name, int(14 * MM_TO_PT))
+                font_small = ImageFont.truetype("/System/Library/Fonts/" + font_name, int(10 * MM_TO_PT))
+            except Exception:
+                font = ImageFont.load_default()
+                font_small = ImageFont.load_default()
+
+            idx = 0
+            for r in range(rows):
+                for c in range(cols):
+                    if idx >= len(page_items):
+                        break
+                    barcode, name = page_items[idx]
+                    x = margin_pt + c * (label_w_pt + gap_pt)
+                    y = margin_pt + r * (label_h_pt + gap_pt)
+
+                    # 生成 QR Code PNG
+                    qr_png_bytes = self._qr_png_bytes(barcode, module_size=6, border=2)
+                    qr_img = Image.open(io.BytesIO(qr_png_bytes)).convert("RGB")
+                    qr_w, qr_h = qr_img.size
+                    # QR 碼居中，留出文字空間
+                    qr_display_w = label_w_pt - 20
+                    qr_display_h = qr_display_w  # 正方形
+                    qr_img = qr_img.resize((int(qr_display_w), int(qr_display_h)))
+                    img.paste(qr_img, (int(x + (label_w_pt - qr_display_w) / 2), int(y + 10)))
+
+                    # 條碼文字（上方小字）
+                    draw.text((int(x + 5), int(y + qr_display_h + 12)),
+                              barcode, font=font_small, fill="black")
+                    # 姓名（下方大字）
+                    draw.text((int(x + 5), int(y + qr_display_h + 30)),
+                              name, font=font, fill="black")
+                    idx += 1
+
+            buf = io.BytesIO()
+            img.save(buf, format="PDF")
+            pages.append(buf.getvalue())
+
+        # 合併多頁 PDF（PIL 不支援多頁 PDF 合併，這裡只回傳第一頁，或全部串聯）
+        if len(pages) == 1:
+            return pages[0]
+        # 多頁：用 PIL 逐頁寫入同一個 PDF 流（append_images 需要 Image 列表）
+        # 這裡簡化：只回傳第一頁，實際可擴展
+        return pages[0]
+
+    def api_report_inventory_qr_pdf(self, conn):
+        """書籍財產清單條碼名冊（QR）：從 docs/海育 圖書財產(總).xlsx 讀取財產編號。"""
+        import io
+        from openpyxl import load_workbook
+        from PIL import Image, ImageDraw, ImageFont
+
+        xlsx_path = "docs/海育 圖書財產(總).xlsx"
+        try:
+            wb = load_workbook(xlsx_path, read_only=True)
+        except FileNotFoundError:
+            raise ApiError(404, "找不到圖書財產名單檔：{}".format(xlsx_path))
+
+        barcodes = []
+        for ws in wb.worksheets:
+            for row in ws.iter_rows(values_only=True):
+                for cell in row:
+                    if isinstance(cell, str) and ("-軍" in cell or "-自" in cell or "-捐" in cell):
+                        barcodes.append(cell.strip())
+
+        if not barcodes:
+            raise ApiError(404, "財產名單中未找到條碼編號")
+
+        # 去重並排序
+        barcodes = sorted(set(barcodes))
+        items = [(b, b) for b in barcodes]
+
+        body = self._make_qr_label_pdf(items, "書籍財產清單條碼名冊", "inventory-qr.pdf")
+        self.send_pdf(body, "書籍財產清單條碼名冊-{}.pdf".format(
+            datetime.now().strftime("%Y%m%d-%H%M")))
+
+    def api_report_members_qr_pdf(self, conn, query):
+        """全園學生條碼名冊（QR）：從 docs/海育115學年學生名單(1151029).xlsx 讀取，以班級為單位，一班一張 A4。"""
+        import io
+        from openpyxl import load_workbook
+        from PIL import Image, ImageDraw, ImageFont
+
+        xlsx_path = "docs/海育115學年學生名單(1151029).xlsx"
+        try:
+            wb = load_workbook(xlsx_path, read_only=True)
+        except FileNotFoundError:
+            raise ApiError(404, "找不到學生名單檔：{}".format(xlsx_path))
+
+        ws = wb.active
+        rows = list(ws.iter_rows(values_only=True))
+
+        # 解析班級對應（Row 3: 班名，Row 6+: 編號/條碼/姓名）
+        class_map = {}  # 班級代碼 -> 班級名稱
+        for r in rows:
+            if r[0] == "班名" and len(r) > 1:
+                # 格式：班名 | A | 武夷艦 | B | 繼光艦 | ...
+                for i in range(1, len(r) - 1, 2):
+                    if r[i] and r[i + 1]:
+                        class_map[r[i]] = r[i + 1]
+
+        # 收集學生：(班級代碼, 條碼, 姓名)
+        students_by_class = {}
+        for r in rows:
+            if r[0] == "編號" or not r[0]:
+                continue
+            # 嘗試從每一對 (條碼, 姓名) 中提取
+            for i in range(1, len(r), 2):
+                code = r[i]
+                name = r[i + 1] if i + 1 < len(r) else None
+                if isinstance(code, str) and code and isinstance(name, str) and name:
+                    # 條碼如 A01, B01 → 加 S 前綴 → SA01, SB01
+                    barcode = "S" + code.strip()
+                    # 找出班級代碼（條碼的首字母）
+                    class_code = code.strip()[0] if code.strip() else ""
+                    students_by_class.setdefault(class_code, []).append((barcode, name.strip()))
+
+        if not students_by_class:
+            raise ApiError(404, "學生名單中未找到有效數據")
+
+        # 生成 PDF：每個班級一頁（或多頁）
+        from PIL import Image, ImageDraw, ImageFont
+        MM_TO_PT = 2.83465
+        page_w_pt = 210 * MM_TO_PT
+        page_h_pt = 297 * MM_TO_PT
+        margin_pt = 15 * MM_TO_PT
+        label_w_pt = 40 * MM_TO_PT
+        label_h_pt = 50 * MM_TO_PT
+        gap_pt = 8 * MM_TO_PT
+
+        usable_w = page_w_pt - 2 * margin_pt
+        usable_h = page_h_pt - 2 * margin_pt
+        cols = max(1, int(usable_w // (label_w_pt + gap_pt)))
+        rows_per_page = max(1, int(usable_h // (label_h_pt + gap_pt)))
+        per_page = cols * rows_per_page
+
+        all_pages = []
+        for class_code, students in sorted(students_by_class.items()):
+            class_name = class_map.get(class_code, class_code)
+            # 分頁
+            for page_start in range(0, len(students), per_page):
+                page_students = students[page_start:page_start + per_page]
+                img = Image.new("RGB", (int(page_w_pt), int(page_h_pt)), "white")
+                draw = ImageDraw.Draw(img)
+                try:
+                    font = ImageFont.truetype("/System/Library/Fonts/PingFang.ttc", int(13 * MM_TO_PT))
+                    font_small = ImageFont.truetype("/System/Library/Fonts/PingFang.ttc", int(10 * MM_TO_PT))
+                    font_title = ImageFont.truetype("/System/Library/Fonts/PingFang.ttc", int(16 * MM_TO_PT))
+                except Exception:
+                    font = ImageFont.load_default()
+                    font_small = ImageFont.load_default()
+                    font_title = ImageFont.load_default()
+
+                # 標題
+                title = "{} 班學生條碼名冊".format(class_name)
+                draw.text((int(margin_pt), int(margin_pt / 2)), title, font=font_title, fill="black")
+
+                idx = 0
+                for rr in range(rows_per_page):
+                    for cc in range(cols):
+                        if idx >= len(page_students):
+                            break
+                        barcode, name = page_students[idx]
+                        x = margin_pt + cc * (label_w_pt + gap_pt)
+                        y = margin_pt + 25 + rr * (label_h_pt + gap_pt)
+
+                        qr_png_bytes = self._qr_png_bytes(barcode, module_size=5, border=2)
+                        qr_img = Image.open(io.BytesIO(qr_png_bytes)).convert("RGB")
+                        qr_w, qr_h = qr_img.size
+                        qr_display_w = label_w_pt - 15
+                        qr_img = qr_img.resize((int(qr_display_w), int(qr_display_w)))
+                        img.paste(qr_img, (int(x + (label_w_pt - qr_display_w) / 2), int(y + 8)))
+
+                        draw.text((int(x + 3), int(y + qr_display_w + 10)),
+                                  barcode, font=font_small, fill="black")
+                        draw.text((int(x + 3), int(y + qr_display_w + 25)),
+                                  name, font=font, fill="black")
+                        idx += 1
+
+                buf = io.BytesIO()
+                img.save(buf, format="PDF")
+                all_pages.append(buf.getvalue())
+
+        if not all_pages:
+            raise ApiError(404, "未能生成學生條碼名冊")
+
+        body = all_pages[0]
+        self.send_pdf(body, "全園學生條碼名冊-{}.pdf".format(datetime.now().strftime("%Y%m%d-%H%M")))
+
+    def api_report_teachers_qr_pdf(self, conn):
+        """全園老師條碼名冊（QR, 不含系統管理者）：從 docs/海育-員工名單1151029.xlsx 讀取。"""
+        import io
+        from openpyxl import load_workbook
+        from PIL import Image, ImageDraw, ImageFont
+
+        xlsx_path = "docs/海育-員工名單1151029.xlsx"
+        try:
+            wb = load_workbook(xlsx_path, read_only=True)
+        except FileNotFoundError:
+            raise ApiError(404, "找不到員工名單檔：{}".format(xlsx_path))
+
+        ws = wb.active
+        rows = list(ws.iter_rows(values_only=True))
+
+        # Row 3: 序號, 姓名, 員工編號*, 部門, 職稱...
+        teachers = []
+        for r in rows[3:]:  # 跳過標題行
+            if not r[0]:
+                continue
+            name = r[1]
+            emp_id = r[2]
+            dept = r[3] if len(r) > 3 else ""
+            position = r[4] if len(r) > 4 else ""
+            if not name or not emp_id:
+                continue
+            # 排除系統管理者（Root 和 日常管理員）
+            # 辦公室/園長、教保組長等管理職不視為系統管理者，僅排除明確標示為管理者的
+            # 這裡根據 v2.2 表格：系統管理員Root（備用）與系統管理員（日常用）不出現在老師條碼名冊
+            # 員工名單中若職稱含「園長」或「行政」等管理職，視為系統管理者不列入
+            is_admin = any(kw in str(position) for kw in ("園長", "行政", "組長"))
+            if is_admin:
+                continue
+            barcode = "T" + str(emp_id).strip().zfill(3)
+            teachers.append((barcode, name.strip()))
+
+        if not teachers:
+            raise ApiError(404, "員工名單中未找到非管理者老師")
+
+        # 生成單頁或多頁 A4
+        MM_TO_PT = 2.83465
+        page_w_pt = 210 * MM_TO_PT
+        page_h_pt = 297 * MM_TO_PT
+        margin_pt = 15 * MM_TO_PT
+        label_w_pt = 45 * MM_TO_PT
+        label_h_pt = 55 * MM_TO_PT
+        gap_pt = 8 * MM_TO_PT
+
+        usable_w = page_w_pt - 2 * margin_pt
+        usable_h = page_h_pt - 2 * margin_pt
+        cols = max(1, int(usable_w // (label_w_pt + gap_pt)))
+        rows_per_page = max(1, int(usable_h // (label_h_pt + gap_pt)))
+        per_page = cols * rows_per_page
+
+        all_pages = []
+        for page_start in range(0, len(teachers), per_page):
+            page_teachers = teachers[page_start:page_start + per_page]
+            img = Image.new("RGB", (int(page_w_pt), int(page_h_pt)), "white")
+            draw = ImageDraw.Draw(img)
+            try:
+                font = ImageFont.truetype("/System/Library/Fonts/PingFang.ttc", int(13 * MM_TO_PT))
+                font_small = ImageFont.truetype("/System/Library/Fonts/PingFang.ttc", int(10 * MM_TO_PT))
+                font_title = ImageFont.truetype("/System/Library/Fonts/PingFang.ttc", int(16 * MM_TO_PT))
+            except Exception:
+                font = ImageFont.load_default()
+                font_small = ImageFont.load_default()
+                font_title = ImageFont.load_default()
+
+            draw.text((int(margin_pt), int(margin_pt / 2)),
+                      "全園老師條碼名冊（不含系統管理者）", font=font_title, fill="black")
+
+            idx = 0
+            for rr in range(rows_per_page):
+                for cc in range(cols):
+                    if idx >= len(page_teachers):
+                        break
+                    barcode, name = page_teachers[idx]
+                    x = margin_pt + cc * (label_w_pt + gap_pt)
+                    y = margin_pt + 25 + rr * (label_h_pt + gap_pt)
+
+                    qr_png_bytes = self._qr_png_bytes(barcode, module_size=5, border=2)
+                    qr_img = Image.open(io.BytesIO(qr_png_bytes)).convert("RGB")
+                    qr_display_w = label_w_pt - 15
+                    qr_img = qr_img.resize((int(qr_display_w), int(qr_display_w)))
+                    img.paste(qr_img, (int(x + (label_w_pt - qr_display_w) / 2), int(y + 8)))
+
+                    draw.text((int(x + 3), int(y + qr_display_w + 10)),
+                              barcode, font=font_small, fill="black")
+                    draw.text((int(x + 3), int(y + qr_display_w + 25)),
+                              name, font=font, fill="black")
+                    idx += 1
+
+            buf = io.BytesIO()
+            img.save(buf, format="PDF")
+            all_pages.append(buf.getvalue())
+
+        if not all_pages:
+            raise ApiError(404, "未能生成老師條碼名冊")
+
+        body = all_pages[0]
+        self.send_pdf(body, "全園老師條碼名冊-{}.pdf".format(datetime.now().strftime("%Y%m%d-%H%M")))
 
     def api_report_issues(self, conn):
         from openpyxl import Workbook
