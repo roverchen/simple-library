@@ -229,7 +229,7 @@
 <div class="container" id="mainContainer">
     <div id="loginPage" class="page active">
         <div style="text-align: center; max-width: 350px; margin: auto;">
-            <h2>🔐 幼兒園圖書系統</h2>
+            <h2>🔐 海育非營利幼兒園<br>圖書管理系統</h2>
             <input type="text" id="loginUsername" placeholder="帳號／姓名／Email" autocomplete="username">
             <input type="password" id="loginPwd" placeholder="管理密碼">
             <button onclick="handleLogin()" class="btn-main btn-return" style="width: 100%; padding: 15px; margin-top: 10px;">登入</button>
@@ -820,6 +820,36 @@
         </div>
 
         <p class="modal-error" id="recoveryError"></p>
+    </div>
+</div>
+
+<!-- 安全提問設定 modal（登入後強制設定） -->
+<div class="modal-overlay" id="securityQuestionModal">
+    <div class="modal-box">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h3>🔒 設定安全提問（初次登入必填）</h3>
+            <button type="button" class="modal-close" onclick="closeSecurityQuestionModal()" aria-label="關閉">✕</button>
+        </div>
+        <p class="modal-hint">為保護您的帳號安全，請設定安全提問與答案。忘記密碼時可透過此方式重設。</p>
+        <div style="margin:16px 0;">
+            <label for="sqQuestion">安全提問</label>
+            <select id="sqQuestion" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:5px;">
+                <option value="你國小就讀的學校名稱是什麼？">你國小就讀的學校名稱是什麼？</option>
+                <option value="你寵物的名字是什麼？">你寵物的名字是什麼？</option>
+                <option value="你母親的娘家姓氏是什麼？">你母親的娘家姓氏是什麼？</option>
+                <option value="你出生的城市是哪裡？">你出生的城市是哪裡？</option>
+                <option value="你最好的朋友的名字是什麼？">你最好的朋友的名字是什麼？</option>
+            </select>
+        </div>
+        <div style="margin:16px 0;">
+            <label for="sqAnswer">安全提問答案</label>
+            <input type="text" id="sqAnswer" autocomplete="off" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:5px;">
+            <p class="modal-hint">請輸入您會記得的答案，日後忘記密碼時可用此方式重設。</p>
+        </div>
+        <div style="display:flex; gap:8px; justify-content:flex-end;">
+            <button type="button" class="btn-secondary" onclick="closeSecurityQuestionModal()">稍後設定</button>
+            <button type="button" class="btn-primary" onclick="saveSecurityQuestion()">✅ 儲存並進入系統</button>
+        </div>
     </div>
 </div>
 
@@ -1716,6 +1746,9 @@
                 username: (res.user && res.user.username) || uname || 'admin',
                 role: (res.user && res.user.role) || 'admin',
                 permissions: (res.user && res.user.permissions) || {},
+                isRoot: (res.user && res.user.is_root) || false,
+                isDailyAdmin: (res.user && res.user.is_daily_admin) || false,
+                needSecurityQuestion: (res.user && res.user.needSecurityQuestion) || false,
             };
             const state = await api('GET', '/api/state');
             applyState(state);
@@ -1723,6 +1756,10 @@
             showApp();
             await maybeMigrateLegacy();
             await loadLoanRules();
+            // 若需強制設定安全提問，先彈出設定視窗
+            if (currentUser.needSecurityQuestion) {
+                openSecurityQuestionModal();
+            }
         } catch (err) {
             alert(err.message || "登入失敗");
         }
@@ -3030,6 +3067,14 @@
         } catch (err) { /* 載入失敗不阻斷 */ }
     }
 
+    async function openSecurityQuestionModal() {
+        document.getElementById('securityQuestionModal').classList.add('open');
+    }
+
+    function closeSecurityQuestionModal() {
+        document.getElementById('securityQuestionModal').classList.remove('open');
+    }
+
     async function saveSecurityQuestion() {
         const sel = document.getElementById('securityQuestionSelect');
         const answer = (document.getElementById('securityAnswer') || {}).value.trim();
@@ -3040,6 +3085,12 @@
             alert('✅ 安全提問已儲存');
             (document.getElementById('securityAnswer') || {}).value = '';
             loadSecurityQuestion();
+            // 若是從登入強制設定modal來的，關閉modal並標記已設定
+            const modal = document.getElementById('securityQuestionModal');
+            if (modal && modal.classList.contains('open')) {
+                closeSecurityQuestionModal();
+                currentUser.needSecurityQuestion = false;
+            }
         } catch (err) { alert("❌ " + err.message); }
     }
 

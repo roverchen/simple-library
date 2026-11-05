@@ -2093,9 +2093,11 @@ class Handler(SimpleHTTPRequestHandler):
                     "canConfig": True,
                     "canReport": True,
                 }
+                is_root = False
+                is_daily_admin = False
             else:
                 prow = conn.execute(
-                    "SELECT can_loan, can_member, can_book, can_config, can_report, role FROM users WHERE id = ?",
+                    "SELECT can_loan, can_member, can_book, can_config, can_report, role, security_question, security_answer_hash FROM users WHERE id = ?",
                     (user["id"],),
                 ).fetchone()
                 if prow and (prow["role"] or "") in ("admin", "root"):
@@ -2106,6 +2108,9 @@ class Handler(SimpleHTTPRequestHandler):
                         "canConfig": True,
                         "canReport": True,
                     }
+                    # 判斷是 Root（備用）還是日常管理員
+                    is_root = (prow["role"] or "") == "root"
+                    is_daily_admin = (prow["role"] or "") != "root"
                 elif prow:
                     perms = {
                         "canLoan": bool(prow["can_loan"]),
@@ -2114,6 +2119,8 @@ class Handler(SimpleHTTPRequestHandler):
                         "canConfig": bool(prow["can_config"]),
                         "canReport": bool(prow["can_report"]),
                     }
+                    is_root = False
+                    is_daily_admin = False
                 else:
                     perms = {
                         "canLoan": True,
@@ -2122,6 +2129,8 @@ class Handler(SimpleHTTPRequestHandler):
                         "canConfig": False,
                         "canReport": False,
                     }
+                    is_root = False
+                    is_daily_admin = False
             conn.execute(
                 "DELETE FROM sessions WHERE expires_at < ?", (now,)
             )
@@ -2135,6 +2144,16 @@ class Handler(SimpleHTTPRequestHandler):
                 target=(user["username"] if user else "共用管理員"),
                 ip=self.client_address[0],
             )
+            # 檢查是否需要設定安全提問（僅對一般用戶，共用管理員除外）
+            need_security_question = False
+            if user is not None and user_id is not None:
+                sq_row = conn.execute(
+                    "SELECT security_question FROM users WHERE id = ?",
+                    (user_id,),
+                ).fetchone()
+                if sq_row and not sq_row["security_question"]:
+                    need_security_question = True
+
             return self.send_json(
                 {
                     "ok": True,
@@ -2142,7 +2161,10 @@ class Handler(SimpleHTTPRequestHandler):
                         "username": (user["username"] if user else "admin"),
                         "name": (user["name"] if user else "") or "",
                         "role": role,
+                        "is_root": is_root,
+                        "is_daily_admin": is_daily_admin,
                         "permissions": perms,
+                        "needSecurityQuestion": need_security_question,
                     },
                 },
                 headers={
