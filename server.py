@@ -1772,6 +1772,9 @@ class Handler(SimpleHTTPRequestHandler):
                 if method == "POST" and action == "renew":
                     require_permission(conn, token, "loan")
                     return self.api_book_renew(conn, barcode, token)
+                if method == "GET" and not action:
+                    require_permission(conn, token, "book")
+                    return self.api_book_get(conn, barcode)
                 if method == "POST" and action:
                     require_permission(conn, token, "book")
                     return self.api_book_action(conn, barcode, action, token)
@@ -3443,6 +3446,39 @@ class Handler(SimpleHTTPRequestHandler):
             raise ApiError(400, "{}不存在（如 115/02/31）".format(label))
         return "{:03d}/{:02d}/{:02d}".format(y, mo, d)
 
+    def api_book_get(self, conn, barcode):
+        """取得單本書籍詳情（供書籍編輯 modal 使用）。"""
+        row = conn.execute(
+            "SELECT * FROM books WHERE barcode = ?", (barcode,)
+        ).fetchone()
+        if not row:
+            raise ApiError(404, "找不到此圖書")
+        book = {
+            "barcode": row["barcode"],
+            "title": row["title"],
+            "assetId": row["asset_id"],
+            "status": row["status"],
+            "rawStatus": row["status"],
+            "loanedTo": row["loaned_to"],
+            "loanClass": row["loan_class"],
+            "dueAt": row["due_at"],
+            "count": row["borrow_count"] or 0,
+            "remarks": row["remarks"] or "",
+            "callNo": row["call_no"] or "",
+            "category": row["category"] or "",
+            "isbn": row["isbn"] or "",
+            "publisher": row["publisher"] or "",
+            "price": row["price"],
+            "quantity": row["quantity"],
+            "source": row["source"] or "",
+            "purchaseDate": row["purchase_date"] or "",
+            "keeper": row["keeper"] or "",
+            "confirmNote": row["confirm_note"] or "",
+            "inventoryDate": row["inventory_date"] or "",
+            "scrapDate": row["scrap_date"] or "",
+        }
+        return self.send_json({"ok": True, "book": book})
+
     def api_book_upsert(self, conn, barcode, token=None):
         data = self.read_json()
         title = _clean_text(data.get("title"), "書名", 200, required=True)
@@ -3642,7 +3678,7 @@ class Handler(SimpleHTTPRequestHandler):
 
         row = conn.execute(
             "SELECT c.code, c.name, c.color FROM categories c "
-            "JOIN books b ON b.category = c.code WHERE b.barcode = ? AND b.active = 1",
+            "JOIN books b ON b.category = c.code WHERE b.barcode = ?",
             (barcode,),
         ).fetchone()
 

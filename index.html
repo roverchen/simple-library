@@ -1936,14 +1936,57 @@
 
     let bookModalState = null;
 
-    function openBookModal(barcode) {
-        const book = bookDatabase[barcode] || { title: "", assetId: "", status: "在館", loanedTo: null, callNo: "", isbn: "" };
+    async function openBookModal(barcode) {
+        const book = await loadBookDetails(barcode);
         bookModalState = { barcode: barcode, book: book };
         document.getElementById('bookModalTitle').textContent = '✏️ 編輯圖書';
         document.getElementById('bookModalError').textContent = '';
         renderBookModalFields();
         loadCategories();
         document.getElementById('bookModal').classList.add('open');
+    }
+
+    async function loadBookDetails(barcode) {
+        if (!barcode) return { title: "", assetId: "", status: "在館", loanedTo: null, callNo: "", isbn: "" };
+        try {
+            const res = await api('GET', '/api/books/' + encodeURIComponent(barcode));
+            const b = res.book || {};
+            return {
+                title: b.title || '',
+                assetId: b.assetId || '',
+                status: b.status || '在館',
+                loanedTo: b.loanedTo || null,
+                loanClass: b.loanClass || null,
+                dueAt: b.dueAt || null,
+                count: b.count || 0,
+                remarks: b.remarks || '',
+                callNo: b.callNo || '',
+                category: b.category || '',
+                isbn: b.isbn || '',
+                publisher: b.publisher || '',
+                price: b.price != null ? b.price : 0,
+                quantity: b.quantity != null ? b.quantity : 1,
+                source: b.source || '',
+                purchaseDate: b.purchaseDate || '',
+                keeper: b.keeper || '',
+                confirmNote: b.confirmNote || '',
+                inventoryDate: b.inventoryDate || '',
+                scrapDate: b.scrapDate || '',
+            };
+        } catch (err) {
+            // 若伺服器查詢失敗，回退到本地快取
+            return bookDatabase[barcode] || { title: "", assetId: "", status: "在館", loanedTo: null, callNo: "", isbn: "" };
+        }
+    }
+
+    async function fetchCategoryByBarcode(barcode) {
+        if (!barcode) return null;
+        try {
+            const res = await api('GET', '/api/category?barcode=' + encodeURIComponent(barcode));
+            return res.category || null;
+        } catch (_) {
+            return null;
+        }
     }
 
     function closeBookModal() {
