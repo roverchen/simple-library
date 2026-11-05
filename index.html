@@ -900,6 +900,23 @@
     </div>
 </div>
 
+<!-- 管理員功能二次密碼驗證（規格 0.2：系統管理員功能需再次輸入密碼） -->
+<div class="modal-overlay" id="adminConfirmModal">
+    <div class="modal-box" style="max-width:380px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h3>🔐 管理員身份驗證</h3>
+            <button type="button" class="modal-close" onclick="closeAdminConfirmModal()" aria-label="關閉">✕</button>
+        </div>
+        <p class="modal-hint">請輸入管理密碼以使用「{targetName}」功能。</p>
+        <input type="password" id="adminConfirmPwd" placeholder="管理密碼" autocomplete="current-password">
+        <p class="modal-error" id="adminConfirmError"></p>
+        <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;">
+            <button type="button" class="btn-secondary" onclick="closeAdminConfirmModal()">取消</button>
+            <button type="button" class="btn-primary" onclick="submitAdminConfirm()">確認</button>
+        </div>
+    </div>
+</div>
+
 <script>
     // 資料以伺服器端的 SQLite 為準；前端只保留本次操作所需的快取。
     let config = { classes: [] };
@@ -914,6 +931,7 @@
     let isLabelMode = false; // 控制報表顯示模式
     let scanQueue = Promise.resolve();
     let currentUser = { username: 'admin', role: 'admin', permissions: {} };
+    let adminConfirmTarget = null; // 規格 0.2：待驗證後要切換的管理員頁面
     let currentLoanMember = null; // { className, userName, memberType }
     let returnBoxMode = false; // 還書箱模式：開啟後掃描書籍條碼直接還書，不需選成員
 
@@ -2018,6 +2036,8 @@
             <input type="number" id="bfPrice" data-name="price" min="0" step="1" value="${escapeHtml(String(book.price != null ? book.price : 0))}">
             <label for="bfQuantity">數量（固定 1）</label>
             <input type="text" id="bfQuantity" data-name="quantity" value="1" readonly>
+            <label for="bfTotalAmount">總金額（元）</label>
+            <input type="number" id="bfTotalAmount" data-name="totalAmount" min="0" step="1" value="${escapeHtml(String(book.totalAmount != null ? book.totalAmount : (book.price != null ? book.price : 0)))}" readonly>
             <label for="bfSource">來源</label>
             <select id="bfSource" data-name="source">
                 <option value="">（未指定）</option>
@@ -2034,6 +2054,8 @@
             <input type="text" id="bfInventoryDate" data-name="inventoryDate" value="${escapeHtml(book.inventoryDate || '')}">
             <label for="bfScrapDate">報廢日期（民國年）</label>
             <input type="text" id="bfScrapDate" data-name="scrapDate" value="${escapeHtml(book.scrapDate || '')}">
+            <label for="bfReservationStatus">預約狀態</label>
+            <input type="text" id="bfReservationStatus" value="${escapeHtml(book.reservationStatus || '無被預約')}" readonly style="background:#f5f5f5;">
             <label for="bfRemarks">備註</label>
             <input type="text" id="bfRemarks" data-name="remarks" value="${escapeHtml(book.remarks || '')}">
         `;
@@ -2233,6 +2255,15 @@
             }[pageId] + '」功能，請洽系統管理員開啟。');
             return;
         }
+        // 規格 0.2：系統管理員功能需再次輸入密碼才能使用
+        if (pageId === 'configPage' || pageId === 'reportPage') {
+            adminConfirmTarget = pageId;
+            document.getElementById('adminConfirmModal').classList.add('open');
+            document.getElementById('adminConfirmPwd').value = '';
+            document.getElementById('adminConfirmError').textContent = '';
+            document.getElementById('adminConfirmPwd').focus();
+            return;
+        }
         if (html5QrCode) stopScanner();
         document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
         document.querySelectorAll('.nav button').forEach(b => b.classList.remove('active'));
@@ -2251,6 +2282,48 @@
             document.getElementById('printModeBtn').innerText = "切換至：標籤模式";
             reportPage = 1;
             renderReportTable();
+        }
+    }
+
+    // 規格 0.2：管理員二次密碼驗證
+    function closeAdminConfirmModal() {
+        document.getElementById('adminConfirmModal').classList.remove('open');
+        adminConfirmTarget = null;
+        document.getElementById('adminConfirmError').textContent = '';
+    }
+
+    async function submitAdminConfirm() {
+        const pwd = document.getElementById('adminConfirmPwd').value;
+        if (!pwd) {
+            document.getElementById('adminConfirmError').textContent = '請輸入管理密碼';
+            return;
+        }
+        try {
+            const res = await api('POST', '/api/login', { password: pwd });
+            if (res.ok) {
+                const target = adminConfirmTarget;
+                closeAdminConfirmModal();
+                if (html5QrCode) stopScanner();
+                document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+                document.querySelectorAll('.nav button').forEach(b => b.classList.remove('active'));
+                document.getElementById(target).classList.add('active');
+                document.getElementById('btn-' + target).classList.add('active');
+                if (target === 'configPage') {
+                    loadRecoverySettings(); renderAuditTable(); loadBackupSettings(); loadCategories(); loadSecurityQuestion();
+                }
+                if (target === 'reportPage') {
+                    isLabelMode = false;
+                    document.getElementById('logReportSection').style.display = 'block';
+                    document.getElementById('tagReportSection').style.display = 'none';
+                    document.getElementById('printModeBtn').innerText = "切換至：標籤模式";
+                    reportPage = 1;
+                    renderReportTable();
+                }
+            } else {
+                document.getElementById('adminConfirmError').textContent = '密碼錯誤';
+            }
+        } catch (err) {
+            document.getElementById('adminConfirmError').textContent = err.message || '驗證失敗';
         }
     }
 

@@ -52,12 +52,14 @@ CREATE TABLE IF NOT EXISTS books (
     publisher    TEXT    NOT NULL DEFAULT '',   -- 出版社
     price        INTEGER NOT NULL DEFAULT 0,    -- 單價（新台幣元）
     quantity     INTEGER NOT NULL DEFAULT 1,    -- 數量（固定 1）
+    total_amount INTEGER NOT NULL DEFAULT 0,    -- 總金額（單價 × 數量）
     source       TEXT    NOT NULL DEFAULT '',   -- 來源：自購／軍購／捐贈／英補／署補
     purchase_date TEXT   NOT NULL DEFAULT '',   -- 書籍購入日期（民國年格式 115/05/16）
     keeper       TEXT    NOT NULL DEFAULT '',   -- 保管人
     confirm_note TEXT    NOT NULL DEFAULT '',   -- 確認（自由文字）
     inventory_date TEXT   NOT NULL DEFAULT '',  -- 盤點日期（民國年格式）
     scrap_date   TEXT    NOT NULL DEFAULT '',   -- 報廢日期（民國年格式）
+    reservation_status TEXT NOT NULL DEFAULT '無被預約',  -- 預約狀態：有被預約/無被預約
     created_at   TEXT    NOT NULL DEFAULT (datetime('now', 'localtime')),
     updated_at   TEXT    NOT NULL DEFAULT (datetime('now', 'localtime'))
 );

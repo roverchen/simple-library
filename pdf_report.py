@@ -428,7 +428,7 @@ def _wrap(text, canvas, size, max_width):
 
 
 # 園所全稱：所有報表表頭第一行
-SCHOOL_FULL_NAME = "國防部海軍司令部海育員工子女非營利幼兒園（委託社團法人高雄市社區教育協會辦理）"
+SCHOOL_FULL_NAME = "國防部海軍司令部海育員工子女非營利幼兒園(委託社團法人高雄市社區教育協會辦理)"
 
 def build_table_pdf(title, meta_lines, columns, rows, widths=None, landscape=False,
                     font_path=DEFAULT_FONT):

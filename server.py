@@ -559,6 +559,8 @@ def init_db(db_path):
             "ALTER TABLE books ADD COLUMN confirm_note TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE books ADD COLUMN inventory_date TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE books ADD COLUMN scrap_date TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE books ADD COLUMN total_amount INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE books ADD COLUMN reservation_status TEXT NOT NULL DEFAULT '無被預約'",
         ):
             try:
                 conn.execute(_ddl)
@@ -3470,12 +3472,17 @@ class Handler(SimpleHTTPRequestHandler):
             "publisher": row["publisher"] or "",
             "price": row["price"],
             "quantity": row["quantity"],
+            "totalAmount": row["total_amount"],
             "source": row["source"] or "",
             "purchaseDate": row["purchase_date"] or "",
             "keeper": row["keeper"] or "",
             "confirmNote": row["confirm_note"] or "",
             "inventoryDate": row["inventory_date"] or "",
             "scrapDate": row["scrap_date"] or "",
+            "reservationStatus": "有被預約" if conn.execute(
+                "SELECT 1 FROM reservations WHERE barcode = ? AND status IN ('pending', 'ready') LIMIT 1",
+                (barcode,),
+            ).fetchone() else "無被預約",
         }
         return self.send_json({"ok": True, "book": book})
 
@@ -3509,6 +3516,7 @@ class Handler(SimpleHTTPRequestHandler):
         inventory_date = self._roc_date(data.get("inventoryDate"), "盤點日期")
         scrap_date = self._roc_date(data.get("scrapDate"), "報廢日期")
         quantity = 1  # 固定為 1（規格要求不可更改）
+        total_amount = price * quantity  # 總金額 = 單價 × 數量
         status = None
         raw_status = data.get("status")
         if isinstance(raw_status, str) and raw_status.strip():
@@ -3524,9 +3532,9 @@ class Handler(SimpleHTTPRequestHandler):
             ).fetchone()
             if row:
                 conn.execute(
-                    "UPDATE books SET title = ?, asset_id = ?, call_no = ?, category = ?, isbn = ?, remarks = ?, publisher = ?, price = ?, quantity = ?, source = ?, purchase_date = ?, keeper = ?, confirm_note = ?, inventory_date = ?, scrap_date = ?, updated_at = ? "
+                    "UPDATE books SET title = ?, asset_id = ?, call_no = ?, category = ?, isbn = ?, remarks = ?, publisher = ?, price = ?, quantity = ?, total_amount = ?, source = ?, purchase_date = ?, keeper = ?, confirm_note = ?, inventory_date = ?, scrap_date = ?, updated_at = ? "
                     "WHERE barcode = ?",
-                    (title, asset, call_no, category, isbn, remarks, publisher, price, quantity, source,
+                    (title, asset, call_no, category, isbn, remarks, publisher, price, quantity, total_amount, source,
                      purchase_date, keeper, confirm_note, inventory_date, scrap_date,
                      now_display(), barcode),
                 )
@@ -3537,10 +3545,10 @@ class Handler(SimpleHTTPRequestHandler):
                     )
             else:
                 conn.execute(
-                    "INSERT INTO books (barcode, title, asset_id, status, remarks, call_no, category, isbn, publisher, price, quantity, source, purchase_date, keeper, confirm_note, inventory_date, scrap_date, created_at, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO books (barcode, title, asset_id, status, remarks, call_no, category, isbn, publisher, price, quantity, total_amount, source, purchase_date, keeper, confirm_note, inventory_date, scrap_date, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (barcode, title, asset, status or "在館", remarks, call_no, category, isbn,
-                     publisher, price, quantity, source, purchase_date, keeper,
+                     publisher, price, quantity, total_amount, source, purchase_date, keeper,
                      confirm_note, inventory_date, scrap_date,
                      now_display(), now_display()),
                 )
