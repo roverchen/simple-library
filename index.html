@@ -322,10 +322,8 @@
             <small style="color:#666;">條碼槍可連續掃描，掃完自動清空並準備下一本。選「📌 預約」時掃描只會建立預約；否則掃描會直接借書／還書。不使用條碼槍時請改用下方相機按鈕。</small>
         </div>
         <div id="loanActionGrid" class="action-grid">
-            <button onclick="initiateScan('borrow')" class="btn-main btn-borrow">📤 借書</button>
-            <button onclick="initiateScan('return')" class="btn-main btn-return">📥 還書</button>
-            <button onclick="batchReturnBooks()" class="btn-main" style="background:#666; color:white;">📥 批次還書</button>
-            <button onclick="reserveCurrentBook()" class="btn-main" style="background:#8e24aa; color:white;">📌 預約此書</button>
+            <button onclick="setMode('borrow')" class="btn-main btn-borrow">📤 借書／預約</button>
+            <button onclick="setMode('return')" class="btn-main btn-return">📥 還書</button>
             <button onclick="toggleReturnBoxMode()" class="btn-main" style="background:#4caf50; color:white;">📦 還書箱模式：關閉</button>
         </div>
         <div id="reservationSection" style="margin-top:16px;">
@@ -2290,20 +2288,21 @@
         if (classes.length) sel.value = classes[0];
     }
 
-    function initiateScan(mode) {
-        if (mode !== 'manage') { if (!currentLoanMember) { alert("⚠️ 請先選擇借閱人！"); return; } }
+    function setMode(mode) {
+        if (mode === 'borrow') {
+            if (!currentLoanMember) { alert("⚠️ 請先選擇借閱人！"); return; }
+        }
         currentMode = mode;
         lastScan = { code: '', time: 0 };
         clearScanStatus();
 
-        // 條碼槍與相機共用模式，讓老師切換後不必再設定一次
+        // 條碼槍與相機共用模式
         const gunMode = document.getElementById('gunMode');
         if (gunMode && (mode === 'borrow' || mode === 'return')) gunMode.value = mode;
 
         const title = document.getElementById('scanModeTitle');
-        if (mode === 'borrow') title.innerHTML = `<span style="color:var(--primary)">📤 正在借書掃描...</span>`;
-        else if (mode === 'return') title.innerHTML = `<span style="color:var(--secondary)">📥 正在還書掃描...</span>`;
-        else title.innerHTML = `<span style="color:var(--dark)">🔍 掃描條碼以新增或修改...</span>`;
+        if (mode === 'borrow') title.innerHTML = `<span style="color:var(--primary)">📤 正在借書／預約掃描...</span>`;
+        else if (mode === 'return') title.innerHTML = `<span style="color:var(--secondary)">📥 正在還書掃描（無需選成員）...</span>`;
 
         document.getElementById('mainContainer').classList.add('scanning-active');
         const wrapper = document.getElementById('reader-wrapper');
@@ -2401,18 +2400,43 @@
             showScanStatus('✅ 已清除重來', 'ok');
             return;
         }
-        // 還書箱模式：掃描書籍條碼直接還書，不需選成員
-        if (returnBoxMode && bookDatabase[barcode]) {
-            if (!barcode) { showScanStatus('❌ 條碼為空', 'err'); return; }
-            if (isDuplicateScan(barcode)) return;
+        // 借書/還書指令條碼（v2.1 5.2）：支援 "borrow:<條碼>" 與 "return:<條碼>" 開頭的指令 QR
+        if (code.startsWith('borrow:')) { mode = 'borrow'; barcode = code.slice('borrow:'.length).trim(); }
+        else if (code.startsWith('return:')) { mode = 'return'; barcode = code.slice('return:'.length).trim(); }
+        if (!barcode) { showScanStatus('❌ 指令條碼缺少條碼', 'err'); return; }
+        if (isDuplicateScan(barcode)) return;
+        
+        // 借書模式：必須先選會員，再掃書籍條碼
+        if (mode === 'borrow') {
+            if (!currentLoanMember) {
+                showScanStatus('⚠️ 請先選擇借閱人！', 'err');
+                return;
+            }
+            if (!bookDatabase[barcode]) {
+                showScanStatus('❌ 無此圖書條碼', 'err');
+                return;
+            }
+            scanQueue = scanQueue
+                .then(() => processScan(barcode, 'borrow'))
+                .catch(err => showScanStatus(`❌ ${err.message || '處理失敗'}`, 'err'));
+            return;
+        }
+        
+        // 還書模式：掃描書籍條碼直接還書，不需選成員
+        if (mode === 'return') {
+            if (!bookDatabase[barcode]) {
+                showScanStatus('❌ 無此圖書條碼', 'err');
+                return;
+            }
             scanQueue = scanQueue
                 .then(() => processScan(barcode, 'return'))
                 .catch(err => showScanStatus(`❌ ${err.message || '處理失敗'}`, 'err'));
             return;
         }
+        
         // 成員條碼（SA01 / T001 等）：先檢查本機圖書（快），再查詢成員條碼 API
         if (bookDatabase[barcode]) {
-            // 圖書條碼：交給 processScan 處理
+            // 圖書條碼：交給 processScan 處理（非 borrow/return 模式情況，如管理頁面掃描）
         } else {
             try {
                 const m = await api('GET', '/api/member/by-barcode?barcode=' + encodeURIComponent(barcode));
@@ -2452,6 +2476,7 @@
             showScanStatus(`✅ 已選擇成員：${name}`, 'ok');
             return;
         }
+        // 借書／還書指令條碼（如未在此分支處理）
         if (code.startsWith('borrow:')) { mode = 'borrow'; barcode = code.slice('borrow:'.length).trim(); }
         else if (code.startsWith('return:')) { mode = 'return'; barcode = code.slice('return:'.length).trim(); }
         if (!barcode) { showScanStatus('❌ 指令條碼缺少條碼', 'err'); return; }
