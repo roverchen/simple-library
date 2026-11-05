@@ -890,6 +890,24 @@ def run_auto_backup():
                 os.remove(os.path.join(backup_dir, old))
             except OSError:
                 pass
+        # 同步到雲端備份目錄（若設定）
+        cloud_backup_dir = get_setting(conn, "backup_cloud_dir", "")
+        if cloud_backup_dir and os.path.isdir(cloud_backup_dir):
+            try:
+                cloud_path = os.path.join(cloud_backup_dir, filename)
+                import shutil
+                shutil.copy2(path, cloud_path)
+                # 雲端備份也保留 10 天
+                cloud_files = sorted(
+                    f for f in os.listdir(cloud_backup_dir) if f.startswith("backup-") and f.endswith(".json")
+                )
+                for old in cloud_files[:-BACKUP_RETENTION]:
+                    try:
+                        os.remove(os.path.join(cloud_backup_dir, old))
+                    except OSError:
+                        pass
+            except Exception as e:
+                print("雲端備份同步失敗：", e)
         # 記錄最後備份日期
         conn.execute(
             "INSERT OR REPLACE INTO settings (key, value) VALUES ('last_backup_date', ?)",
@@ -1158,7 +1176,7 @@ class Handler(SimpleHTTPRequestHandler):
         for part in header.split(";"):
             if "=" in part:
                 key, value = part.strip().split("=", 1)
-                result[key] = value
+                result[key.strip()] = value.strip()
         return result
 
     def require_session(self, conn):
@@ -1407,6 +1425,10 @@ class Handler(SimpleHTTPRequestHandler):
             if path == "/api/security-question" and method == "PUT":
                 require_permission(conn, token, "loan")
                 return self.api_security_question_put(conn)
+
+            if path == "/api/category" and method == "GET":
+                require_permission(conn, token, "loan")
+                return self.api_category_by_barcode(conn, query)
 
             if path == "/api/loan-rules" and method == "GET":
                 return self.send_json({
@@ -3609,6 +3631,34 @@ class Handler(SimpleHTTPRequestHandler):
         self._audit(conn, token, "刪除主題分類", target=code)
         return self.send_json({"ok": True})
 
+    def api_category_by_barcode(self, conn, query):
+        """依條碼查詢對應分類資訊（用於掃描條碼時自動顯示分類）。"""
+        token = self.cookies().get("sid")
+        require_permission(conn, token, "loan")
+
+        barcode = (query.get("barcode") or [""])[0].strip()
+        if not barcode:
+            raise ApiError(400, "請提供條碼")
+
+        row = conn.execute(
+            "SELECT c.code, c.name, c.color FROM categories c "
+            "JOIN books b ON b.category = c.code WHERE b.barcode = ? AND b.active = 1",
+            (barcode,),
+        ).fetchone()
+
+        if not row:
+            return self.send_json({
+                "category": "",
+                "categoryName": "",
+                "color": "",
+            })
+
+        return self.send_json({
+            "category": row["code"],
+            "categoryName": row["name"],
+            "color": row["color"],
+        })
+
     def api_book_action(self, conn, barcode, action, token=None):
         if action not in ("scrap", "restore"):
             raise ApiError(404, "找不到動作：{}".format(action))
@@ -4392,6 +4442,7 @@ class Handler(SimpleHTTPRequestHandler):
         """取得備份設定（目錄與時間）。"""
         return self.send_json({
             "backupDir": get_setting(conn, "backup_dir", os.path.join("data", "backups")),
+            "backupCloudDir": get_setting(conn, "backup_cloud_dir", ""),
             "backupTime": get_setting(conn, "backup_time", "02:00"),
             "backupRetention": BACKUP_RETENTION,
         })
@@ -4402,6 +4453,7 @@ class Handler(SimpleHTTPRequestHandler):
         data = self.read_json()
         backup_dir = _clean_text(data.get("backupDir") or "", "備份目錄", 255)
         backup_time = _clean_text(data.get("backupTime") or "", "備份時間", 10)
+        backup_cloud_dir = _clean_text(data.get("backupCloudDir") or "", "雲端備份目錄", 255)
         if backup_time:
             try:
                 hh, mm = backup_time.split(":")
@@ -4412,10 +4464,12 @@ class Handler(SimpleHTTPRequestHandler):
                 raise ApiError(400, "備份時間格式錯誤（請用 HH:MM，例如 02:00）")
             backup_time = "{:02d}:{:02d}".format(hh, mm)
         conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('backup_dir', ?)", (backup_dir,))
+        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('backup_cloud_dir', ?)", (backup_cloud_dir,))
         if backup_time:
             conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('backup_time', ?)", (backup_time,))
         self._audit(conn, token, "修改備份設定",
-                    detail="目錄：{}，時間：{}".format(backup_dir or "(預設)", backup_time or "(預設 02:00)"))
+                    detail="本機目錄：{}，雲端目錄：{}，時間：{}".format(
+                        backup_dir or "(預設)", backup_cloud_dir or "(未設定)", backup_time or "(預設 02:00)"))
         return self.send_json({"ok": True})
 
     def api_reset_student_ids(self, conn):
