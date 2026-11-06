@@ -1094,7 +1094,8 @@
             } else {
                 statsEl.style.display = '';
                 statsEl.innerHTML = '全部館藏：共 <b>' + st.kinds + '</b> 種書目、<b>' + st.copies +
-                    '</b> 本實體複本（在館 ' + st.inLibrary + ' 本／借出 ' + st.loaned + ' 本）。';
+                    '</b> 本實體複本（在館 ' + st.inLibrary + ' 本／借出 ' + st.loaned + ' 本' +
+                    (st.other ? '／其他狀態 ' + st.other + ' 本' : '') + '）。';
             }
             const items = data.items || [];
             if (!items.length) {
