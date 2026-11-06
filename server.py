@@ -1893,6 +1893,19 @@ class Handler(SimpleHTTPRequestHandler):
                 require_permission(conn, token, "book")
                 return self.api_categories_list(conn)
 
+            if method == "GET" and path == "/api/call-no/preview":
+                require_permission(conn, token, "book")
+                category = (query.get("category") or [""])[0].strip()
+                title = (query.get("title") or [""])[0].strip()
+                if not category or not title:
+                    return self.send_json({"ok": True, "callNo": ""})
+                valid = {r["code"] for r in conn.execute(
+                    "SELECT code FROM categories WHERE active = 1"
+                )}
+                if category not in valid:
+                    raise ApiError(400, "主題分類代碼不合法：{}".format(category))
+                return self.send_json({"ok": True, "callNo": auto_call_no(category, title)})
+
             if method == "PUT" and path == "/api/categories":
                 require_permission(conn, token, "config")
                 return self.api_categories_upsert(conn)

@@ -1997,7 +1997,10 @@
         document.getElementById('bookModalTitle').textContent = '✏️ 編輯圖書';
         document.getElementById('bookModalError').textContent = '';
         renderBookModalFields();
-        loadCategories();
+        loadCategories().then(() => {
+            const bcSel = document.getElementById('bfCategory');
+            if (bcSel && book && book.category) bcSel.value = book.category;
+        });
         document.getElementById('bookModal').classList.add('open');
     }
 
@@ -2071,11 +2074,11 @@
                 ${book.status === '借出' ? '<option value="借出" selected>借出（目前借閱中）</option>' : ''}
             </select>`}
             <label for="bfCategory">主題分類（4.5 索書號自動產生）</label>
-            <select id="bfCategory" data-name="category">
+            <select id="bfCategory" data-name="category" onchange="previewCallNo()">
                 <option value="">（未設定分類）</option>
             </select>
             <label for="bfCallNo">索書號（call_no）</label>
-            <input type="text" id="bfCallNo" data-name="callNo" value="${escapeHtml(book.callNo || '')}">
+            <input type="text" id="bfCallNo" data-name="callNo" value="${escapeHtml(book.callNo || '')}" onblur="previewCallNo()">
             <label for="bfIsbn">ISBN</label>
             <input type="text" id="bfIsbn" data-name="isbn" value="${escapeHtml(book.isbn || '')}">
             <label for="bfPublisher">出版社</label>
@@ -2145,6 +2148,23 @@
         } catch (err) {
             errorEl.textContent = err.message;
         }
+    }
+
+    async function previewCallNo() {
+        const catEl = document.getElementById('bfCategory');
+        const titleEl = document.getElementById('bfTitle');
+        const callNoEl = document.getElementById('bfCallNo');
+        if (!catEl || !titleEl || !callNoEl) return;
+        const category = (catEl.value || '').trim();
+        const title = (titleEl.value || '').trim();
+        if (!category || !title) return;
+        // 只在索書號為空時自動填入，避免覆蓋使用者手動輸入
+        if ((callNoEl.value || '').trim()) return;
+        try {
+            const res = await api('GET', '/api/call-no/preview?category=' + encodeURIComponent(category) +
+                '&title=' + encodeURIComponent(title));
+            if (res && res.callNo) callNoEl.value = res.callNo;
+        } catch (_) { /* 預覽失敗不阻斷 */ }
     }
 
     async function submitBookModal() {
