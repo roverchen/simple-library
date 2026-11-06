@@ -467,7 +467,7 @@
         <div class="input-group">
             <label>🏷️ 主題分類與索書號（4.5）</label>
             <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
-                <select id="categorySelect" style="min-width:170px; padding:8px; border:1px solid #ccc; border-radius:5px;"></select>
+                <select id="categorySelect" style="min-width:170px; padding:8px; border:1px solid #ccc; border-radius:5px;" onchange="fillCategoryForm(this.value)"></select>
                 <input type="text" id="categoryName" placeholder="分類名稱（如 語文與故事）" style="padding:8px; border:1px solid #ccc; border-radius:5px; min-width:140px;">
                 <input type="text" id="categoryCode" placeholder="代碼（如 D）" style="padding:8px; border:1px solid #ccc; border-radius:5px; width:110px;">
                 <input type="text" id="categoryColor" placeholder="顏色（如 綠色）" style="padding:8px; border:1px solid #ccc; border-radius:5px; min-width:110px;">
@@ -3192,6 +3192,8 @@
         } catch (err) { alert("❌ " + err.message); }
     }
 
+    let allCategories = [];
+
     // --- 主題分類（4.5 索書號自動產生） ---
     async function loadCategories() {
         const sel = document.getElementById('categorySelect');
@@ -3200,13 +3202,14 @@
         try {
             const data = await api('GET', '/api/categories');
             const cats = data.categories || [];
+            allCategories = cats;
             if (sel) {
-                sel.innerHTML = '<option value="">（未選擇分類）</option>' +
+                sel.innerHTML = '<option value="">（新增分類）</option>' +
                     cats.map(c => `<option value="${escapeHtml(c.code)}">${escapeHtml(c.code)} ${escapeHtml(c.name)}（${escapeHtml(c.color)}）</option>`).join('');
             }
             if (listEl) {
                 listEl.innerHTML = cats.map(c =>
-                    `<span style="display:inline-block; margin:2px 6px; padding:2px 8px; border:1px solid #ccc; border-radius:10px; font-size:0.85rem;">
+                    `<span style="display:inline-block; margin:2px 6px; padding:2px 8px; border:1px solid #ccc; border-radius:10px; font-size:0.85rem; cursor:pointer;" onclick="fillCategoryForm('${escapeHtml(c.code)}')" title="點擊載入編輯">
                     ${escapeHtml(c.code)} ${escapeHtml(c.name)}（${escapeHtml(c.color)}）</span>`).join('') || '<span style="color:#999;">尚無分類</span>';
             }
             if (bcSel) {
@@ -3315,6 +3318,22 @@
         } catch (err) { alert("❌ " + err.message); }
     }
 
+    function fillCategoryForm(code) {
+        const c = (allCategories || []).find(x => x.code === code);
+        const nameEl = document.getElementById('categoryName');
+        const codeEl = document.getElementById('categoryCode');
+        const colorEl = document.getElementById('categoryColor');
+        if (!c) {
+            if (nameEl) nameEl.value = '';
+            if (codeEl) codeEl.value = '';
+            if (colorEl) colorEl.value = '';
+            return;
+        }
+        if (nameEl) nameEl.value = c.name || '';
+        if (codeEl) codeEl.value = c.code || '';
+        if (colorEl) colorEl.value = c.color || '';
+    }
+
     async function saveCategory() {
         const name = (document.getElementById('categoryName') || {}).value.trim();
         const code = (document.getElementById('categoryCode') || {}).value.trim().toUpperCase();
@@ -3326,6 +3345,8 @@
             document.getElementById('categoryName').value = '';
             document.getElementById('categoryCode').value = '';
             document.getElementById('categoryColor').value = '';
+            const sel = document.getElementById('categorySelect');
+            if (sel) sel.value = '';
             loadCategories();
         } catch (err) { alert("❌ " + err.message); }
     }
@@ -3337,6 +3358,10 @@
         try {
             await api('DELETE', '/api/categories/' + encodeURIComponent(code));
             document.getElementById('categoryCode').value = '';
+            const sel = document.getElementById('categorySelect');
+            if (sel) sel.value = '';
+            document.getElementById('categoryName').value = '';
+            document.getElementById('categoryColor').value = '';
             loadCategories();
         } catch (err) { alert("❌ " + err.message); }
     }
