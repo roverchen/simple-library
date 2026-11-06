@@ -22,6 +22,23 @@
         
         /* 導覽列 */
         .nav { display: none; gap: 5px; margin-bottom: 20px; border-bottom: 2px solid #eee; padding-bottom: 10px; flex-wrap: wrap; }
+        .nav-brand {
+            flex-basis: 100%;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 4px;
+            padding: 12px 16px;
+            background: linear-gradient(135deg, #eef5fd 0%, #f8fbff 100%);
+            border: 1px solid #dbe7f3;
+            border-radius: 10px;
+            color: #245a86;
+            font-size: 1.12rem;
+            font-weight: 700;
+            letter-spacing: .04em;
+            line-height: 1.35;
+        }
+        .nav-brand::before { content: "📚"; font-size: 1.35rem; letter-spacing: 0; }
         .nav button { flex: 1; min-width: 80px; background: #eee; border: none; padding: 12px 5px; cursor: pointer; border-radius: 8px; font-weight: bold; }
         .nav button.active { background: var(--secondary); color: white; }
 
@@ -87,6 +104,11 @@
         .badge-scrap { background-color: var(--danger); }
         .badge-loaned { background-color: var(--warning); }
         .badge-in { background-color: var(--primary); }
+        .badge-lost { background-color: #c62828; }
+        .badge-repair { background-color: #6a1b9a; }
+        .badge-dispute { background-color: #ad1457; }
+        .badge-reserved { background-color: #00838f; }
+        .badge-ready { background-color: #00695c; }
 
         /* 表格內操作按鈕 */
         .btn-action { padding: 6px 10px; border-radius: 5px; font-size: 0.85rem; font-weight: bold; cursor: pointer; margin-right: 5px; background: #fff; }
@@ -183,6 +205,8 @@
         @media (max-width: 640px) {
             .container { padding: 12px; margin: 6px auto; border-radius: 8px; }
             .nav { flex-wrap: wrap; }
+            .nav-brand { font-size: 1rem; padding: 10px 12px; gap: 8px; }
+            .nav-brand::before { font-size: 1.2rem; }
             .nav button { flex: 1 1 auto; min-width: 88px; padding: 10px 6px; font-size: 0.92rem; }
             body { font-size: 15px; }
             input, select, textarea, button, table { font-size: 1rem; }
@@ -234,14 +258,15 @@
             <input type="password" id="loginPwd" placeholder="管理密碼">
             <button onclick="handleLogin()" class="btn-main btn-return" style="width: 100%; padding: 15px; margin-top: 10px;">登入</button>
             <button onclick="openForgotModal()" class="btn-action" style="width: 100%; margin-top: 10px; padding: 10px; background:#666; color:white; border:none; border-radius:5px;">🔑 忘記密碼？</button>
-            <a id="manualLink" href="docs/使用說明書.html" target="_blank" rel="noopener"
+            <a id="manualLink" href="docs/操作手冊.html" target="_blank" rel="noopener"
                style="display:inline-flex; align-items:center; gap:6px; margin-top:14px; padding:8px 14px;
                       color:#2c5f8a; background:#f0f5fb; border:1px solid #d5deea; border-radius:6px;
-                      font-size:0.92rem; text-decoration:none;">📖 操作說明書</a>
+                      font-size:0.92rem; text-decoration:none;">📖 操作手冊</a>
         </div>
     </div>
 
     <div class="nav no-print" id="mainNav">
+        <div class="nav-brand">海育非營利幼兒園圖書管理系統</div>
         <button onclick="changeTab('dashboardPage')" id="btn-dashboardPage">📊 儀表板</button>
         <button onclick="changeTab('loanPage')" id="btn-loanPage">借還書</button>
         <button onclick="changeTab('queryPage')" id="btn-queryPage">🔍 館藏查詢</button>
@@ -279,12 +304,12 @@
         <div class="input-group">
             <div style="display:flex; gap:8px; flex-wrap:wrap;">
                 <input type="text" id="queryKeyword" placeholder="輸入書名／ISBN／財產編號／索書號（可掃描 ISBN）" autocomplete="off"
-                       style="flex:1; min-width:220px;" onkeydown="if(event.key==='Enter') runBookQuery()">
-                <select id="queryPublisher" style="min-width:140px;"><option value="">全部出版社</option></select>
+                       style="flex:1; min-width:220px;" oninput="scheduleBookQuery()">
+                <select id="queryPublisher" style="min-width:140px;" onchange="scheduleBookQuery()"><option value="">全部出版社</option></select>
                 <button onclick="runBookQuery()" style="padding:10px 16px; background:var(--primary); color:white; border:none; border-radius:5px;">🔎 查詢</button>
                 <button onclick="clearBookQuery()" style="padding:10px 12px; background:#666; color:white; border:none; border-radius:5px;">✕ 清除</button>
             </div>
-            <small style="color:#666;">支援直接掃描 ISBN 條碼或手動輸入書名檢索；相同 ISBN（或書名）的多本實體書會自動彙整。</small>
+            <small style="color:#666;">輸入關鍵字或選擇出版社即自動查詢；支援直接掃描 ISBN 條碼；相同 ISBN（或書名）的多本實體書會自動彙整。</small>
         </div>
         <div id="queryStats" class="query-stats" style="display:none;"></div>
         <div id="queryResults" style="color:#666; margin-top:10px;">請輸入關鍵字或直接按「查詢」列出全部館藏。</div>
@@ -324,7 +349,6 @@
         <div id="loanActionGrid" class="action-grid">
             <button onclick="setMode('borrow')" class="btn-main btn-borrow">📤 借書／預約</button>
             <button onclick="setMode('return')" class="btn-main btn-return">📥 還書</button>
-            <button onclick="toggleReturnBoxMode()" class="btn-main" style="background:#4caf50; color:white;">📦 還書箱模式：關閉</button>
         </div>
         <div id="reservationSection" style="margin-top:16px;">
             <h3 style="margin:0;">📌 進行中預約</h3>
@@ -370,6 +394,9 @@
         </div>
         <div class="input-group">
             <input type="text" id="bookManageSearchInput" placeholder="🔍 搜尋書名／財產編號／索書號／ISBN 關鍵字" oninput="searchBooks();" style="padding:10px; border:1px solid #ccc; border-radius:8px; font-size:1rem; width:100%;">
+            <label style="display:flex; align-items:center; gap:8px; margin-top:8px; font-size:0.95rem; color:#555; cursor:pointer;">
+                <input type="checkbox" id="bookOnlyReserved" style="width:auto; margin:0;" onchange="searchBooks();"> 只看有預約的書
+            </label>
         </div>
         <div class="table-container">
             <table id="bookTable">
@@ -498,9 +525,6 @@
         <hr>
         <div class="input-group">
             <label>📥 批次匯入（圖書 / 學生與老師名單）</label>
-        <hr>
-        <div class="input-group">
-            <label>📥 批次匯入（圖書 / 學生與老師名單）</label>
             <div style="display:flex; gap:8px; flex-wrap:wrap;">
                 <button onclick="downloadMemberTemplate()" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 下載名單 Excel／CSV 範本</button>
                 <button onclick="openMemberImportPicker()" style="padding:10px; background:var(--secondary); color:white; border:none; border-radius:5px;">📥 名單批次匯入</button>
@@ -612,7 +636,7 @@
 
     <div id="reportPage" class="page">
         <div class="no-print" style="margin-bottom: 20px; display: flex; gap: 10px;">
-            <button onclick="window.print()" style="padding:12px; background:#607d8b; color:white; border:none; border-radius:8px; flex:1;">🖨️ 列印目前模式</button>
+            <button onclick="printCurrentReport()" style="padding:12px; background:#607d8b; color:white; border:none; border-radius:8px; flex:1;">🖨️ 列印目前模式</button>
             <button onclick="togglePrintMode()" id="printModeBtn" style="padding:12px; background:var(--secondary); color:white; border:none; border-radius:8px; flex:1;">切換至：標籤模式</button>
         </div>
 
@@ -903,23 +927,6 @@
     </div>
 </div>
 
-<!-- 管理員功能二次密碼驗證（規格 0.2：系統管理員功能需再次輸入密碼） -->
-<div class="modal-overlay" id="adminConfirmModal">
-    <div class="modal-box" style="max-width:380px;">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-            <h3>🔐 管理員身份驗證</h3>
-            <button type="button" class="modal-close" onclick="closeAdminConfirmModal()" aria-label="關閉">✕</button>
-        </div>
-        <p class="modal-hint">請輸入管理密碼以使用「{targetName}」功能。</p>
-        <input type="password" id="adminConfirmPwd" placeholder="管理密碼" autocomplete="current-password">
-        <p class="modal-error" id="adminConfirmError"></p>
-        <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;">
-            <button type="button" class="btn-secondary" onclick="closeAdminConfirmModal()">取消</button>
-            <button type="button" class="btn-primary" onclick="submitAdminConfirm()">確認</button>
-        </div>
-    </div>
-</div>
-
 <script>
     // 資料以伺服器端的 SQLite 為準；前端只保留本次操作所需的快取。
     let config = { classes: [] };
@@ -934,9 +941,7 @@
     let isLabelMode = false; // 控制報表顯示模式
     let scanQueue = Promise.resolve();
     let currentUser = { username: 'admin', role: 'admin', permissions: {} };
-    let adminConfirmTarget = null; // 規格 0.2：待驗證後要切換的管理員頁面
     let currentLoanMember = null; // { className, userName, memberType }
-    let returnBoxMode = false; // 還書箱模式：開啟後掃描書籍條碼直接還書，不需選成員
 
     // --- 後端 API ---
     async function api(method, path, body) {
@@ -1056,6 +1061,12 @@
         return qs;
     }
 
+    let queryTimer = null;
+    function scheduleBookQuery() {
+        if (queryTimer) clearTimeout(queryTimer);
+        queryTimer = setTimeout(() => { runBookQuery(); }, 300);
+    }
+
     async function runBookQuery() {
         const box = document.getElementById('queryResults');
         const kw = ((document.getElementById('queryKeyword') || {}).value || '').trim();
@@ -1106,7 +1117,7 @@
                             <td>${escapeHtml(c.assetId || '—')}</td>
                             <td>${escapeHtml(c.barcode)}</td>
                             <td>${escapeHtml(c.callNo || '—')}</td>
-                            <td>${statusBadge(c.status)}</td>
+                            <td>${statusBadge(c.status)}${reservationBadge(c)}</td>
                             <td>${escapeHtml(c.status === '借出'
                                 ? (c.loanedTo || '') + (c.loanClass ? '（' + c.loanClass + '）' : '')
                                 : (c.status === '在館' ? '圖書室' : c.location))}</td>
@@ -1122,6 +1133,35 @@
         const map = { '在館': '#2e7d32', '借出': '#e65100', '遺失': '#c62828', '修繕中': '#6a1b9a', '爭議中': '#c62828', '報廢': '#455a64' };
         const color = map[status] || '#555';
         return `<span style="display:inline-block; padding:2px 8px; border-radius:10px; background:${color}; color:#fff; font-size:0.85rem;">${escapeHtml(status)}</span>`;
+    }
+
+    // 圖書狀態標籤（在館／借出／遺失／修繕中／爭議中／報廢）
+    function bookStatusBadge(status) {
+        const map = {
+            '在館': 'badge-in', '借出': 'badge-loaned', '遺失': 'badge-lost',
+            '修繕中': 'badge-repair', '爭議中': 'badge-dispute', '報廢': 'badge-scrap'
+        };
+        const cls = map[status] || 'badge-in';
+        return `<span class="badge ${cls}">${escapeHtml(status || '在館')}</span>`;
+    }
+
+    // 預約標記：顯示排隊人數；有人候取時優先顯示「候取」
+    function reservationBadge(book) {
+        const count = Number((book && book.reservationCount) || 0);
+        if (!count) return '';
+        if (book.reservationReady) return ' <span class="badge badge-ready">候取</span>';
+        return ` <span class="badge badge-reserved">預約 ${count}</span>`;
+    }
+
+    // 狀態欄的完整呈現：館藏狀態＋借閱人／預約人數
+    function bookStatusCell(book) {
+        const statusText = (book && book.status) || ((book && book.loanedTo) ? '借出' : '在館');
+        let html = bookStatusBadge(statusText);
+        if (book && book.loanedTo && !['遺失', '修繕中', '爭議中', '報廢'].includes(statusText)) {
+            html += ` <span style="color:#666; font-size:0.85rem;">${escapeHtml(book.loanedTo)}</span>`;
+        }
+        html += reservationBadge(book);
+        return html;
     }
 
     function clearBookQuery() {
@@ -1981,6 +2021,9 @@
                 dueAt: b.dueAt || null,
                 count: b.count || 0,
                 remarks: b.remarks || '',
+                reservationStatus: b.reservationStatus || '無被預約',
+                reservationCount: b.reservationCount || 0,
+                reservationReady: !!b.reservationReady,
                 callNo: b.callNo || '',
                 category: b.category || '',
                 isbn: b.isbn || '',
@@ -2025,6 +2068,14 @@
             <input type="text" id="bfAssetId" data-name="assetId" value="${escapeHtml(book.assetId || '')}">
             <label for="bfTitle">書名</label>
             <input type="text" id="bfTitle" data-name="title" value="${escapeHtml(book.title || '')}">
+            <label for="bfStatus">狀態</label>
+            ${book.status === '報廢'
+                ? `<input type="text" id="bfStatus" value="報廢（請先按下方「取消報廢」）" readonly style="background:#f5f5f5;">`
+                : `<select id="bfStatus" data-name="status">
+                ${['在館', '遺失', '修繕中', '爭議中'].map(s =>
+                    `<option value="${s}"${book.status === s ? ' selected' : ''}>${s}</option>`).join('')}
+                ${book.status === '借出' ? '<option value="借出" selected>借出（目前借閱中）</option>' : ''}
+            </select>`}
             <label for="bfCategory">主題分類（4.5 索書號自動產生）</label>
             <select id="bfCategory" data-name="category">
                 <option value="">（未設定分類）</option>
@@ -2058,7 +2109,11 @@
             <label for="bfScrapDate">報廢日期（民國年）</label>
             <input type="text" id="bfScrapDate" data-name="scrapDate" value="${escapeHtml(book.scrapDate || '')}">
             <label for="bfReservationStatus">預約狀態</label>
-            <input type="text" id="bfReservationStatus" value="${escapeHtml(book.reservationStatus || '無被預約')}" readonly style="background:#f5f5f5;">
+            <input type="text" id="bfReservationStatus" value="${escapeHtml(
+                Number(book.reservationCount || 0) > 0
+                    ? `有被預約（排隊 ${book.reservationCount} 人${book.reservationReady ? '，1 人候取' : ''}）`
+                    : '無被預約'
+            )}" readonly style="background:#f5f5f5;">
             <label for="bfRemarks">備註</label>
             <input type="text" id="bfRemarks" data-name="remarks" value="${escapeHtml(book.remarks || '')}">
         `;
@@ -2111,6 +2166,7 @@
             const res = await api('PUT', '/api/books/' + encodeURIComponent(barcode), {
                 title: values.title.trim(),
                 assetId: values.assetId.trim(),
+                status: (values.status || '').trim(),
                 callNo: (values.callNo || '').trim(),
                 isbn: (values.isbn || '').trim(),
                 publisher: (values.publisher || '').trim(),
@@ -2258,76 +2314,56 @@
             }[pageId] + '」功能，請洽系統管理員開啟。');
             return;
         }
-        // 規格 0.2：系統管理員功能需再次輸入密碼才能使用
-        if (pageId === 'configPage' || pageId === 'reportPage') {
-            adminConfirmTarget = pageId;
-            document.getElementById('adminConfirmModal').classList.add('open');
-            document.getElementById('adminConfirmPwd').value = '';
-            document.getElementById('adminConfirmError').textContent = '';
-            document.getElementById('adminConfirmPwd').focus();
-            return;
-        }
-        if (html5QrCode) stopScanner();
-        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-        document.querySelectorAll('.nav button').forEach(b => b.classList.remove('active'));
-        document.getElementById(pageId).classList.add('active');
-        document.getElementById('btn-' + pageId).classList.add('active');
+        activatePage(pageId);
         if(pageId === 'dashboardPage') loadDashboard();
         if(pageId === 'queryPage') initQueryPage();
         if(pageId === 'classPage') { loadMemberAccounts(); populateMemberQRClass(); }
-        if(pageId === 'managePage') renderBookTable();
+        if(pageId === 'managePage') { refreshManageBooks(); return; }
         if(pageId === 'loanPage') focusGunInput();
         if(pageId === 'configPage') { loadRecoverySettings(); renderAuditTable(); loadBackupSettings(); loadCategories(); loadSecurityQuestion(); }
         if(pageId === 'reportPage') {
-            isLabelMode = false;
-            document.getElementById('logReportSection').style.display = 'block';
-            document.getElementById('tagReportSection').style.display = 'none';
-            document.getElementById('printModeBtn').innerText = "切換至：標籤模式";
+            showLogReportMode();
             reportPage = 1;
             renderReportTable();
         }
     }
 
-    // 規格 0.2：管理員二次密碼驗證
-    function closeAdminConfirmModal() {
-        document.getElementById('adminConfirmModal').classList.remove('open');
-        adminConfirmTarget = null;
-        document.getElementById('adminConfirmError').textContent = '';
+    // 切換頁面：先確認目標存在，避免任何錯誤造成「全部頁面都被隱藏」的空白畫面。
+    function activatePage(pageId) {
+        const el = pageId ? document.getElementById(pageId) : null;
+        if (!el) return false;
+        if (html5QrCode) stopScanner();
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        document.querySelectorAll('.nav button').forEach(b => b.classList.remove('active'));
+        el.classList.add('active');
+        const btn = document.getElementById('btn-' + pageId);
+        if (btn) btn.classList.add('active');
+        return true;
     }
 
-    async function submitAdminConfirm() {
-        const pwd = document.getElementById('adminConfirmPwd').value;
-        if (!pwd) {
-            document.getElementById('adminConfirmError').textContent = '請輸入管理密碼';
-            return;
-        }
-        try {
-            const res = await api('POST', '/api/login', { password: pwd });
-            if (res.ok) {
-                const target = adminConfirmTarget;
-                closeAdminConfirmModal();
-                if (html5QrCode) stopScanner();
-                document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-                document.querySelectorAll('.nav button').forEach(b => b.classList.remove('active'));
-                document.getElementById(target).classList.add('active');
-                document.getElementById('btn-' + target).classList.add('active');
-                if (target === 'configPage') {
-                    loadRecoverySettings(); renderAuditTable(); loadBackupSettings(); loadCategories(); loadSecurityQuestion();
-                }
-                if (target === 'reportPage') {
-                    isLabelMode = false;
-                    document.getElementById('logReportSection').style.display = 'block';
-                    document.getElementById('tagReportSection').style.display = 'none';
-                    document.getElementById('printModeBtn').innerText = "切換至：標籤模式";
-                    reportPage = 1;
-                    renderReportTable();
-                }
-            } else {
-                document.getElementById('adminConfirmError').textContent = '密碼錯誤';
-            }
-        } catch (err) {
-            document.getElementById('adminConfirmError').textContent = err.message || '驗證失敗';
-        }
+    // 回到報表的「紀錄模式」，並清掉可能殘留的標籤列印狀態。
+    function showLogReportMode() {
+        isLabelMode = false;
+        ['logReportSection', 'overdueReportSection', 'inventoryReportSection',
+         'memberHistorySection', 'yearStatsSection'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.style.display = 'block';
+        });
+        const tag = document.getElementById('tagReportSection');
+        if (tag) tag.style.display = 'none';
+        const btn = document.getElementById('printModeBtn');
+        if (btn) btn.innerText = "切換至：標籤模式";
+        document.body.classList.remove('printing-label');
+        const area = document.getElementById('singleLabelArea');
+        if (area) area.innerHTML = '';
+    }
+
+    // 列印目前報表模式：先清掉單張標籤列印殘留的狀態，避免印出空白。
+    function printCurrentReport() {
+        document.body.classList.remove('printing-label');
+        const area = document.getElementById('singleLabelArea');
+        if (area) area.innerHTML = '';
+        window.print();
     }
 
     // --- 其他原有功能保持不變 ---
@@ -2362,9 +2398,13 @@
     }
 
     // 成員輸入框：輸入成員條碼（member:班級:姓名）、姓名、帳號或 Email，自動比對成員
+    let memberSearchTimer = null;
+    let memberSearchSeq = 0;
     function onLoanMemberInput(value) {
         const infoEl = document.getElementById('loanMemberInfo');
         currentLoanMember = null;
+        memberSearchSeq++;
+        clearTimeout(memberSearchTimer);
         infoEl.textContent = '';
         if (!value || !value.trim()) return;
         const v = value.trim();
@@ -2381,22 +2421,39 @@
             return;
         }
 
-        // 在 memberAccounts 中比對姓名／帳號／Email
-        const acct = (memberAccounts || []).find(a =>
-            (a.name || '').includes(v) ||
-            (a.username || '').includes(v) ||
-            (a.email || '').includes(v)
-        );
-        if (acct) {
-            currentLoanMember = {
-                className: acct.className || '',
-                userName: acct.name || '',
-                memberType: (acct.classId === null) ? 'teacher' : 'student'
-            };
-            infoEl.textContent = `✅ 已選擇：${currentLoanMember.userName}（${currentLoanMember.className || '未分班'}，${currentLoanMember.memberType === 'teacher' ? '老師' : '學生'}）`;
-        } else {
-            infoEl.textContent = '⚠️ 找不到成員';
-        }
+        const seq = memberSearchSeq;
+        infoEl.textContent = '🔍 比對成員中…';
+        memberSearchTimer = setTimeout(async () => {
+            try {
+                const data = await api('GET', '/api/member/search?q=' + encodeURIComponent(v));
+                if (seq !== memberSearchSeq) return;
+                const matches = data.matches || [];
+                if (!matches.length) {
+                    infoEl.textContent = '⚠️ 找不到成員';
+                    return;
+                }
+                const lower = v.toLowerCase();
+                const exact = matches.find(m => [m.name, m.username, m.email, m.barcode]
+                    .some(x => (x || '').toLowerCase() === lower));
+                if (!exact && matches.length > 1) {
+                    const names = matches.slice(0, 3)
+                        .map(m => m.name + (m.className ? `（${m.className}）` : ''))
+                        .join('、');
+                    infoEl.textContent = `⚠️ 找到多位成員：${names}…請輸入更完整的姓名／帳號／Email`;
+                    return;
+                }
+                const m = exact || matches[0];
+                currentLoanMember = {
+                    className: m.className || '',
+                    userName: m.name || '',
+                    memberType: m.memberType || 'student'
+                };
+                infoEl.textContent = `✅ 已選擇：${currentLoanMember.userName}（${currentLoanMember.className || '未分班'}，${currentLoanMember.memberType === 'teacher' ? '老師' : '學生'}）`;
+            } catch (err) {
+                if (seq !== memberSearchSeq) return;
+                infoEl.textContent = '⚠️ 成員查詢失敗：' + err.message;
+            }
+        }, 150);
     }
 
     function populateMemberQRClass() {
@@ -2676,26 +2733,33 @@
         if (navigator.vibrate) navigator.vibrate(80);
     }
 
+    async function refreshManageBooks() {
+        const tbody = document.querySelector('#bookTable tbody');
+        if (tbody) tbody.innerHTML = '<tr><td colspan="4" style="color:#666;">載入中…</td></tr>';
+        try {
+            const state = await api('GET', '/api/state');
+            applyState(state);
+        } catch (_) { /* 保留舊資料 */ }
+        renderBookTable();
+    }
     function renderBookTable() {
         const tbody = document.querySelector('#bookTable tbody');
-        const barcodes = Object.keys(bookDatabase);
+        const onlyReserved = document.getElementById('bookOnlyReserved');
+        let barcodes = Object.keys(bookDatabase);
+        if (onlyReserved && onlyReserved.checked) {
+            barcodes = barcodes.filter(barcode => Number((bookDatabase[barcode] || {}).reservationCount || 0) > 0);
+        }
         if (!barcodes.length) {
-            tbody.innerHTML = '<tr><td colspan="4" style="color:#666;">目前沒有圖書資料。</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="4" style="color:#666;">目前沒有符合條件的圖書資料。</td></tr>';
             return;
         }
         tbody.innerHTML = barcodes.map(barcode => {
             const b = bookDatabase[barcode];
-            let statusBadge = '';
-            if(b.status === "報廢") {
-                statusBadge = `<span class="badge badge-scrap">報廢</span>`;
-            } else {
-                statusBadge = b.loanedTo ? `<span class="badge badge-loaned">借出</span>` : `<span class="badge badge-in">在館</span>`;
-            }
             return `<tr data-act="viewBook" data-id="${barcode}" style="cursor:pointer;">
             <td>${escapeHtml(b.title)}</td>
             <td>${escapeHtml(b.assetId)}</td>
             <td>${escapeHtml(b.isbn || '')}</td>
-            <td>${statusBadge}</td>
+            <td>${bookStatusCell(b)}</td>
         </tr>`;
         }).join('');
     }
@@ -3249,18 +3313,6 @@
         } catch (err) { alert("❌ " + err.message); }
     }
 
-    async function toggleReturnBoxMode() {
-        returnBoxMode = !returnBoxMode;
-        const btn = document.querySelector('button[onclick="toggleReturnBoxMode()"]');
-        if (btn) {
-            btn.innerText = returnBoxMode ? '📦 還書箱模式：開啟' : '📦 還書箱模式：關閉';
-            btn.style.background = returnBoxMode ? '#d32f2f' : '#4caf50';
-        }
-        const infoEl = document.getElementById('loanMemberInfo');
-        if (infoEl) infoEl.textContent = returnBoxMode ? '✅ 已啟動還書箱模式，請掃描書籍條碼直接還書' : '';
-        showScanStatus(returnBoxMode ? '✅ 已啟動還書箱模式' : '✅ 已關閉還書箱模式', 'ok');
-    }
-
     async function resetStudentIds() {
         if (!confirm('確定要重設所有學生學號嗎？這會影響條碼掃描識別，請確認後再執行。')) return;
         try {
@@ -3683,11 +3735,18 @@
         tbody.innerHTML = '<tr><td colspan="4" style="color:#666;">載入中…</td></tr>';
         try {
             const data = await api('GET', '/api/books/search?keyword=' + encodeURIComponent(keyword));
-            const list = data.books || [];
+            const onlyReserved = document.getElementById('bookOnlyReserved');
+            let list = data.books || [];
+            if (onlyReserved && onlyReserved.checked) {
+                list = list.filter(b => Number(b.reservationCount || 0) > 0 ||
+                    (b.copies || []).some(c => Number(c.reservationCount || 0) > 0));
+            }
             tbody.innerHTML = list.length
                 ? list.map(b => {
                     const copies = b.copies || [];
                     const barcode = copies[0] ? copies[0].barcode : b.assetId;
+                    const resvCount = copies.reduce((n, c) => n + Number(c.reservationCount || 0), 0);
+                    const resvReady = copies.some(c => c.reservationReady);
                     bookDatabase[barcode] = {
                         title: b.title,
                         assetId: b.assetId,
@@ -3695,14 +3754,19 @@
                         isbn: b.isbn || '',
                         status: copies.length ? copies[0].status : '在館',
                         loanedTo: copies.length ? copies[0].loanedTo : null,
+                        reservationCount: resvCount,
+                        reservationReady: resvReady,
                     };
                     const scrap = copies.filter(c => c.status === '報廢').length;
                     const loaned = copies.filter(c => c.loanedTo).length;
+                    const issue = copies.find(c => ['遺失', '修繕中', '爭議中'].includes(c.status));
                     let statusHtml = '';
-                    if (scrap === copies.length) statusHtml = '<span class="badge badge-scrap">報廢</span>';
-                    else if (loaned === copies.length) statusHtml = '<span class="badge badge-loaned">借出</span>';
+                    if (copies.length && scrap === copies.length) statusHtml = bookStatusBadge('報廢');
+                    else if (issue) statusHtml = bookStatusBadge(issue.status);
+                    else if (loaned === copies.length) statusHtml = bookStatusBadge('借出');
                     else if (loaned > 0) statusHtml = '<span class="badge badge-loaned">部分借出</span>';
-                    else statusHtml = '<span class="badge badge-in">在館</span>';
+                    else statusHtml = bookStatusBadge('在館');
+                    statusHtml += reservationBadge({ reservationCount: resvCount, reservationReady: resvReady });
                     return `<tr data-act="viewBook" data-id="${escapeHtml(barcode)}" style="cursor:pointer;">
                     <td>${escapeHtml(b.title)}</td>
                     <td>${escapeHtml(b.assetId)}</td>

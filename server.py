@@ -641,6 +641,61 @@ def init_db(db_path):
         except Exception:
             pass
 
+        # 圖書狀態擴充（v2.1 4.1）：舊版 CHECK 只允許 在館／借出／報廢，
+        # 需重建 books 表才能寫入 遺失／修繕中／爭議中。放在所有 ADD COLUMN 之後，
+        # 確保舊資料庫的欄位已補齊再搬移。
+        legacy_books = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'books'"
+        ).fetchone()
+        if legacy_books and legacy_books["sql"] and "'遺失'" not in legacy_books["sql"]:
+            conn.executescript(
+                """
+                BEGIN;
+                ALTER TABLE books RENAME TO books_legacy;
+                CREATE TABLE books (
+                    barcode      TEXT    PRIMARY KEY,
+                    title        TEXT    NOT NULL,
+                    asset_id     TEXT    NOT NULL DEFAULT '',
+                    status       TEXT    NOT NULL DEFAULT '在館'
+                                 CHECK (status IN ('在館', '借出', '遺失', '修繕中', '爭議中', '報廢')),
+                    loaned_to    TEXT,
+                    loan_class   TEXT,
+                    borrow_count INTEGER NOT NULL DEFAULT 0,
+                    remarks      TEXT    NOT NULL DEFAULT '',
+                    due_at       TEXT,
+                    call_no      TEXT    NOT NULL DEFAULT '',
+                    category     TEXT    NOT NULL DEFAULT '',
+                    isbn         TEXT    NOT NULL DEFAULT '',
+                    publisher    TEXT    NOT NULL DEFAULT '',
+                    price        INTEGER NOT NULL DEFAULT 0,
+                    quantity     INTEGER NOT NULL DEFAULT 1,
+                    total_amount INTEGER NOT NULL DEFAULT 0,
+                    source       TEXT    NOT NULL DEFAULT '',
+                    purchase_date TEXT   NOT NULL DEFAULT '',
+                    keeper       TEXT    NOT NULL DEFAULT '',
+                    confirm_note TEXT    NOT NULL DEFAULT '',
+                    inventory_date TEXT  NOT NULL DEFAULT '',
+                    scrap_date   TEXT    NOT NULL DEFAULT '',
+                    reservation_status TEXT NOT NULL DEFAULT '無被預約',
+                    created_at   TEXT    NOT NULL DEFAULT (datetime('now', 'localtime')),
+                    updated_at   TEXT    NOT NULL DEFAULT (datetime('now', 'localtime'))
+                );
+                INSERT INTO books (barcode, title, asset_id, status, loaned_to, loan_class, borrow_count,
+                                   remarks, due_at, call_no, category, isbn, publisher, price, quantity,
+                                   total_amount, source, purchase_date, keeper, confirm_note, inventory_date,
+                                   scrap_date, reservation_status, created_at, updated_at)
+                    SELECT barcode, title, asset_id, status, loaned_to, loan_class, borrow_count,
+                           remarks, due_at, call_no, category, isbn, publisher, price, quantity,
+                           total_amount, source, purchase_date, keeper, confirm_note, inventory_date,
+                           scrap_date, reservation_status, created_at, updated_at
+                    FROM books_legacy;
+                DROP TABLE books_legacy;
+                CREATE INDEX IF NOT EXISTS idx_books_status ON books (status);
+                CREATE INDEX IF NOT EXISTS idx_books_loaned_to ON books (loaned_to);
+                COMMIT;
+                """
+            )
+
         # 現有帳號預設權限：僅在首次導入權限欄位時設定一次，避免每次啟動覆蓋管理員的自訂設定。
         # 所有啟用帳號一律可使用借還書畫面（含學生；規格「學生帳號僅能登入使用借還書」），
         # 其餘系統功能照舊：教職員可由管理員勾選、學生不開放。
@@ -766,13 +821,20 @@ def auto_call_no(category_code, title):
     return "{}-{}".format(code, zhuyin_of_char(first))
 
 
+def display_status(row):
+    """書籍狀態顯示：遺失／修繕中／爭議中／報廢為人工標記，原樣顯示；
+    在館／借出則依實際借閱人動態判斷。"""
+    status = row["status"] or "在館"
+    if status in ("在館", "借出"):
+        return "借出" if row["loaned_to"] else "在館"
+    return status
+
+
 def book_json(row):
     return {
         "title": row["title"],
         "assetId": row["asset_id"],
-        "status": "報廢" if row["status"] == "報廢" else (
-            "借出" if row["loaned_to"] else "在館"
-        ),
+        "status": display_status(row),
         "rawStatus": row["status"],
         "loanedTo": row["loaned_to"],
         "loanClass": row["loan_class"],
@@ -809,6 +871,25 @@ def log_json(row):
     }
 
 
+def active_reservation_counts(conn):
+    """進行中預約統計：回傳 {barcode: {reservationCount, reservationReady}}。
+    僅計入未逾期的 pending／ready，避免顯示失效的排隊人數。"""
+    result = {}
+    for r in conn.execute(
+        "SELECT barcode, COUNT(*) AS total, "
+        "SUM(CASE WHEN status = 'ready' THEN 1 ELSE 0 END) AS ready "
+        "FROM reservations WHERE status IN ('pending', 'ready') "
+        "AND (expires_at IS NULL OR expires_at >= ?) "
+        "GROUP BY barcode",
+        (now_display(),),
+    ):
+        result[r["barcode"]] = {
+            "reservationCount": int(r["total"] or 0),
+            "reservationReady": bool(r["ready"]),
+        }
+    return result
+
+
 def build_state(conn):
     classes = [
         r["name"]
@@ -830,8 +911,12 @@ def build_state(conn):
         member_db.setdefault(r["name"], [])
 
     books = {}
+    reservation_counts = active_reservation_counts(conn)
+    empty_reservation = {"reservationCount": 0, "reservationReady": False}
     for r in conn.execute("SELECT * FROM books ORDER BY rowid"):
-        books[r["barcode"]] = book_json(r)
+        book = book_json(r)
+        book.update(reservation_counts.get(r["barcode"], empty_reservation))
+        books[r["barcode"]] = book
 
     log_count = conn.execute("SELECT COUNT(*) FROM loan_logs").fetchone()[0]
     return {
@@ -1018,6 +1103,8 @@ def validate_import(payload):
         if raw_status == "報廢":
             status = "報廢"
             loaned_to = None
+        elif raw_status in ("遺失", "修繕中", "爭議中"):
+            status = raw_status
         else:
             # 相容舊資料：status 可能是「借出(王小明)」
             if raw_status.startswith("借出") and not loaned_to:
@@ -1766,6 +1853,14 @@ class Handler(SimpleHTTPRequestHandler):
                 require_permission(conn, token, "loan")
                 return self.api_loan_batch_return(conn, token)
 
+            if path == "/api/books/import" and method == "POST":
+                require_permission(conn, token, "book")
+                return self.api_books_import(conn, token)
+
+            if path == "/api/books/search" and method == "GET":
+                require_permission(conn, token, "book")
+                return self.api_books_search(conn, query)
+
             if path.startswith("/api/books/"):
                 rest = path[len("/api/books/"):].rstrip("/")
                 action = None
@@ -1821,6 +1916,10 @@ class Handler(SimpleHTTPRequestHandler):
                     raise ApiError(400, "條碼不可空白")
                 return self.api_member_by_barcode(conn, barcode)
 
+            if method == "GET" and path == "/api/member/search":
+                require_permission(conn, token, "loan")
+                return self.api_member_search(conn, query)
+
             if method == "GET" and path == "/api/template/members.xlsx":
                 require_permission(conn, token, "member")
                 return self.api_template_members_xlsx(conn)
@@ -1832,17 +1931,6 @@ class Handler(SimpleHTTPRequestHandler):
             if method == "POST" and path == "/api/parse/xlsx":
                 require_any_permission(conn, token, ("member", "book"))
                 return self.api_parse_xlsx()
-
-            if method == "POST" and path == "/api/books/import":
-                require_permission(conn, token, "book")
-                return self.api_books_import(conn, token)
-
-            if method == "GET" and path == "/api/books/search":
-                require_permission(conn, token, "book")
-                return self.api_books_search(conn, query)
-                if method == "POST" and action:
-                    return self.api_book_action(conn, barcode, action)
-                raise ApiError(405, "方法不允許")
 
             raise ApiError(404, "找不到 API：{}".format(path))
         finally:
@@ -1872,6 +1960,8 @@ class Handler(SimpleHTTPRequestHandler):
         ).fetchall()
         groups = {}
         order = []
+        reservation_counts = active_reservation_counts(conn)
+        empty_reservation = {"reservationCount": 0, "reservationReady": False}
         for r in rows:
             status = r["status"]
             if status not in ("在館", "借出"):
@@ -1904,7 +1994,7 @@ class Handler(SimpleHTTPRequestHandler):
             else:
                 g["other"] += 1
                 location = "（{}）".format(display)
-            g["copies"].append({
+            copy = {
                 "barcode": r["barcode"],
                 "assetId": r["asset_id"] or "",
                 "status": display,
@@ -1914,7 +2004,9 @@ class Handler(SimpleHTTPRequestHandler):
                 "callNo": r["call_no"] or "",
                 "dueAt": r["due_at"] or "",
                 "location": location,
-            })
+            }
+            copy.update(reservation_counts.get(r["barcode"], empty_reservation))
+            g["copies"].append(copy)
             if not g["publisher"] and r["publisher"]:
                 g["publisher"] = r["publisher"]
         items = [groups[k] for k in order]
@@ -2508,13 +2600,7 @@ class Handler(SimpleHTTPRequestHandler):
         ).fetchall()
         table = []
         for r in rows:
-            status = r["status"]
-            if status == "報廢":
-                display = "報廢"
-            elif r["loaned_to"]:
-                display = "借出"
-            else:
-                display = "在館"
+            display = display_status(r)
             table.append([
                 r["asset_id"] or "", r["title"], r["call_no"] or "",
                 r["category"] or "", display,
@@ -2540,13 +2626,7 @@ class Handler(SimpleHTTPRequestHandler):
         ).fetchall()
         table = []
         for r in rows:
-            status = r["status"]
-            if status == "報廢":
-                display = "報廢"
-            elif r["loaned_to"]:
-                display = "借出"
-            else:
-                display = "在館"
+            display = display_status(r)
             table.append([
                 r["call_no"], r["asset_id"] or "", r["title"],
                 r["category"] or "", display,
@@ -3379,7 +3459,7 @@ class Handler(SimpleHTTPRequestHandler):
 
             if row["status"] == "報廢":
                 raise ApiError(409, "《{}》已報廢，不可借還".format(row["title"]))
-            if row["status"] in ("遺失", "修繕中", "爭議中"):
+            if row["status"] in ("遺失", "修繕中", "爭議中") and action == "借書":
                 raise ApiError(409, "《{}》目前狀態為「{}」，不可借出".format(row["title"], row["status"]))
 
             overdue_at_return = False
@@ -3793,6 +3873,13 @@ class Handler(SimpleHTTPRequestHandler):
         ).fetchone()
         if not row:
             raise ApiError(404, "找不到此圖書")
+        resv = conn.execute(
+            "SELECT COUNT(*) AS total, "
+            "SUM(CASE WHEN status = 'ready' THEN 1 ELSE 0 END) AS ready "
+            "FROM reservations WHERE barcode = ? AND status IN ('pending', 'ready') "
+            "AND (expires_at IS NULL OR expires_at >= ?)",
+            (barcode, now_display()),
+        ).fetchone()
         book = {
             "barcode": row["barcode"],
             "title": row["title"],
@@ -3817,10 +3904,9 @@ class Handler(SimpleHTTPRequestHandler):
             "confirmNote": row["confirm_note"] or "",
             "inventoryDate": row["inventory_date"] or "",
             "scrapDate": row["scrap_date"] or "",
-            "reservationStatus": "有被預約" if conn.execute(
-                "SELECT 1 FROM reservations WHERE barcode = ? AND status IN ('pending', 'ready') LIMIT 1",
-                (barcode,),
-            ).fetchone() else "無被預約",
+            "reservationStatus": "有被預約" if resv["total"] else "無被預約",
+            "reservationCount": int(resv["total"] or 0),
+            "reservationReady": bool(resv["ready"]),
         }
         return self.send_json({"ok": True, "book": book})
 
@@ -4102,11 +4188,13 @@ class Handler(SimpleHTTPRequestHandler):
             params,
         ).fetchall()
         groups = {}
+        reservation_counts = active_reservation_counts(conn)
+        empty_reservation = {"reservationCount": 0, "reservationReady": False}
         for r in rows:
             key = (r["title"], r["asset_id"])
             if key not in groups:
                 groups[key] = {"title": r["title"], "assetId": r["asset_id"], "callNo": r["call_no"] or "", "isbn": r["isbn"] or "", "copies": []}
-            groups[key]["copies"].append({
+            copy = {
                 "barcode": r["barcode"],
                 "status": r["status"],
                 "loanedTo": r["loaned_to"],
@@ -4114,6 +4202,22 @@ class Handler(SimpleHTTPRequestHandler):
                 "borrowCount": r["borrow_count"],
                 "remarks": r["remarks"],
                 "dueAt": r["due_at"],
+            }
+            copy.update(reservation_counts.get(r["barcode"], empty_reservation))
+            groups[key]["copies"].append(copy)
+        books = []
+        for g in groups.values():
+            copies = g["copies"]
+            books.append({
+                "title": g["title"],
+                "assetId": g["assetId"],
+                "callNo": g["callNo"],
+                "isbn": g["isbn"],
+                "copyCount": len(copies),
+                "available": sum(1 for c in copies if c["status"] == "在館" and not c["reservationReady"]),
+                "reservationCount": sum(c["reservationCount"] for c in copies),
+                "reservationReady": any(c["reservationReady"] for c in copies),
+                "copies": copies,
             })
         books = []
         for g in groups.values():
@@ -4234,6 +4338,41 @@ class Handler(SimpleHTTPRequestHandler):
             "className": class_name,
             "memberType": member_type,
         })
+
+    def api_member_search(self, conn, query):
+        """借還書頁搜尋成員：姓名／帳號／Email／條碼，僅需借還書權限。"""
+        keyword = (query.get("q") or [""])[0].strip()
+        if not keyword:
+            return self.send_json({"ok": True, "matches": []})
+        if len(keyword) > 50:
+            raise ApiError(400, "搜尋字串過長")
+
+        like = "%{}%".format(keyword)
+        rows = conn.execute(
+            "SELECT u.id, u.name, u.username, u.email, u.barcode, u.role, u.class_id, "
+            "c.name AS class_name "
+            "FROM users u LEFT JOIN classes c ON c.id = u.class_id "
+            "WHERE u.active = 1 AND (u.name LIKE ? OR u.username LIKE ? "
+            "OR u.email LIKE ? OR u.barcode LIKE ?) "
+            "ORDER BY CASE WHEN u.name = ? OR u.username = ? OR u.email = ? OR u.barcode = ? "
+            "THEN 0 ELSE 1 END, "
+            "CASE WHEN u.class_id IS NULL THEN 1 ELSE 0 END, "
+            "c.sort_order, c.id, u.id LIMIT 10",
+            (like, like, like, like, keyword, keyword, keyword, keyword),
+        ).fetchall()
+        matches = [
+            {
+                "id": r["id"],
+                "name": r["name"] or "",
+                "username": r["username"] or "",
+                "email": r["email"] or "",
+                "barcode": r["barcode"] or "",
+                "className": r["class_name"] or "",
+                "memberType": "teacher" if (r["role"] or "") == "teacher" else "student",
+            }
+            for r in rows
+        ]
+        return self.send_json({"ok": True, "matches": matches})
 
     def api_members_import(self, conn, token):
         data = self.read_json()
