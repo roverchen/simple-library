@@ -306,13 +306,11 @@
                 <input type="text" id="queryKeyword" placeholder="輸入書名／ISBN／財產編號／索書號（可掃描 ISBN）" autocomplete="off"
                        style="flex:1; min-width:220px;" oninput="scheduleBookQuery()">
                 <select id="queryPublisher" style="min-width:140px;" onchange="scheduleBookQuery()"><option value="">全部出版社</option></select>
-                <button onclick="runBookQuery()" style="padding:10px 16px; background:var(--primary); color:white; border:none; border-radius:5px;">🔎 查詢</button>
-                <button onclick="clearBookQuery()" style="padding:10px 12px; background:#666; color:white; border:none; border-radius:5px;">✕ 清除</button>
             </div>
             <small style="color:#666;">輸入關鍵字或選擇出版社即自動查詢；支援直接掃描 ISBN 條碼；相同 ISBN（或書名）的多本實體書會自動彙整。</small>
         </div>
         <div id="queryStats" class="query-stats" style="display:none;"></div>
-        <div id="queryResults" style="color:#666; margin-top:10px;">請輸入關鍵字或直接按「查詢」列出全部館藏。</div>
+        <div id="queryResults" style="color:#666; margin-top:10px;">請輸入關鍵字或選擇出版社，或留空列出全部館藏。</div>
 
         <hr style="margin:22px 0; border:none; border-top:1px solid #e0e0e0;">
         <h3>📖 借還紀錄明細（已歸還歷史紀錄）</h3>
