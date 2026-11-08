@@ -385,6 +385,7 @@
         </div>
         <div id="manageActionGrid" class="action-grid">
             <button onclick="initiateScan('manage')" class="btn-main btn-add-book">🔍 掃描新增/快速編輯 (QR)</button>
+            <button onclick="togglePrintMode()" class="print-mode-btn btn-main" style="background:var(--secondary);">切換至：標籤模式</button>
         </div>
         <div class="input-group">
             <input type="text" id="bookManageSearchInput" placeholder="🔍 搜尋書名／財產編號／索書號／ISBN 關鍵字" oninput="searchBooks();" style="padding:10px; border:1px solid #ccc; border-radius:8px; font-size:1rem; width:100%;">
@@ -629,10 +630,6 @@
     </div>
 
     <div id="reportPage" class="page">
-        <div class="no-print" style="margin-bottom: 20px; display: flex; gap: 10px;">
-            <button onclick="printCurrentReport()" style="padding:12px; background:#607d8b; color:white; border:none; border-radius:8px; flex:1;">🖨️ 列印目前模式</button>
-            <button onclick="togglePrintMode()" id="printModeBtn" style="padding:12px; background:var(--secondary); color:white; border:none; border-radius:8px; flex:1;">切換至：標籤模式</button>
-        </div>
 
         <div id="logReportSection">
             <h3>📊 借閱歷史紀錄</h3>
@@ -762,6 +759,7 @@
                     <option value="af410">AF410：4×10 張/A4</option>
                 </select>
                 <button onclick="renderQRLabels()" style="padding:8px 12px; background:var(--secondary); color:white; border:none; border-radius:5px;">🔄 重新產生</button>
+                <button onclick="togglePrintMode()" class="print-mode-btn" style="padding:8px 12px; background:#607d8b; color:white; border:none; border-radius:5px;">切換至：紀錄模式</button>
             </div>
             <div id="labelPrintSummary" class="no-print" style="color:#666; margin-bottom:8px;"></div>
             <div class="qr-label-grid" id="qrLabelContainer"></div>
@@ -1270,9 +1268,12 @@
 
     // --- 報表與標籤模式切換 ---
     function togglePrintMode() {
+        // 若不在報表頁，先切換過去，讓標籤列印區塊可見
+        if (!document.getElementById('reportPage').classList.contains('active')) {
+            changeTab('reportPage');
+        }
         isLabelMode = !isLabelMode;
         const tagSection = document.getElementById('tagReportSection');
-        const btn = document.getElementById('printModeBtn');
         const logModeSections = ['logReportSection', 'overdueReportSection', 'inventoryReportSection', 'memberHistorySection', 'yearStatsSection'];
 
         if (isLabelMode) {
@@ -1280,16 +1281,16 @@
                 const el = document.getElementById(id);
                 if (el) el.style.display = 'none';
             });
-            tagSection.style.display = 'block';
-            btn.innerText = "切換至：紀錄模式";
+            if (tagSection) tagSection.style.display = 'block';
+            document.querySelectorAll('.print-mode-btn').forEach(btn => { btn.innerText = "切換至：紀錄模式"; });
             renderQRLabels();
         } else {
             logModeSections.forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.style.display = 'block';
             });
-            tagSection.style.display = 'none';
-            btn.innerText = "切換至：標籤模式";
+            if (tagSection) tagSection.style.display = 'none';
+            document.querySelectorAll('.print-mode-btn').forEach(btn => { btn.innerText = "切換至：標籤模式"; });
             renderReportTable();
         }
     }
