@@ -170,6 +170,7 @@
 
             /* 單本標籤列印：只輸出標籤本身，隱藏所有頁面內容 */
             body.printing-label .page, body.printing-label .nav { display: none !important; }
+            body.printing-label .modal-overlay { display: none !important; }
             body.printing-label #singleLabelArea { display: block !important; }
             .qr-label-grid { grid-template-columns: repeat(3, 1fr); gap: 6mm; } /* A4 3 欄，AK308 預設 */
             .qr-card { width: auto; padding: 4px; }
@@ -915,7 +916,7 @@
         <button type="button" class="btn-secondary" id="bookModalScrap" onclick="scrapBook(bookModalState ? bookModalState.barcode : '')">⚠️ 報廢</button>
         <button type="button" class="btn-secondary" onclick="restoreBook(bookModalState ? bookModalState.barcode : '')">💡 取消報廢</button>
         <button type="button" class="btn-secondary" id="bookModalRenew" onclick="renewBook(bookModalState ? bookModalState.barcode : '')">🔁 續借</button>
-        <button type="button" class="btn-secondary" onclick="printSingleLabel(bookModalState ? bookModalState.barcode : '')">🏷️ 標籤</button>
+        <button type="button" class="btn-secondary" onclick="printSingleLabel(bookModalState ? bookModalState.barcode : '')">🏷️ 列印標籤</button>
         <button type="button" class="btn-secondary" onclick="closeBookModal()">✕ 取消</button>
     </div>
 </div>
@@ -3739,6 +3740,9 @@
         const book = bookDatabase[barcode];
         if (!book) { alert("❌ 找不到此圖書。"); return; }
         if (book.status === "報廢") { alert("⚠️ 此書已報廢，不會列入標籤列印。"); return; }
+
+        // 列印前先關閉編輯 modal，避免 modal 遮蓋標籤
+        if (document.getElementById('bookModal').classList.contains('open')) closeBookModal();
 
         const area = document.getElementById('singleLabelArea');
         area.innerHTML = `<div class="qr-card" style="max-width:200px; margin:0 auto; padding:12px;">` +
