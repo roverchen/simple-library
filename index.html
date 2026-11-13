@@ -2084,11 +2084,13 @@
         const book = (bookModalState && bookModalState.book) || {};
         container.innerHTML = `
             <label for="bfSource">來源</label>
-            <select id="bfSource" data-name="source" onchange="previewBarcode()">
+            ${bookModalState && bookModalState.isNew
+                ? `<select id="bfSource" data-name="source" onchange="previewBarcode()">
                 <option value="">（未指定）</option>
                 ${['自購', '軍購', '捐贈', '英補', '署補'].map(s =>
                     `<option value="${s}"${book.source === s ? ' selected' : ''}>${s}</option>`).join('')}
-            </select>
+            </select>`
+                : `<input type="text" id="bfSource" data-name="source" value="${escapeHtml(book.source || '')}" readonly style="background:#f5f5f5;">`}
             <label for="bfAssetId">財產編號</label>
             <input type="text" id="bfAssetId" data-name="assetId" value="${escapeHtml(book.assetId || '')}" readonly style="background:#f5f5f5;">
             <label for="bfTitle">書名</label>
