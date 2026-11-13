@@ -2875,21 +2875,27 @@
         const addRole = String(v.className || '') === '__staff__' ? 'teacher' : (v.role || 'student');
         if (memberModalState.mode === 'add') {
             container.innerHTML = `
+                <label for="mmRole">角色</label>
+                <select id="mmRole" data-name="role">
+                    <option value="teacher"${String(addRole) === 'teacher' ? ' selected' : ''}>👨‍🏫 老師</option>
+                    <option value="student"${String(addRole) === 'student' ? ' selected' : ''}>🎒 學生</option>
+                </select>
                 <label for="mmClass">班級</label>
                 <select id="mmClass" data-name="className" onchange="onMemberClassChange()">${classHtml}</select>
                 <label for="mmName">姓名</label>
                 <input type="text" id="mmName" data-name="name" value="${escapeHtml(v.name || '')}">
                 <label for="mmEmail">Email</label>
                 <input type="email" id="mmEmail" data-name="email" value="${escapeHtml(v.email || '')}">
-                <label for="mmRole">角色</label>
-                <select id="mmRole" data-name="role">
-                    <option value="teacher"${String(addRole) === 'teacher' ? ' selected' : ''}>👨‍🏫 老師</option>
-                    <option value="student"${String(addRole) === 'student' ? ' selected' : ''}>🎒 學生</option>
-                </select>
                 <div id="memberPermBlock">${memberPermBoxHtml(v)}</div>
             `;
         } else {
             container.innerHTML = `
+                <label for="mmRole">角色</label>
+                <select id="mmRole" data-name="role">
+                    <option value="teacher"${String(v.role || 'teacher') === 'teacher' ? ' selected' : ''}>👨‍🏫 老師</option>
+                    <option value="student"${String(v.role || 'teacher') === 'student' ? ' selected' : ''}>🎒 學生</option>
+                    ${(v.role === 'admin' || v.role === 'root') ? `<option value="${v.role}" selected>🛡️ ${roleLabel(v.role)}</option>` : ''}
+                </select>
                 <label for="mmUsername">帳號</label>
                 <input type="text" id="mmUsername" data-name="username" value="${escapeHtml(v.username || '')}" readonly>
                 <label for="mmClass">班級</label>
@@ -2898,12 +2904,6 @@
                 <input type="text" id="mmName" data-name="name" value="${escapeHtml(v.name || '')}">
                 <label for="mmEmail">Email</label>
                 <input type="email" id="mmEmail" data-name="email" value="${escapeHtml(v.email || '')}">
-                <label for="mmRole">角色</label>
-                <select id="mmRole" data-name="role">
-                    <option value="teacher"${String(v.role || 'teacher') === 'teacher' ? ' selected' : ''}>👨‍🏫 老師</option>
-                    <option value="student"${String(v.role || 'teacher') === 'student' ? ' selected' : ''}>🎒 學生</option>
-                    ${(v.role === 'admin' || v.role === 'root') ? `<option value="${v.role}" selected>🛡️ ${roleLabel(v.role)}</option>` : ''}
-                </select>
                 <div id="memberPermBlock">${memberPermBoxHtml(v)}</div>
             `;
         }
