@@ -2193,7 +2193,6 @@
         document.querySelectorAll('#bookModalFields [data-name]').forEach(el => { values[el.dataset.name] = el.value; });
         const errorEl = document.getElementById('bookModalError');
         errorEl.textContent = '';
-        if (!values.assetId || !values.assetId.trim()) { errorEl.textContent = '財產編號不可空白'; return; }
         if (!values.title || !values.title.trim()) { errorEl.textContent = '書名不可空白'; return; }
         const isNew = !!bookModalState.isNew;
         if (isNew) {
@@ -2202,7 +2201,14 @@
                 const r = await api('GET', '/api/barcode/next?source=' + encodeURIComponent((values.source || '').trim()));
                 barcode = r.barcode;
             } catch (err) { errorEl.textContent = '產生條碼失敗：' + err.message; return; }
+            // 自動產生的流水號條碼即為財產編號
+            if (!(values.assetId || '').trim()) {
+                values.assetId = barcode;
+                const assetEl = document.getElementById('bfAssetId');
+                if (assetEl) assetEl.value = barcode;
+            }
         }
+        if (!values.assetId || !values.assetId.trim()) { errorEl.textContent = '財產編號不可空白'; return; }
         try {
             const res = await api('PUT', '/api/books/' + encodeURIComponent(barcode), {
                 title: values.title.trim(),
