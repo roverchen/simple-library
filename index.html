@@ -2083,7 +2083,7 @@
         const book = (bookModalState && bookModalState.book) || {};
         container.innerHTML = `
             <label for="bfAssetId">財產編號</label>
-            <input type="text" id="bfAssetId" data-name="assetId" value="${escapeHtml(book.assetId || '')}">
+            <input type="text" id="bfAssetId" data-name="assetId" value="${escapeHtml(book.assetId || '')}" readonly style="background:#f5f5f5;">
             <label for="bfTitle">書名</label>
             <input type="text" id="bfTitle" data-name="title" value="${escapeHtml(book.title || '')}">
             <label for="bfStatus">狀態</label>
