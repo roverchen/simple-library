@@ -628,6 +628,39 @@
 
     <div id="reportPage" class="page">
 
+        <div id="yearStatsSection" style="margin-top:20px;">
+            <h3>📈 全園閱讀歷程統計（依學年）</h3>
+            <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
+                <input type="text" id="statsSchoolYear" placeholder="學年 (如: 115)" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:140px;">
+                <button onclick="loadYearStats()" style="padding:10px; background:var(--primary); color:white; border:none; border-radius:5px;">📊 載入統計</button>
+                <button onclick="exportYearStatsPdf()" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 全園統計 PDF</button>
+            </div>
+            <div id="yearStatsSummary" style="color:#666; margin-bottom:8px;"></div>
+            <table>
+                <thead><tr><th>班級</th><th>借書次數</th></tr></thead>
+                <tbody id="yearStatsClassBody"></tbody>
+            </table>
+            <table style="margin-top:12px;">
+                <thead><tr><th>班級</th><th>姓名</th><th>借書次數</th></tr></thead>
+                <tbody id="yearStatsMemberBody"></tbody>
+            </table>
+        </div>
+
+        <div id="memberHistorySection" style="margin-top:20px;">
+            <h3>📖 個人閱讀歷程統計</h3>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
+                <select id="memberHistoryClass" onchange="populateMemberHistoryMembers()" style="padding:8px; border-radius:5px; border:1px solid #ccc; min-width:130px;"></select>
+                <select id="memberHistoryMember" style="padding:8px; border-radius:5px; border:1px solid #ccc; min-width:130px;"></select>
+                <input type="text" id="memberHistoryYear" placeholder="學年 (如: 115)" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:140px;">
+                <button onclick="printMemberHistory()" style="padding:10px; background:var(--primary); color:white; border:none; border-radius:5px;">📖 列印個人歷程</button>
+                <button onclick="downloadMemberHistoryPdf()" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 個人歷程 PDF</button>
+            </div>
+            <div id="memberHistorySummary" style="color:#666;"></div>
+            <table>
+                <thead><tr><th>時間</th><th>書名</th><th>財產編號</th><th>動作</th></tr></thead>
+                <tbody id="memberHistoryBody"><tr><td colspan="4" style="color:#666;">請選擇班級與姓名後查詢</td></tr></tbody>
+            </table>
+        </div>
         <div id="logReportSection">
             <h3>📊 借閱歷史紀錄</h3>
             <div id="logFilterRow" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px;">
@@ -704,39 +737,6 @@
             <div style="color:#666; font-size:0.9rem;">財產清冊排除報廢書籍，含出版社／單價／數量／總金額／購入日期／保管人／確認／盤點日期；報廢清冊另列報廢日期；爭議清冊包含遺失、修繕中、爭議中。列印為 A4 表格，PDF 可直接下載留存。</div>
         </div>
 
-        <div id="yearStatsSection" style="margin-top:20px;">
-            <h3>📈 全園閱讀歷程統計（依學年）</h3>
-            <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
-                <input type="text" id="statsSchoolYear" placeholder="學年 (如: 115)" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:140px;">
-                <button onclick="loadYearStats()" style="padding:10px; background:var(--primary); color:white; border:none; border-radius:5px;">📊 載入統計</button>
-                <button onclick="exportYearStatsPdf()" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 全園統計 PDF</button>
-            </div>
-            <div id="yearStatsSummary" style="color:#666; margin-bottom:8px;"></div>
-            <table>
-                <thead><tr><th>班級</th><th>借書次數</th></tr></thead>
-                <tbody id="yearStatsClassBody"></tbody>
-            </table>
-            <table style="margin-top:12px;">
-                <thead><tr><th>班級</th><th>姓名</th><th>借書次數</th></tr></thead>
-                <tbody id="yearStatsMemberBody"></tbody>
-            </table>
-        </div>
-
-        <div id="memberHistorySection" style="margin-top:20px;">
-            <h3>📖 個人閱讀歷程統計</h3>
-            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
-                <select id="memberHistoryClass" onchange="populateMemberHistoryMembers()" style="padding:8px; border-radius:5px; border:1px solid #ccc; min-width:130px;"></select>
-                <select id="memberHistoryMember" style="padding:8px; border-radius:5px; border:1px solid #ccc; min-width:130px;"></select>
-                <input type="text" id="memberHistoryYear" placeholder="學年 (如: 115)" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:140px;">
-                <button onclick="printMemberHistory()" style="padding:10px; background:var(--primary); color:white; border:none; border-radius:5px;">📖 列印個人歷程</button>
-                <button onclick="downloadMemberHistoryPdf()" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 個人歷程 PDF</button>
-            </div>
-            <div id="memberHistorySummary" style="color:#666;"></div>
-            <table>
-                <thead><tr><th>時間</th><th>書名</th><th>財產編號</th><th>動作</th></tr></thead>
-                <tbody id="memberHistoryBody"><tr><td colspan="4" style="color:#666;">請選擇班級與姓名後查詢</td></tr></tbody>
-            </table>
-        </div>
 
         <div id="tagReportSection" style="display:none;">
             <h3>🏷️ 圖書標籤列印 (排除報廢)</h3>
