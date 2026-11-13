@@ -642,11 +642,6 @@ def init_db(db_path):
             pass
 
         try:
-            conn.execute("ALTER TABLE books ADD COLUMN school_year TEXT NOT NULL DEFAULT '115'")
-        except Exception:
-            pass
-
-        try:
             conn.execute("ALTER TABLE categories ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))")
         except Exception:
             pass
@@ -858,7 +853,6 @@ def book_json(row):
         "price": row["price"] or 0,
         "quantity": row["quantity"] or 1,
         "usefulLife": (row["useful_life"] if ("useful_life" in row.keys() and row["useful_life"] is not None) else 1),
-        "schoolYear": (row["school_year"] if ("school_year" in row.keys() and row["school_year"]) else "115"),
         "purchaseDate": row["purchase_date"] or "",
         "keeper": row["keeper"] or "",
         "confirmNote": row["confirm_note"] or "",
@@ -3931,7 +3925,6 @@ class Handler(SimpleHTTPRequestHandler):
             "keeper": row["keeper"] or "",
             "confirmNote": row["confirm_note"] or "",
             "usefulLife": (row["useful_life"] if ("useful_life" in row.keys() and row["useful_life"] is not None) else 1),
-            "schoolYear": (row["school_year"] if ("school_year" in row.keys() and row["school_year"]) else "115"),
             "inventoryDate": row["inventory_date"] or "",
             "scrapDate": row["scrap_date"] or "",
             "reservationStatus": "有被預約" if resv["total"] else "無被預約",
@@ -3975,9 +3968,6 @@ class Handler(SimpleHTTPRequestHandler):
             useful_life = 1
         if useful_life < 0 or useful_life > 100:
             raise ApiError(400, "使用年限需為 0–100")
-        school_year = _clean_text(data.get("schoolYear") or data.get("school_year") or data.get("學年") or "115", "學年", 10) or "115"
-        if school_year and not re.match(r'^\d{2,3}$', school_year):
-            raise ApiError(400, "學年格式錯誤（例如 115）")
         quantity = 1  # 固定為 1（規格要求不可更改）
         total_amount = price * quantity  # 總金額 = 單價 × 數量
         status = None
@@ -3995,10 +3985,10 @@ class Handler(SimpleHTTPRequestHandler):
             ).fetchone()
             if row:
                 conn.execute(
-                    "UPDATE books SET title = ?, asset_id = ?, call_no = ?, category = ?, isbn = ?, remarks = ?, publisher = ?, price = ?, quantity = ?, total_amount = ?, source = ?, purchase_date = ?, keeper = ?, confirm_note = ?, inventory_date = ?, scrap_date = ?, useful_life = ?, school_year = ?, updated_at = ? "
+                    "UPDATE books SET title = ?, asset_id = ?, call_no = ?, category = ?, isbn = ?, remarks = ?, publisher = ?, price = ?, quantity = ?, total_amount = ?, source = ?, purchase_date = ?, keeper = ?, confirm_note = ?, inventory_date = ?, scrap_date = ?, useful_life = ?, updated_at = ? "
                     "WHERE barcode = ?",
                     (title, asset, call_no, category, isbn, remarks, publisher, price, quantity, total_amount, source,
-                     purchase_date, keeper, confirm_note, inventory_date, scrap_date, useful_life, school_year,
+                     purchase_date, keeper, confirm_note, inventory_date, scrap_date, useful_life,
                      now_display(), barcode),
                 )
                 if status:
@@ -4008,11 +3998,11 @@ class Handler(SimpleHTTPRequestHandler):
                     )
             else:
                 conn.execute(
-                    "INSERT INTO books (barcode, title, asset_id, status, remarks, call_no, category, isbn, publisher, price, quantity, total_amount, source, purchase_date, keeper, confirm_note, inventory_date, scrap_date, useful_life, school_year, created_at, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO books (barcode, title, asset_id, status, remarks, call_no, category, isbn, publisher, price, quantity, total_amount, source, purchase_date, keeper, confirm_note, inventory_date, scrap_date, useful_life, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (barcode, title, asset, status or "在館", remarks, call_no, category, isbn,
                      publisher, price, quantity, total_amount, source, purchase_date, keeper,
-                     confirm_note, inventory_date, scrap_date, useful_life, school_year,
+                     confirm_note, inventory_date, scrap_date, useful_life,
                      now_display(), now_display()),
                 )
                 was_insert = True
@@ -4491,10 +4481,11 @@ class Handler(SimpleHTTPRequestHandler):
             is_admin_role = (raw_role or "teacher") in ("admin", "root")
             cursor = conn.execute(
                 "INSERT INTO users (username, name, password, role, class_id, email, active, "
-                "can_loan, can_member, can_book, can_config, can_report) "
-                "VALUES (?, ?, ?, ?, NULL, ?, 1, ?, ?, ?, ?, ?)",
+                "school_year, can_loan, can_member, can_book, can_config, can_report) "
+                "VALUES (?, ?, ?, ?, NULL, ?, 1, ?, ?, ?, ?, ?, ?)",
                 (
                     username, name, hash_password(DEFAULT_PASSWORD), raw_role or "teacher", email,
+                    _clean_text(data.get("schoolYear") or data.get("school_year") or data.get("學年") or "115", "學年", 10) or "115",
                     1 if (is_admin_role or data.get("canLoan", True)) else 0,
                     1 if (is_admin_role or data.get("canMember")) else 0,
                     1 if (is_admin_role or data.get("canBook")) else 0,
@@ -4526,6 +4517,11 @@ class Handler(SimpleHTTPRequestHandler):
         user_id = ensure_member_user(conn, row["id"], name, member_flags)
         if raw_role and raw_role != "student":
             conn.execute("UPDATE users SET role = ? WHERE id = ?", (raw_role, user_id))
+        if "schoolYear" in data or "school_year" in data or "學年" in data:
+            sy = _clean_text(data.get("schoolYear") or data.get("school_year") or data.get("學年") or "115", "學年", 10) or "115"
+            if sy and not re.match(r'^\d{2,3}$', sy):
+                raise ApiError(400, "學年格式錯誤（例如 115）")
+            conn.execute("UPDATE users SET school_year = ? WHERE id = ?", (sy, user_id))
         account = conn.execute(
             "SELECT username FROM users WHERE id = ?", (user_id,)
         ).fetchone()
@@ -4574,17 +4570,14 @@ class Handler(SimpleHTTPRequestHandler):
                 useful_life = 1
             if useful_life < 0 or useful_life > 100:
                 useful_life = 1
-            school_year = _clean_text(item.get("schoolYear") or item.get("school_year") or item.get("學年") or "115", "學年", 10) or "115"
-            if school_year and not re.match(r'^\d{2,3}$', school_year):
-                school_year = "115"
             if not barcode or not title:
                 continue
             conn.execute(
-                "INSERT INTO books (barcode, title, asset_id, status, remarks, isbn, publisher, source, price, purchase_date, keeper, confirm_note, inventory_date, useful_life, school_year, created_at, updated_at) "
+                "INSERT INTO books (barcode, title, asset_id, status, remarks, isbn, publisher, source, price, purchase_date, keeper, confirm_note, inventory_date, useful_life, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
-                "ON CONFLICT(barcode) DO UPDATE SET title = excluded.title, asset_id = excluded.asset_id, isbn = excluded.isbn, status = excluded.status, publisher = excluded.publisher, source = excluded.source, price = excluded.price, purchase_date = excluded.purchase_date, keeper = excluded.keeper, confirm_note = excluded.confirm_note, inventory_date = excluded.inventory_date, useful_life = excluded.useful_life, school_year = excluded.school_year, updated_at = excluded.updated_at",
+                "ON CONFLICT(barcode) DO UPDATE SET title = excluded.title, asset_id = excluded.asset_id, isbn = excluded.isbn, status = excluded.status, publisher = excluded.publisher, source = excluded.source, price = excluded.price, purchase_date = excluded.purchase_date, keeper = excluded.keeper, confirm_note = excluded.confirm_note, inventory_date = excluded.inventory_date, useful_life = excluded.useful_life, updated_at = excluded.updated_at",
                 (barcode, title, asset_id, status, "", isbn, publisher, source, price,
-                 purchase_date, keeper, confirm_note, inventory_date, useful_life, school_year,
+                 purchase_date, keeper, confirm_note, inventory_date, useful_life,
                  now_display(), now_display()),
             )
             imported += 1
@@ -5209,7 +5202,7 @@ class Handler(SimpleHTTPRequestHandler):
 
     def api_member_accounts_list(self, conn):
         rows = conn.execute(
-            "SELECT u.id, u.username, u.name, u.role, u.email, u.active, u.class_id, "
+            "SELECT u.id, u.username, u.name, u.role, u.email, u.active, u.class_id, u.school_year, "
             "u.can_loan, u.can_member, u.can_book, u.can_config, u.can_report, "
             "CASE WHEN u.password <> '' THEN 1 ELSE 0 END AS has_password, "
             "c.name AS class_name "
@@ -5228,6 +5221,7 @@ class Handler(SimpleHTTPRequestHandler):
                     "email": r["email"] or "",
                     "classId": r["class_id"],
                     "className": r["class_name"] or "",
+                    "schoolYear": r["school_year"] or "115",
                     "hasPassword": bool(r["has_password"]),
                     "canLoan": bool(r["can_loan"]),
                     "canMember": bool(r["can_member"]),
@@ -5309,6 +5303,12 @@ class Handler(SimpleHTTPRequestHandler):
             if new_role not in ("admin", "root", "teacher", "student"):
                 raise ApiError(400, "角色不合法")
 
+        new_school_year = row["school_year"] or "115"
+        if "schoolYear" in data or "school_year" in data or "學年" in data:
+            new_school_year = _clean_text(data.get("schoolYear") or data.get("school_year") or data.get("學年") or "115", "學年", 10) or "115"
+            if new_school_year and not re.match(r'^\d{2,3}$', new_school_year):
+                raise ApiError(400, "學年格式錯誤（例如 115）")
+
         password = data.get("password")
         if password is not None and (
             not isinstance(password, str) or len(password) < 4 or len(password) > 128
@@ -5325,9 +5325,9 @@ class Handler(SimpleHTTPRequestHandler):
         conn.execute(
             "UPDATE users SET class_id = ?, role = ?, name = ?, email = ?, "
             "can_loan = ?, can_member = ?, can_book = ?, can_config = ?, can_report = ?, "
-            "updated_at = datetime('now', 'localtime') WHERE id = ?",
+            "school_year = ?, updated_at = datetime('now', 'localtime') WHERE id = ?",
             tuple([
-                new_class_id, new_role, name, email, *can_flags, account_id,
+                new_class_id, new_role, name, email, *can_flags, new_school_year, account_id,
             ]),
         )
         if isinstance(password, str) and password:

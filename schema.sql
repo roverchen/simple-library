@@ -56,7 +56,6 @@ CREATE TABLE IF NOT EXISTS books (
     total_amount INTEGER NOT NULL DEFAULT 0,    -- 總金額（單價 × 數量）
     source       TEXT    NOT NULL DEFAULT '',   -- 來源：自購／軍購／捐贈／英補／署補
     purchase_date TEXT   NOT NULL DEFAULT '',   -- 書籍購入日期（民國年格式 115/05/16）
-    school_year   TEXT    NOT NULL DEFAULT '115', -- 館藏所屬學年（如 115）
     keeper       TEXT    NOT NULL DEFAULT '',   -- 保管人
     confirm_note TEXT    NOT NULL DEFAULT '',   -- 確認（自由文字）
     inventory_date TEXT   NOT NULL DEFAULT '',  -- 盤點日期（民國年格式）
@@ -144,6 +143,7 @@ CREATE TABLE IF NOT EXISTS users (
     email      TEXT    NOT NULL DEFAULT '',
     barcode    TEXT    NOT NULL DEFAULT '',   -- 成員條碼：學生 SA+班級+號碼（如 SA01）、老師 T+員工編號（如 T001）
     active     INTEGER NOT NULL DEFAULT 1,
+    school_year TEXT    NOT NULL DEFAULT '115',   -- 所屬學年（如 115）
     can_loan   INTEGER NOT NULL DEFAULT 0,
     can_member INTEGER NOT NULL DEFAULT 0,
     can_book   INTEGER NOT NULL DEFAULT 0,
