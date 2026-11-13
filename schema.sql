@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS books (
     isbn         TEXT    NOT NULL DEFAULT '',
     publisher    TEXT    NOT NULL DEFAULT '',   -- 出版社
     price        INTEGER NOT NULL DEFAULT 0,    -- 單價（新台幣元）
+    useful_life  INTEGER NOT NULL DEFAULT 1,     -- 使用年限（年）
     quantity     INTEGER NOT NULL DEFAULT 1,    -- 數量（固定 1）
     total_amount INTEGER NOT NULL DEFAULT 0,    -- 總金額（單價 × 數量）
     source       TEXT    NOT NULL DEFAULT '',   -- 來源：自購／軍購／捐贈／英補／署補
