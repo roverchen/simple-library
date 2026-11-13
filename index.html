@@ -2008,7 +2008,7 @@
     }
 
     async function openNewBookModal() {
-        bookModalState = { barcode: '', isNew: true, book: { title: '', assetId: '', status: '在館', loanedTo: null, callNo: '', isbn: '', publisher: '', price: 0, quantity: 1, source: '', purchaseDate: '', keeper: '', confirmNote: '', inventoryDate: '', scrapDate: '', remarks: '', category: '', reservationStatus: '無被預約', reservationCount: 0, reservationReady: false } };
+        bookModalState = { barcode: '', isNew: true, book: { title: '', assetId: '', status: '在館', loanedTo: null, callNo: '', isbn: '', publisher: '', price: 0, quantity: 1, source: '', purchaseDate: '', keeper: '', confirmNote: '', inventoryDate: '', scrapDate: '', remarks: '', category: '', reservationStatus: '無被預約', reservationCount: 0, reservationReady: false, usefulLife: 1 } };
         document.getElementById('bookModalTitle').textContent = '➕ 新增圖書（條碼依來源自動產生）';
         document.getElementById('bookModalError').textContent = '';
         renderBookModalFields();
@@ -2054,6 +2054,7 @@
                 confirmNote: b.confirmNote || '',
                 inventoryDate: b.inventoryDate || '',
                 scrapDate: b.scrapDate || '',
+                usefulLife: b.usefulLife != null ? b.usefulLife : 1,
             };
         } catch (err) {
             // 若伺服器查詢失敗，回退到本地快取
@@ -2120,6 +2121,8 @@
             <input type="text" id="bfPurchaseDate" data-name="purchaseDate" value="${escapeHtml(book.purchaseDate || '')}">
             <label for="bfKeeper">保管人</label>
             <input type="text" id="bfKeeper" data-name="keeper" value="${escapeHtml(book.keeper || '')}">
+            <label for="bfUsefulLife">使用年限（年）</label>
+            <input type="number" id="bfUsefulLife" data-name="usefulLife" min="0" max="100" value="${escapeHtml(String(book.usefulLife != null ? book.usefulLife : 1))}">
             <label for="bfConfirmNote">確認</label>
             <input type="text" id="bfConfirmNote" data-name="confirmNote" value="${escapeHtml(book.confirmNote || '')}">
             <label for="bfInventoryDate">盤點日期（民國年）</label>

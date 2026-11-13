@@ -637,6 +637,11 @@ def init_db(db_path):
             pass
 
         try:
+            conn.execute("ALTER TABLE books ADD COLUMN useful_life INTEGER NOT NULL DEFAULT 1")
+        except Exception:
+            pass
+
+        try:
             conn.execute("ALTER TABLE categories ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))")
         except Exception:
             pass
@@ -847,6 +852,7 @@ def book_json(row):
         "publisher": row["publisher"] or "",
         "price": row["price"] or 0,
         "quantity": row["quantity"] or 1,
+        "usefulLife": (row["useful_life"] if ("useful_life" in row.keys() and row["useful_life"] is not None) else 1),
         "source": row["source"] or "",
         "purchaseDate": row["purchase_date"] or "",
         "keeper": row["keeper"] or "",
@@ -3919,6 +3925,7 @@ class Handler(SimpleHTTPRequestHandler):
             "purchaseDate": row["purchase_date"] or "",
             "keeper": row["keeper"] or "",
             "confirmNote": row["confirm_note"] or "",
+            "usefulLife": (row["useful_life"] if ("useful_life" in row.keys() and row["useful_life"] is not None) else 1),
             "inventoryDate": row["inventory_date"] or "",
             "scrapDate": row["scrap_date"] or "",
             "reservationStatus": "有被預約" if resv["total"] else "無被預約",
@@ -3956,6 +3963,12 @@ class Handler(SimpleHTTPRequestHandler):
         confirm_note = _clean_text(data.get("confirmNote") or "", "確認", 200)
         inventory_date = self._roc_date(data.get("inventoryDate"), "盤點日期")
         scrap_date = self._roc_date(data.get("scrapDate"), "報廢日期")
+        try:
+            useful_life = int(data.get("usefulLife") or data.get("useful_life") or 1)
+        except (TypeError, ValueError):
+            useful_life = 1
+        if useful_life < 0 or useful_life > 100:
+            raise ApiError(400, "使用年限需為 0–100")
         quantity = 1  # 固定為 1（規格要求不可更改）
         total_amount = price * quantity  # 總金額 = 單價 × 數量
         status = None
@@ -3973,10 +3986,10 @@ class Handler(SimpleHTTPRequestHandler):
             ).fetchone()
             if row:
                 conn.execute(
-                    "UPDATE books SET title = ?, asset_id = ?, call_no = ?, category = ?, isbn = ?, remarks = ?, publisher = ?, price = ?, quantity = ?, total_amount = ?, source = ?, purchase_date = ?, keeper = ?, confirm_note = ?, inventory_date = ?, scrap_date = ?, updated_at = ? "
+                    "UPDATE books SET title = ?, asset_id = ?, call_no = ?, category = ?, isbn = ?, remarks = ?, publisher = ?, price = ?, quantity = ?, total_amount = ?, source = ?, purchase_date = ?, keeper = ?, confirm_note = ?, inventory_date = ?, scrap_date = ?, useful_life = ?, updated_at = ? "
                     "WHERE barcode = ?",
                     (title, asset, call_no, category, isbn, remarks, publisher, price, quantity, total_amount, source,
-                     purchase_date, keeper, confirm_note, inventory_date, scrap_date,
+                     purchase_date, keeper, confirm_note, inventory_date, scrap_date, useful_life,
                      now_display(), barcode),
                 )
                 if status:
@@ -3986,11 +3999,11 @@ class Handler(SimpleHTTPRequestHandler):
                     )
             else:
                 conn.execute(
-                    "INSERT INTO books (barcode, title, asset_id, status, remarks, call_no, category, isbn, publisher, price, quantity, total_amount, source, purchase_date, keeper, confirm_note, inventory_date, scrap_date, created_at, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO books (barcode, title, asset_id, status, remarks, call_no, category, isbn, publisher, price, quantity, total_amount, source, purchase_date, keeper, confirm_note, inventory_date, scrap_date, useful_life, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (barcode, title, asset, status or "在館", remarks, call_no, category, isbn,
                      publisher, price, quantity, total_amount, source, purchase_date, keeper,
-                     confirm_note, inventory_date, scrap_date,
+                     confirm_note, inventory_date, scrap_date, useful_life,
                      now_display(), now_display()),
                 )
                 was_insert = True
@@ -4546,14 +4559,20 @@ class Handler(SimpleHTTPRequestHandler):
                 price = int(item.get("price") or item.get("單價") or 0)
             except (TypeError, ValueError):
                 price = 0
+            try:
+                useful_life = int(item.get("usefulLife") or item.get("useful_life") or item.get("使用年限") or 1)
+            except (TypeError, ValueError):
+                useful_life = 1
+            if useful_life < 0 or useful_life > 100:
+                useful_life = 1
             if not barcode or not title:
                 continue
             conn.execute(
-                "INSERT INTO books (barcode, title, asset_id, status, remarks, isbn, publisher, source, price, purchase_date, keeper, confirm_note, inventory_date, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
-                "ON CONFLICT(barcode) DO UPDATE SET title = excluded.title, asset_id = excluded.asset_id, isbn = excluded.isbn, status = excluded.status, publisher = excluded.publisher, source = excluded.source, price = excluded.price, purchase_date = excluded.purchase_date, keeper = excluded.keeper, confirm_note = excluded.confirm_note, inventory_date = excluded.inventory_date, updated_at = excluded.updated_at",
+                "INSERT INTO books (barcode, title, asset_id, status, remarks, isbn, publisher, source, price, purchase_date, keeper, confirm_note, inventory_date, useful_life, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(barcode) DO UPDATE SET title = excluded.title, asset_id = excluded.asset_id, isbn = excluded.isbn, status = excluded.status, publisher = excluded.publisher, source = excluded.source, price = excluded.price, purchase_date = excluded.purchase_date, keeper = excluded.keeper, confirm_note = excluded.confirm_note, inventory_date = excluded.inventory_date, useful_life = excluded.useful_life, updated_at = excluded.updated_at",
                 (barcode, title, asset_id, status, "", isbn, publisher, source, price,
-                 purchase_date, keeper, confirm_note, inventory_date,
+                 purchase_date, keeper, confirm_note, inventory_date, useful_life,
                  now_display(), now_display()),
             )
             imported += 1
