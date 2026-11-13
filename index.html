@@ -381,18 +381,14 @@
 
     <div id="managePage" class="page">
         <div class="input-group">
-            <input type="text" id="manageBarcodeInput" placeholder="條碼槍掃描或手動輸入條碼後按 Enter（新增/編輯圖書）" autocomplete="off">
-        </div>
-        <div id="manageActionGrid" class="action-grid">
-            <button onclick="initiateScan('manage')" class="btn-main btn-add-book">🔍 掃描新增/快速編輯 (QR)</button>
-            <button onclick="openNewBookModal()" class="btn-main" style="background:var(--primary);">➕ 新增圖書（自動編號）</button>
-            <button onclick="togglePrintMode()" class="print-mode-btn btn-main" style="background:var(--secondary);">切換至：標籤模式</button>
-        </div>
-        <div class="input-group">
             <input type="text" id="bookManageSearchInput" placeholder="🔍 搜尋書名／財產編號／索書號／ISBN 關鍵字" oninput="searchBooks();" style="padding:10px; border:1px solid #ccc; border-radius:8px; font-size:1rem; width:100%;">
             <label style="display:flex; align-items:center; gap:8px; margin-top:8px; font-size:0.95rem; color:#555; cursor:pointer;">
                 <input type="checkbox" id="bookOnlyReserved" style="width:auto; margin:0;" onchange="searchBooks();"> 只看有預約的書
             </label>
+        </div>
+        <div id="manageActionGrid" class="action-grid">
+            <button onclick="openNewBookModal()" class="btn-main" style="background:var(--primary);">➕ 新增圖書（自動編號）</button>
+            <button onclick="togglePrintMode()" class="print-mode-btn btn-main" style="background:var(--secondary);">切換至：標籤模式</button>
         </div>
         <div class="table-container">
             <table id="bookTable">
@@ -3776,7 +3772,6 @@
             });
         };
         bind('loanBarcodeInput', () => document.getElementById('gunMode').value);
-        bind('manageBarcodeInput', () => 'manage');
     }
 
     function focusGunInput() {
