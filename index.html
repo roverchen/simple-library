@@ -385,6 +385,7 @@
         </div>
         <div id="manageActionGrid" class="action-grid">
             <button onclick="initiateScan('manage')" class="btn-main btn-add-book">🔍 掃描新增/快速編輯 (QR)</button>
+            <button onclick="openNewBookModal()" class="btn-main" style="background:var(--primary);">➕ 新增圖書（自動編號）</button>
             <button onclick="togglePrintMode()" class="print-mode-btn btn-main" style="background:var(--secondary);">切換至：標籤模式</button>
         </div>
         <div class="input-group">
@@ -2006,6 +2007,22 @@
         document.getElementById('bookModal').classList.add('open');
     }
 
+    async function openNewBookModal() {
+        bookModalState = { barcode: '', isNew: true, book: { title: '', assetId: '', status: '在館', loanedTo: null, callNo: '', isbn: '', publisher: '', price: 0, quantity: 1, source: '', purchaseDate: '', keeper: '', confirmNote: '', inventoryDate: '', scrapDate: '', remarks: '', category: '', reservationStatus: '無被預約', reservationCount: 0, reservationReady: false } };
+        document.getElementById('bookModalTitle').textContent = '➕ 新增圖書（條碼依來源自動產生）';
+        document.getElementById('bookModalError').textContent = '';
+        renderBookModalFields();
+        loadCategories().then(() => {
+            const bcSel = document.getElementById('bfCategory');
+            // 新增時不預選分類
+        });
+        // 新增模式：隱藏報廢/取消報廢/續借按鈕
+        document.getElementById('bookModalScrap').style.display = 'none';
+        document.getElementById('bookModalScrap').nextElementSibling.style.display = 'none';
+        document.getElementById('bookModalRenew').style.display = 'none';
+        document.getElementById('bookModal').classList.add('open');
+    }
+
     async function loadBookDetails(barcode) {
         if (!barcode) return { title: "", assetId: "", status: "在館", loanedTo: null, callNo: "", isbn: "" };
         try {
@@ -2171,13 +2188,21 @@
 
     async function submitBookModal() {
         if (!bookModalState) return;
-        const barcode = bookModalState.barcode;
+        let barcode = bookModalState.barcode;
         const values = {};
         document.querySelectorAll('#bookModalFields [data-name]').forEach(el => { values[el.dataset.name] = el.value; });
         const errorEl = document.getElementById('bookModalError');
         errorEl.textContent = '';
         if (!values.assetId || !values.assetId.trim()) { errorEl.textContent = '財產編號不可空白'; return; }
         if (!values.title || !values.title.trim()) { errorEl.textContent = '書名不可空白'; return; }
+        const isNew = !!bookModalState.isNew;
+        if (isNew) {
+            if (!(values.source || '').trim()) { errorEl.textContent = '新增圖書請先選擇「來源」（軍購／自購／英補／署補／捐贈）'; return; }
+            try {
+                const r = await api('GET', '/api/barcode/next?source=' + encodeURIComponent((values.source || '').trim()));
+                barcode = r.barcode;
+            } catch (err) { errorEl.textContent = '產生條碼失敗：' + err.message; return; }
+        }
         try {
             const res = await api('PUT', '/api/books/' + encodeURIComponent(barcode), {
                 title: values.title.trim(),
@@ -2198,6 +2223,7 @@
             bookDatabase[barcode] = res.book;
             closeBookModal();
             renderBookTable();
+            if (isNew) alert('✅ 已新增圖書，自動產生條碼：' + barcode);
         } catch (err) { errorEl.textContent = '儲存失敗：' + err.message; }
     }
 

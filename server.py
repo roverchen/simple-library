@@ -1906,6 +1906,10 @@ class Handler(SimpleHTTPRequestHandler):
                     raise ApiError(400, "主題分類代碼不合法：{}".format(category))
                 return self.send_json({"ok": True, "callNo": auto_call_no(category, title)})
 
+            if method == "GET" and path == "/api/barcode/next":
+                require_permission(conn, token, "book")
+                return self.api_barcode_next(conn, query)
+
             if method == "PUT" and path == "/api/categories":
                 require_permission(conn, token, "config")
                 return self.api_categories_upsert(conn)
@@ -4041,6 +4045,31 @@ class Handler(SimpleHTTPRequestHandler):
             "loanDays": loan_days,
             "memberType": member_type,
         })
+
+    def api_barcode_next(self, conn, query):
+        """依來源自動產生下一個圖書條碼：軍購 AK-000001、自購 BK-000001、英補 CK-000001、署補 DK-000001、捐贈 EK-000001。"""
+        source = (query.get("source") or [""])[0].strip()
+        prefix_map = {
+            "軍購": "AK", "自購": "BK", "英補": "CK", "署補": "DK", "捐贈": "EK",
+        }
+        if source not in prefix_map:
+            raise ApiError(400, "來源必須是「自購／軍購／捐贈／英補／署補」")
+        prefix = prefix_map[source]
+        # 找出該前綴目前最大的流水號
+        max_num = 0
+        pattern = prefix + "-%"
+        for r in conn.execute(
+            "SELECT barcode FROM books WHERE barcode LIKE ?", (pattern,)
+        ):
+            bc = r["barcode"] or ""
+            # 取最後一段數字
+            tail = bc.split("-")[-1]
+            if tail.isdigit():
+                num = int(tail)
+                if num > max_num:
+                    max_num = num
+        next_num = max_num + 1
+        return self.send_json({"ok": True, "barcode": "{}-{:06d}".format(prefix, next_num)})
 
     def api_categories_list(self, conn):
         rows = conn.execute(
