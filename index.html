@@ -640,7 +640,6 @@
                     <input type="date" id="logDateToFilter" aria-label="結束日期" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:140px;">
                 </span>
                 <button onclick="renderReportTable()" style="padding:8px 12px; background:var(--secondary); color:white; border:none; border-radius:5px;">🔍 查詢</button>
-                <button onclick="clearLoanLogs()" style="padding:8px 12px; background:#c62828; color:white; border:none; border-radius:5px;">🧹 一鍵清除借閱紀錄</button>
                 <button onclick="exportIssuesReport()" style="padding:8px 12px; background:var(--primary); color:white; border:none; border-radius:5px;">📄 匯出爭議/遺失/修繕借閱紀錄 (xlsx)</button>
                 <button onclick="exportLogsPdf()" style="padding:8px 12px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 匯出借閱紀錄 PDF</button>
                 <button onclick="downloadPdf('/api/report/publisher-stats.pdf')" style="padding:8px 12px; background:#607d8b; color:white; border:none; border-radius:5px;">📊 出版社統計 PDF</button>
@@ -1483,15 +1482,6 @@
             tbody.innerHTML = `<tr><td colspan="5" style="color:#c62828;">載入失敗：${escapeHtml(err.message)}</td></tr>`;
             document.getElementById('reportPager').innerHTML = '';
         }
-    }
-
-    async function clearLoanLogs() {
-        if (!confirm("確定要一鍵清除所有借閱紀錄嗎？此動作不可復原。")) return;
-        try {
-            const res = await api('POST', '/api/logs/clear');
-            await renderReportTable();
-            alert("已清除 " + (res.deleted || 0) + " 筆借閱紀錄");
-        } catch (err) { alert("❌ " + err.message); }
     }
 
     function exportIssuesReport() {
