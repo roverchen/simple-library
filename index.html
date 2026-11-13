@@ -140,7 +140,7 @@
         .dash-late .dash-num { color: #c62828; }
         .dash-label { margin-top: 6px; color: #555; font-size: 0.95rem; }
 
-        /* 🔍 F06 館藏查詢 */
+        /* 🔍 館藏查詢 */
         .query-stats { background: #f0f5fb; border: 1px solid #d5deea; border-radius: 6px; padding: 10px 14px; margin-top: 12px; color: #2c5f8a; font-size: 0.98rem; }
         .query-group { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; margin-bottom: 12px; }
         .query-group-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; font-size: 1.02rem; }
@@ -294,9 +294,9 @@
         <div id="dashboardHint" style="color:#666; font-size:0.9rem; margin-top:12px;"></div>
     </div>
 
-    <!-- 🔍 F06 館藏查詢系統：老師可搜尋 ISBN／書名／出版社，複本彙整 -->
+    <!-- 🔍 館藏查詢系統：老師可搜尋 ISBN／書名／出版社，複本彙整 -->
     <div id="queryPage" class="page">
-        <h3 style="margin-top:0;">🔍 館藏查詢（F06）</h3>
+        <h3 style="margin-top:0;">🔍 館藏查詢</h3>
         <div class="input-group">
             <div style="display:flex; gap:8px; flex-wrap:wrap;">
                 <input type="text" id="queryKeyword" placeholder="輸入書名／ISBN／財產編號／索書號（可掃描 ISBN）" autocomplete="off"
@@ -1010,7 +1010,7 @@
         }
     }
 
-    // 🔍 F06 館藏查詢
+    // 🔍 館藏查詢
     let queryHistoryInitialized = false;
 
     function initQueryPage() {
@@ -2346,7 +2346,7 @@
 
 
     function changeTab(pageId) {
-        // 權限檢查：無權限則不允許進入（儀表板全員可見；F06 館藏查詢開放給借還書／報表／圖書管理任一權限）
+        // 權限檢查：無權限則不允許進入（儀表板全員可見；館藏查詢開放給借還書／報表／圖書管理任一權限）
         const p = currentUser.permissions || {};
         const pagePerms = {
             'dashboardPage': true,

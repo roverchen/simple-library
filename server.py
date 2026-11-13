@@ -333,7 +333,7 @@ def require_permission(conn, token, perm):
 
 
 def require_any_permission(conn, token, perms):
-    """多權限擇一通過（F06 館藏查詢：借還書／報表／圖書管理皆可）。"""
+    """多權限擇一通過（館藏查詢：借還書／報表／圖書管理皆可）。"""
     row = conn.execute(
         "SELECT s.user_id, u.role, u.can_loan, u.can_member, u.can_book, u.can_config, u.can_report "
         "FROM sessions s LEFT JOIN users u ON u.id = s.user_id WHERE s.token = ?",
@@ -1964,7 +1964,7 @@ class Handler(SimpleHTTPRequestHandler):
     # ------------------------------------------------------------------
 
     def api_query_books(self, conn, query):
-        """F06 館藏查詢：關鍵字（書名／ISBN／條碼／財編／索書號）＋出版社篩選，複本彙整。"""
+        """館藏查詢：關鍵字（書名／ISBN／條碼／財編／索書號）＋出版社篩選，複本彙整。"""
         keyword = (query.get("q") or [""])[0].strip()
         publisher = (query.get("publisher") or [""])[0].strip()
         conds, params = [], []
