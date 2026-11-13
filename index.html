@@ -673,12 +673,7 @@
                     <input type="date" id="logDateToFilter" aria-label="結束日期" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:140px;">
                 </span>
                 <button onclick="renderReportTable()" style="padding:8px 12px; background:var(--secondary); color:white; border:none; border-radius:5px;">🔍 查詢</button>
-                <button onclick="exportIssuesReport()" style="padding:8px 12px; background:var(--primary); color:white; border:none; border-radius:5px;">📄 匯出爭議/遺失/修繕借閱紀錄 (xlsx)</button>
                 <button onclick="exportLogsPdf()" style="padding:8px 12px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 匯出借閱紀錄 PDF</button>
-                <button onclick="downloadPdf('/api/report/publisher-stats.pdf')" style="padding:8px 12px; background:#607d8b; color:white; border:none; border-radius:5px;">📊 出版社統計 PDF</button>
-                <button onclick="downloadPdf('/api/report/full-catalog.pdf')" style="padding:8px 12px; background:#607d8b; color:white; border:none; border-radius:5px;">📚 全圖名冊 PDF</button>
-                <button onclick="downloadPdf('/api/report/callno-catalog.pdf')" style="padding:8px 12px; background:#607d8b; color:white; border:none; border-radius:5px;">🔤 索書號清冊 PDF</button>
-                <button onclick="downloadPdf('/api/report/command-codes.pdf')" style="padding:8px 12px; background:#607d8b; color:white; border:none; border-radius:5px;">📱 指令條碼名冊 PDF</button>
             </div>
             <table>
                 <thead><tr><th>時間</th><th>班級</th><th>姓名</th><th>書名</th><th>動作</th></tr></thead>
@@ -730,6 +725,11 @@
                 <button onclick="downloadPdf('/api/report/checked-out.pdf')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 已借出 PDF</button>
                 <button onclick="printInventoryReport('issues')" style="padding:10px; background:#8e24aa; color:white; border:none; border-radius:5px;">⚠️ 列印爭議/遺失/修繕清冊</button>
                 <button onclick="downloadPdf('/api/report/issues.pdf')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 爭議清冊 PDF</button>
+                <button onclick="exportIssuesReport()" style="padding:10px; background:var(--primary); color:white; border:none; border-radius:5px;">📄 匯出爭議/遺失/修繕借閱紀錄 (xlsx)</button>
+                <button onclick="downloadPdf('/api/report/publisher-stats.pdf')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">📊 出版社統計 PDF</button>
+                <button onclick="downloadPdf('/api/report/full-catalog.pdf')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">📚 全圖名冊 PDF</button>
+                <button onclick="downloadPdf('/api/report/callno-catalog.pdf')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">🔤 索書號清冊 PDF</button>
+                <button onclick="downloadPdf('/api/report/command-codes.pdf')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">📱 指令條碼名冊 PDF</button>
                 <button onclick="downloadPdf('/api/report/inventory-qr.pdf')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">🏷️ 書籍財產條碼名冊 (QR)</button>
                 <button onclick="downloadPdf('/api/report/members-qr.pdf')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">👶 全園學生條碼名冊 (QR)</button>
                 <button onclick="downloadPdf('/api/report/teachers-qr.pdf')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">👩‍🏫 全園老師條碼名冊 (QR)</button>
