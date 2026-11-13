@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS books (
     total_amount INTEGER NOT NULL DEFAULT 0,    -- 總金額（單價 × 數量）
     source       TEXT    NOT NULL DEFAULT '',   -- 來源：自購／軍購／捐贈／英補／署補
     purchase_date TEXT   NOT NULL DEFAULT '',   -- 書籍購入日期（民國年格式 115/05/16）
+    school_year   TEXT    NOT NULL DEFAULT '115', -- 館藏所屬學年（如 115）
     keeper       TEXT    NOT NULL DEFAULT '',   -- 保管人
     confirm_note TEXT    NOT NULL DEFAULT '',   -- 確認（自由文字）
     inventory_date TEXT   NOT NULL DEFAULT '',  -- 盤點日期（民國年格式）
