@@ -393,7 +393,7 @@ def session_actor(conn, token):
 
 
 def next_username(conn):
-    """產生下一個未被使用的數字帳號（例如 026）。"""
+    """產生下一個未被使用的數字帳號（例如 00026）。"""
     max_num = 0
     for row in conn.execute("SELECT username FROM users"):
         value = (row["username"] or "").strip()
@@ -401,7 +401,7 @@ def next_username(conn):
             max_num = max(max_num, int(value))
     num = max_num + 1
     while True:
-        candidate = "{:03d}".format(num)
+        candidate = "{:05d}".format(num)
         if not conn.execute("SELECT 1 FROM users WHERE username = ?", (candidate,)).fetchone():
             return candidate
         num += 1
