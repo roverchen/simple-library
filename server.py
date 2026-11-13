@@ -4321,13 +4321,13 @@ class Handler(SimpleHTTPRequestHandler):
         wb = Workbook()
         ws = wb.active
         ws.title = "老師名單"
-        ws.append(["員工編號", "姓名", "班級（可留空）", "角色"])
-        ws.append(["T001", "（範例）王老師", "太陽班", "teacher"])
+        ws.append(["員工編號", "姓名", "班級（可留空）", "角色", "學年"])
+        ws.append(["T001", "（範例）王老師", "太陽班", "teacher", "115"])
         for cell in ws[1]:
             cell.font = Font(bold=True)
         ws2 = wb.create_sheet("學生名單")
-        ws2.append(["學號", "姓名", "班級", "角色"])
-        ws2.append(["a01", "（範例）林小明", "太陽班", "student"])
+        ws2.append(["學號", "姓名", "班級", "角色", "學年"])
+        ws2.append(["a01", "（範例）林小明", "太陽班", "student", "115"])
         for cell in ws2[1]:
             cell.font = Font(bold=True)
         ws3 = wb.create_sheet("填寫說明")
@@ -4460,6 +4460,18 @@ class Handler(SimpleHTTPRequestHandler):
                 (row["id"], name),
             ).fetchone()
             ensure_member_user(conn, row["id"], name, barcode=member_id)
+            # 學年：若匯入資料有提供則更新
+            sy_raw = item.get("schoolYear") or item.get("school_year") or item.get("學年")
+            if sy_raw is not None and str(sy_raw).strip():
+                sy = _clean_text(str(sy_raw), "學年", 10)
+                if sy and re.match(r'^\d{2,3}$', sy):
+                    # 找到對應 user id
+                    urow = conn.execute(
+                        "SELECT id FROM users WHERE class_id = ? AND name = ? ORDER BY id DESC LIMIT 1",
+                        (row["id"], name),
+                    ).fetchone()
+                    if urow:
+                        conn.execute("UPDATE users SET school_year = ? WHERE id = ?", (sy, urow["id"]))
             if not exists:
                 imported += 1
         self._audit(conn, token, "批次匯入成員",
