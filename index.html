@@ -2020,6 +2020,8 @@
         document.getElementById('bookModalScrap').style.display = 'none';
         document.getElementById('bookModalScrap').nextElementSibling.style.display = 'none';
         document.getElementById('bookModalRenew').style.display = 'none';
+        const assetEl = document.getElementById('bfAssetId');
+        if (assetEl) { assetEl.readOnly = true; assetEl.style.background = '#f5f5f5'; }
         document.getElementById('bookModal').classList.add('open');
     }
 
@@ -2109,7 +2111,7 @@
             <label for="bfTotalAmount">總金額（元）</label>
             <input type="number" id="bfTotalAmount" data-name="totalAmount" min="0" step="1" value="${escapeHtml(String(book.totalAmount != null ? book.totalAmount : (book.price != null ? book.price : 0)))}" readonly>
             <label for="bfSource">來源</label>
-            <select id="bfSource" data-name="source">
+            <select id="bfSource" data-name="source" onchange="previewBarcode()">
                 <option value="">（未指定）</option>
                 ${['自購', '軍購', '捐贈', '英補', '署補'].map(s =>
                     `<option value="${s}"${book.source === s ? ' selected' : ''}>${s}</option>`).join('')}
@@ -2167,6 +2169,19 @@
         } catch (err) {
             errorEl.textContent = err.message;
         }
+    }
+
+    async function previewBarcode() {
+        if (!bookModalState || !bookModalState.isNew) return;
+        const sourceEl = document.getElementById('bfSource');
+        const assetEl = document.getElementById('bfAssetId');
+        if (!sourceEl || !assetEl) return;
+        const source = (sourceEl.value || '').trim();
+        if (!source) { assetEl.value = ''; return; }
+        try {
+            const r = await api('GET', '/api/barcode/next?source=' + encodeURIComponent(source));
+            if (r && r.barcode) assetEl.value = r.barcode;
+        } catch (_) { /* 失敗不阻斷 */ }
     }
 
     async function previewCallNo() {
