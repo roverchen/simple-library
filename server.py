@@ -4750,7 +4750,7 @@ class Handler(SimpleHTTPRequestHandler):
                 "SELECT 1 FROM users WHERE class_id = ? AND name = ?",
                 (row["id"], name),
             ).fetchone()
-            ensure_member_user(conn, row["id"], name, barcode=member_id)
+            ensure_member_user(conn, row["id"], name, flags=(0, 0, 0, 0, 0), barcode=member_id)
             # 學年：若匯入資料有提供則更新
             sy_raw = item.get("schoolYear") or item.get("school_year") or item.get("學年")
             if sy_raw is not None and str(sy_raw).strip():
@@ -4811,7 +4811,7 @@ class Handler(SimpleHTTPRequestHandler):
         if not row:
             raise ApiError(404, "找不到班級：{}".format(class_name))
         member_flags = (
-            1 if data.get("canLoan", True) else 0,
+            1 if data.get("canLoan", False) else 0,
             1 if data.get("canMember") else 0,
             1 if data.get("canBook") else 0,
             1 if data.get("canConfig") else 0,
