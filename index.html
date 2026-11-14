@@ -969,7 +969,6 @@
         // 借還紀錄明細（館藏查詢頁內）：需借還書或報表權限
         const hist = document.getElementById('queryHistorySection');
         if (hist) hist.style.display = (p.canLoan || p.canReport) ? '' : 'none';
-        // 無任何功能權限時（如學生帳號），僅保留儀表板與館藏查詢
     }
 
     // 📊 儀表板：館藏／人數即時概況
