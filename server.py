@@ -437,11 +437,12 @@ def ensure_member_user(conn, class_id, name, flags=None, barcode=None):
         return row["id"]
 
     default_flags = flags if isinstance(flags, (list, tuple)) and len(flags) == 5 else (1, 0, 0, 0, 0)
+    # barcode 為 NOT NULL 欄位；未提供時以自動編號（username）作為條碼
     cursor = conn.execute(
         "INSERT INTO users (username, name, password, role, class_id, email, barcode, active, "
         "can_loan, can_member, can_book, can_config, can_report) "
         "VALUES (?, ?, ?, 'student', ?, '', ?, 1, ?, ?, ?, ?, ?)",
-        (username, name, hash_password(DEFAULT_PASSWORD), class_id, barcode, *default_flags),
+        (username, name, hash_password(DEFAULT_PASSWORD), class_id, barcode or username, *default_flags),
     )
     return cursor.lastrowid
 
