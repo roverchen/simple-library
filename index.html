@@ -1811,6 +1811,14 @@
         { label: '🔖 預約清單', url: () => '/api/export/reservations' },
     ];
 
+    function exportCenterClick(i, fmt) {
+        // 統一接住條件檢查錯誤（如「個人閱讀歷程」未選姓名），避免按鍵靜默失敗
+        try {
+            const url = EXPORT_REPORTS[i].url();
+            if (url) downloadReport(url, fmt);
+        } catch (err) { alert('❌ ' + err.message); }
+    }
+
     function renderExportCenter() {
         const el = document.getElementById('exportCenterTable');
         if (!el) return;
@@ -1818,7 +1826,7 @@
         EXPORT_REPORTS.forEach((it, i) => {
             html += '<tr><td style="font-weight:600;">' + it.label + '</td>'
                 + ['pdf', 'xlsx', 'csv'].map(f =>
-                    '<td style="text-align:center;"><button onclick="downloadReport(EXPORT_REPORTS[' + i + '].url(),\'' + f + '\')" style="padding:4px 10px; background:#607d8b; color:white; border:none; border-radius:4px; font-size:0.85rem;">' + f.toUpperCase() + '</button></td>'
+                    '<td style="text-align:center;"><button onclick="exportCenterClick(' + i + ',\'' + f + '\')" style="padding:4px 10px; background:#607d8b; color:white; border:none; border-radius:4px; font-size:0.85rem;">' + f.toUpperCase() + '</button></td>'
                   ).join('')
                 + '</tr>';
         });
