@@ -304,7 +304,7 @@
                 <select id="queryPublisher" style="min-width:140px;" onchange="scheduleBookQuery()"><option value="">全部出版社</option></select>
             </div>
             <small style="color:#666;">輸入關鍵字或選擇出版社即自動查詢；支援直接掃描 ISBN 條碼；相同 ISBN（或書名）的多本實體書會自動彙整。</small>
-            <div style="display:flex; gap:8px; align-items:center; margin-top:8px; flex-wrap:wrap;">
+            <div id="queryExportRow" style="display:flex; gap:8px; align-items:center; margin-top:8px; flex-wrap:wrap;">
                 <span style="color:#555; font-size:0.9rem;">匯出本查詢結果：</span>
                 <button onclick="downloadReport(booksExportQS('/api/export/books'),'pdf')" style="padding:5px 12px; background:#607d8b; color:white; border:none; border-radius:4px;">PDF</button>
                 <button onclick="downloadReport(booksExportQS('/api/export/books'),'xlsx')" style="padding:5px 12px; background:#607d8b; color:white; border:none; border-radius:4px;">xlsx</button>
@@ -969,6 +969,9 @@
         // 借還紀錄明細（館藏查詢頁內）：需借還書或報表權限
         const hist = document.getElementById('queryHistorySection');
         if (hist) hist.style.display = (p.canLoan || p.canReport) ? '' : 'none';
+        // 館藏查詢頁的「匯出本查詢結果」：需報表權限
+        const qer = document.getElementById('queryExportRow');
+        if (qer) qer.style.display = p.canReport ? 'flex' : 'none';
     }
 
     // 📊 儀表板：館藏／人數即時概況
