@@ -964,12 +964,7 @@
         document.getElementById('btn-managePage').style.display = p.canBook ? '' : 'none';
         document.getElementById('btn-configPage').style.display = p.canConfig ? '' : 'none';
         document.getElementById('btn-reportPage').style.display = p.canReport ? '' : 'none';
-        // 至少顯示一個頁面：若全部隱藏，預設顯示借還書
-        const visible = ['btn-loanPage','btn-classPage','btn-managePage','btn-configPage','btn-reportPage']
-            .some(id => document.getElementById(id).style.display !== 'none');
-        if (!visible) {
-            document.getElementById('btn-loanPage').style.display = '';
-        }
+        // 無任何功能權限時（如學生帳號），僅保留儀表板
     }
 
     // 📊 儀表板：館藏／人數即時概況
@@ -3025,7 +3020,7 @@
     function openMemberModalAdd() {
         const defaultClass = (config.classes || [])[0] || '__staff__';
         const isStaff = defaultClass === '__staff__';
-        memberModalState = { mode: 'add', id: null, values: { className: defaultClass, name: '', email: '', role: defaultClass === '__staff__' ? 'teacher' : 'student', canLoan: true, canMember: false, canBook: false, canConfig: false, canReport: false, schoolYear: '115' } };
+        memberModalState = { mode: 'add', id: null, values: { className: defaultClass, name: '', email: '', role: defaultClass === '__staff__' ? 'teacher' : 'student', canLoan: isStaff, canMember: false, canBook: false, canConfig: false, canReport: false, schoolYear: '115' } };
         document.getElementById('memberModalTitle').textContent = '\u279C \u65B0\u589E\u6210\u50A8';
         document.getElementById('memberModalError').textContent = '';
         renderMemberModalFields();
@@ -3043,7 +3038,7 @@
             <div class="permBox">
                 <div class="permTitle">🔐 功能權限</div>
                 <div class="permGrid">
-                    <label><input type="checkbox" data-name="canLoan"${v.canLoan ? ' checked' : ''}> 📖 借還書</label>
+                    <label${v.role === 'student' ? ' style="color:#999;"' : ''}><input type="checkbox" data-name="canLoan"${v.canLoan ? ' checked' : ''}${v.role === 'student' ? ' disabled' : ''}> 📖 借還書${v.role === 'student' ? '（學生不提供）' : ''}</label>
                     <label><input type="checkbox" data-name="canMember"${v.canMember ? ' checked' : ''}> 👥 班級成員</label>
                     <label><input type="checkbox" data-name="canBook"${v.canBook ? ' checked' : ''}> 📚 圖書管理</label>
                     <label><input type="checkbox" data-name="canConfig"${v.canConfig ? ' checked' : ''}> ⚙️ 系統設定</label>

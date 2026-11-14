@@ -327,6 +327,9 @@ def require_permission(conn, token, perm):
     role = (row["role"] or "").strip()
     if role in ("admin", "root"):
         return
+    # 學生角色不提供借還書功能（無論旗標），借還書請由老師操作
+    if perm == "loan" and role == "student":
+        raise ApiError(403, "學生帳號無借還書權限，請由老師協助借還")
     col = "can_" + perm
     if not row[col]:
         raise ApiError(403, "此帳號未啟用「{}」功能".format(perm))
@@ -412,7 +415,7 @@ def ensure_member_user(conn, class_id, name, flags=None, barcode=None):
 
     成員與帳號已整併到 users 表：class_id 有值即為班級成員，
     老師／管理員則為 class_id IS NULL。
-    新建帳號時以 flags 套用功能權限（預設僅開借還書）；
+    新建帳號時以 flags 套用功能權限（學生預設全不勾，借還書由老師操作）；
     重新加入既有（曾停用）成員時保留原權限，不覆蓋。
     barcode 為成員條碼（＝5 位數帳號 username），掃描 QR 可快速選定借閱人。
     """
@@ -436,7 +439,7 @@ def ensure_member_user(conn, class_id, name, flags=None, barcode=None):
         )
         return row["id"]
 
-    default_flags = flags if isinstance(flags, (list, tuple)) and len(flags) == 5 else (1, 0, 0, 0, 0)
+    default_flags = flags if isinstance(flags, (list, tuple)) and len(flags) == 5 else (0, 0, 0, 0, 0)
     # barcode 為 NOT NULL 欄位；未提供時以自動編號（username）作為條碼
     cursor = conn.execute(
         "INSERT INTO users (username, name, password, role, class_id, email, barcode, active, "
@@ -4811,7 +4814,7 @@ class Handler(SimpleHTTPRequestHandler):
         if not row:
             raise ApiError(404, "找不到班級：{}".format(class_name))
         member_flags = (
-            1 if data.get("canLoan", True) else 0,
+            1 if data.get("canLoan", False) else 0,
             1 if data.get("canMember") else 0,
             1 if data.get("canBook") else 0,
             1 if data.get("canConfig") else 0,
