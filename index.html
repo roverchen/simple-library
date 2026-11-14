@@ -2653,7 +2653,7 @@
             return;
         }
         
-        // 成員條碼（SA01 / T001 等）：先檢查本機圖書（快），再查詢成員條碼 API
+        // 成員條碼（＝5 位數帳號）：先檢查本機圖書（快），再查詢成員條碼 API
         if (bookDatabase[barcode]) {
             // 圖書條碼：交給 processScan 處理（非 borrow/return 模式情況，如管理頁面掃描）
         } else {

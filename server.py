@@ -414,7 +414,7 @@ def ensure_member_user(conn, class_id, name, flags=None, barcode=None):
     老師／管理員則為 class_id IS NULL。
     新建帳號時以 flags 套用功能權限（預設僅開借還書）；
     重新加入既有（曾停用）成員時保留原權限，不覆蓋。
-    barcode 為成員條碼（學生 SA+班級+號碼、老師 T+員工編號），同時用作 username。
+    barcode 為成員條碼（＝5 位數帳號 username），掃描 QR 可快速選定借閱人。
     """
     username = barcode or next_username(conn)
     row = None
@@ -3090,44 +3090,30 @@ class Handler(SimpleHTTPRequestHandler):
             datetime.now().strftime("%Y%m%d-%H%M")))
 
     def api_report_members_qr_pdf(self, conn, query):
-        """全園學生條碼名冊（QR）：從 docs/海育115學年學生名單(1151029).xlsx 讀取，以班級為單位，一班一張 A4。"""
+        """全園學生條碼名冊（QR）：從 users 表讀取，以班級為單位，一班一張 A4。條碼＝5 位數帳號。"""
         import io
-        from openpyxl import load_workbook
         from PIL import Image, ImageDraw, ImageFont
 
-        xlsx_path = "docs/海育115學年學生名單(1151029).xlsx"
-        try:
-            wb = load_workbook(xlsx_path, read_only=True)
-        except FileNotFoundError:
-            raise ApiError(404, "找不到學生名單檔：{}".format(xlsx_path))
+        class_filter = (query.get("class") or [""])[0].strip()
+        where = "WHERE u.active = 1 AND u.role = 'student'"
+        params = []
+        if class_filter:
+            where += " AND c.name = ?"
+            params.append(class_filter)
+        rows = conn.execute(
+            "SELECT u.username, u.barcode, u.name, c.name AS class_name, c.sort_order, c.id "
+            "FROM users u LEFT JOIN classes c ON c.id = u.class_id "
+            + where + " ORDER BY c.sort_order, c.id, u.name",
+            params,
+        ).fetchall()
 
-        ws = wb.active
-        rows = list(ws.iter_rows(values_only=True))
-
-        # 解析班級對應（Row 3: 班名，Row 6+: 編號/條碼/姓名）
-        class_map = {}  # 班級代碼 -> 班級名稱
-        for r in rows:
-            if r[0] == "班名" and len(r) > 1:
-                # 格式：班名 | A | 武夷艦 | B | 繼光艦 | ...
-                for i in range(1, len(r) - 1, 2):
-                    if r[i] and r[i + 1]:
-                        class_map[r[i]] = r[i + 1]
-
-        # 收集學生：(班級代碼, 條碼, 姓名)
+        # 收集學生：(班級名稱 -> [(條碼, 姓名)...])
         students_by_class = {}
         for r in rows:
-            if r[0] == "編號" or not r[0]:
-                continue
-            # 嘗試從每一對 (條碼, 姓名) 中提取
-            for i in range(1, len(r), 2):
-                code = r[i]
-                name = r[i + 1] if i + 1 < len(r) else None
-                if isinstance(code, str) and code and isinstance(name, str) and name:
-                    # 條碼如 A01, B01 → 加 S 前綴 → SA01, SB01
-                    barcode = "S" + code.strip()
-                    # 找出班級代碼（條碼的首字母）
-                    class_code = code.strip()[0] if code.strip() else ""
-                    students_by_class.setdefault(class_code, []).append((barcode, name.strip()))
+            key = r["class_name"] or "未分班"
+            students_by_class.setdefault(key, []).append(
+                (r["barcode"] or r["username"], r["name"])
+            )
 
         if not students_by_class:
             raise ApiError(404, "學生名單中未找到有效數據")
@@ -3149,8 +3135,7 @@ class Handler(SimpleHTTPRequestHandler):
         per_page = cols * rows_per_page
 
         all_pages = []
-        for class_code, students in sorted(students_by_class.items()):
-            class_name = class_map.get(class_code, class_code)
+        for class_name, students in students_by_class.items():
             # 分頁
             for page_start in range(0, len(students), per_page):
                 page_students = students[page_start:page_start + per_page]
