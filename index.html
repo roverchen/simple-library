@@ -1086,10 +1086,9 @@
                         ${g.isbn ? `<span class="query-isbn">ISBN：${escapeHtml(g.isbn)}</span>` : ''}
                     </div>
                     <table class="query-copies">
-                        <thead><tr><th>財產編號</th><th>條碼</th><th>索書號</th><th>狀態</th><th>位置／借閱人</th></tr></thead>
+                        <thead><tr><th>財產編號</th><th>索書號</th><th>狀態</th><th>位置／借閱人</th></tr></thead>
                         <tbody>${g.copies.map(c => `<tr>
                             <td>${escapeHtml(c.assetId || '—')}</td>
-                            <td>${escapeHtml(c.barcode)}</td>
                             <td>${escapeHtml(c.callNo || '—')}</td>
                             <td>${statusBadge(c.status)}${reservationBadge(c)}</td>
                             <td>${escapeHtml(c.status === '借出'
