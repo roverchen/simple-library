@@ -3025,7 +3025,7 @@
     function openMemberModalAdd() {
         const defaultClass = (config.classes || [])[0] || '__staff__';
         const isStaff = defaultClass === '__staff__';
-        memberModalState = { mode: 'add', id: null, values: { className: defaultClass, name: '', email: '', role: defaultClass === '__staff__' ? 'teacher' : 'student', canLoan: isStaff, canMember: false, canBook: false, canConfig: false, canReport: false, schoolYear: '115' } };
+        memberModalState = { mode: 'add', id: null, values: { className: defaultClass, name: '', email: '', role: defaultClass === '__staff__' ? 'teacher' : 'student', canLoan: true, canMember: false, canBook: false, canConfig: false, canReport: false, schoolYear: '115' } };
         document.getElementById('memberModalTitle').textContent = '\u279C \u65B0\u589E\u6210\u50A8';
         document.getElementById('memberModalError').textContent = '';
         renderMemberModalFields();
