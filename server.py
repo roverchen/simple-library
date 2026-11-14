@@ -3861,6 +3861,14 @@ class Handler(SimpleHTTPRequestHandler):
             if action == "還書" and not user_name:
                 user_name = (row["loaned_to"] or "").strip()
             if action == "還書" and not user_name:
+                # 備援：從借閱紀錄找最後一位借閱人
+                log_row = conn.execute(
+                    "SELECT user_name FROM loan_logs WHERE barcode = ? AND action = '借書' ORDER BY id DESC LIMIT 1",
+                    (barcode,),
+                ).fetchone()
+                if log_row and log_row["user_name"]:
+                    user_name = log_row["user_name"].strip()
+            if action == "還書" and not user_name:
                 raise ApiError(400, "無法判斷借閱人，請先選擇成員")
 
             overdue_at_return = False
