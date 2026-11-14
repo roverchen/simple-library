@@ -276,6 +276,7 @@
         <button onclick="changeTab('configPage')" id="btn-configPage">系統設定</button>
         <button onclick="changeTab('reportPage')" id="btn-reportPage">報表/列印</button>
         <button onclick="changeOwnPassword()" style="background:#5a7fa8; color:white;">🔑 修改密碼</button>
+        <button onclick="openSecurityQuestionModal()" style="background:#7b68ae; color:white;">🔒 安全提問</button>
         <button onclick="handleLogout()" style="background:#666; color:white;">登出</button>
     </div>
 
@@ -3505,6 +3506,8 @@
     }
 
     async function openSecurityQuestionModal() {
+        const ans = document.getElementById('sqAnswer');
+        if (ans) ans.value = '';
         document.getElementById('securityQuestionModal').classList.add('open');
     }
 
