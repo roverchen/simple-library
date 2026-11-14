@@ -1631,7 +1631,6 @@ class Handler(SimpleHTTPRequestHandler):
             token = self.require_session(conn)
 
             if path == "/api/security-question" and method == "PUT":
-                require_permission(conn, token, "loan")
                 return self.api_security_question_put(conn)
 
             if path == "/api/category" and method == "GET":

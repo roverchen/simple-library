@@ -3443,14 +3443,16 @@
     }
 
     async function saveSecurityQuestion() {
-        const sel = document.getElementById('securityQuestionSelect');
-        const answer = (document.getElementById('securityAnswer') || {}).value.trim();
+        const modalOpen = document.getElementById('securityQuestionModal').classList.contains('open');
+        const sel = document.getElementById(modalOpen ? 'sqQuestion' : 'securityQuestionSelect');
+        const answerEl = document.getElementById(modalOpen ? 'sqAnswer' : 'securityAnswer');
+        const answer = (answerEl || {}).value.trim();
         const question = (sel || {}).value.trim();
         if (!question || !answer) { alert('❌ 提問與答案皆不可空白'); return; }
         try {
             await api('PUT', '/api/security-question', { securityQuestion: question, securityAnswer: answer });
             alert('✅ 安全提問已儲存');
-            (document.getElementById('securityAnswer') || {}).value = '';
+            (answerEl || {}).value = '';
             loadSecurityQuestion();
             // 若是從登入強制設定modal來的，關閉modal並標記已設定
             const modal = document.getElementById('securityQuestionModal');
