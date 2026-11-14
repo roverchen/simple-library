@@ -322,6 +322,8 @@
             <select id="queryHistoryClass" onchange="populateQueryHistoryMembers()" style="padding:8px; border-radius:5px; border:1px solid #ccc; min-width:130px;"></select>
             <select id="queryHistoryMember" style="padding:8px; border-radius:5px; border:1px solid #ccc; min-width:130px;"></select>
             <input type="text" id="queryHistoryYear" placeholder="學年 (如: 115)" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:130px;">
+            <input type="date" id="queryHistoryDateFrom" style="padding:8px; border-radius:5px; border:1px solid #ccc;" title="起始日期">
+            <input type="date" id="queryHistoryDateTo" style="padding:8px; border-radius:5px; border:1px solid #ccc;" title="結束日期">
             <button onclick="runHistoryQuery()" style="padding:10px; background:var(--primary); color:white; border:none; border-radius:5px;">📖 查詢紀錄</button>
             <button onclick="downloadQueryHistoryReport('pdf')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 明細 PDF</button>
             <button onclick="downloadQueryHistoryReport('xlsx')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ xlsx</button>
@@ -653,6 +655,8 @@
                 <select id="memberHistoryClass" onchange="populateMemberHistoryMembers()" style="padding:8px; border-radius:5px; border:1px solid #ccc; min-width:130px;"></select>
                 <select id="memberHistoryMember" style="padding:8px; border-radius:5px; border:1px solid #ccc; min-width:130px;"></select>
                 <input type="text" id="memberHistoryYear" placeholder="學年 (如: 115)" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:140px;">
+                <input type="date" id="memberHistoryDateFrom" style="padding:8px; border-radius:5px; border:1px solid #ccc;" title="起始日期">
+                <input type="date" id="memberHistoryDateTo" style="padding:8px; border-radius:5px; border:1px solid #ccc;" title="結束日期">
                 <button onclick="printMemberHistory()" style="padding:10px; background:var(--primary); color:white; border:none; border-radius:5px;">📖 列印個人歷程</button>
             </div>
             <div id="memberHistorySummary" style="color:#666;"></div>
@@ -1031,9 +1035,13 @@
         const cls = ((document.getElementById('queryHistoryClass') || {}).value || '').trim();
         const name = ((document.getElementById('queryHistoryMember') || {}).value || '').trim();
         const year = ((document.getElementById('queryHistoryYear') || {}).value || '').trim();
+        const dateFrom = ((document.getElementById('queryHistoryDateFrom') || {}).value || '').trim();
+        const dateTo = ((document.getElementById('queryHistoryDateTo') || {}).value || '').trim();
         if (cls) qs.set('className', cls);
         if (name) qs.set('userName', name);
         if (year) qs.set('schoolYear', year);
+        if (dateFrom) qs.set('dateFrom', dateFrom);
+        if (dateTo) qs.set('dateTo', dateTo);
         return qs;
     }
 
@@ -1663,10 +1671,14 @@
         const schoolYear = ((document.getElementById('memberHistoryYear') || {}).value || '').trim();
         if (!userName) throw new Error('請先選擇班級與姓名');
         if (schoolYear && !/^\d{2,3}$/.test(schoolYear)) throw new Error('學年格式錯誤，請輸入民國年（例如 115）');
+        const dateFrom = ((document.getElementById('memberHistoryDateFrom') || {}).value || '').trim();
+        const dateTo = ((document.getElementById('memberHistoryDateTo') || {}).value || '').trim();
         const qs = new URLSearchParams();
         if (className) qs.set('className', className);
         qs.set('userName', userName);
         if (schoolYear) qs.set('schoolYear', schoolYear);
+        if (dateFrom) qs.set('dateFrom', dateFrom);
+        if (dateTo) qs.set('dateTo', dateTo);
         return qs.toString();
     }
 

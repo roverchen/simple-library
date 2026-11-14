@@ -3000,20 +3000,24 @@ class Handler(SimpleHTTPRequestHandler):
             start, end = self._school_year_bounds(school_year)
             conditions.append("l.occurred_at >= ? AND l.occurred_at < ?")
             params.extend([start, end])
+        dr_conds, dr_params, dr_meta = self._date_range_conds(query)
+        conditions.extend(dr_conds)
+        params.extend(dr_params)
         rows = conn.execute(
             "SELECT l.occurred_at, l.class_name, l.title, l.asset_id, l.action "
             "FROM loan_logs l WHERE " + " AND ".join(conditions) +
             " ORDER BY l.occurred_at ASC, l.id ASC",
             params,
         ).fetchall()
-        return class_name, user_name, school_year, rows
+        return class_name, user_name, school_year, rows, dr_meta
 
     def api_report_member_history(self, conn, query):
-        class_name, user_name, school_year, rows = self._member_history_rows(conn, query)
+        class_name, user_name, school_year, rows, dr_meta = self._member_history_rows(conn, query)
         logs = [{
             "date": r["occurred_at"], "className": r["class_name"], "title": r["title"],
             "assetId": r["asset_id"], "action": r["action"],
         } for r in rows]
+        meta_extra = dr_meta or []
         return self.send_json({
             "className": class_name, "userName": user_name,
             "schoolYear": school_year or None,
@@ -3023,18 +3027,22 @@ class Handler(SimpleHTTPRequestHandler):
         })
 
     def api_report_member_history_pdf(self, conn, query):
-        class_name, user_name, school_year, rows = self._member_history_rows(conn, query)
+        class_name, user_name, school_year, rows, dr_meta = self._member_history_rows(conn, query)
         table = [[r["occurred_at"], r["title"], r["asset_id"], r["action"]] for r in rows]
         meta = [
             "列印時間：{}".format(datetime.now().strftime("%Y/%m/%d %H:%M")),
             "班級：{}　姓名：{}　學年：{}".format(
                 class_name or "（未指定）", user_name, school_year or "全部"
             ),
+        ]
+        if dr_meta:
+            meta.extend(dr_meta)
+        meta.append(
             "借書 {} 次／還書 {} 次".format(
                 sum(1 for r in rows if r["action"] == "借書"),
                 sum(1 for r in rows if r["action"] == "還書"),
             ),
-        ]
+        )
         self._send_table_export(
             self._export_format(query), "個人閱讀歷程統計", meta,
             ["時間", "書名", "財產編號", "動作"], table,
