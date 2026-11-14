@@ -275,6 +275,7 @@
         <button onclick="changeTab('managePage')" id="btn-managePage">圖書管理</button>
         <button onclick="changeTab('configPage')" id="btn-configPage">系統設定</button>
         <button onclick="changeTab('reportPage')" id="btn-reportPage">報表/列印</button>
+        <button onclick="changeOwnPassword()" style="background:#5a7fa8; color:white;">🔑 修改密碼</button>
         <button onclick="handleLogout()" style="background:#666; color:white;">登出</button>
     </div>
 
@@ -3227,6 +3228,26 @@
             document.getElementById('newSystemPwd').value = '';
             alert("✅ 密碼已更新");
         } catch (err) { alert("❌ " + err.message); }
+    }
+
+    async function changeOwnPassword() {
+        const result = await showInputDialog({
+            title: '🔑 修改密碼',
+            message: '請輸入新密碼（至少 4 個字元）。',
+            fields: [{ name: 'password', label: '新密碼', type: 'password' },
+                     { name: 'confirm', label: '確認新密碼', type: 'password' }],
+            submitText: '更新',
+            validate: function (v) {
+                if (!v.password || v.password.length < 4) return '密碼至少需 4 個字元';
+                if (v.password !== v.confirm) return '兩次輸入的密碼不一致';
+                return '';
+            }
+        });
+        if (result === null) return;
+        try {
+            await api('PUT', '/api/password', { password: result.password });
+            alert('✅ 密碼已更新，下次登入請使用新密碼');
+        } catch (err) { alert('❌ ' + err.message); }
     }
 
     async function loadRecoverySettings() {

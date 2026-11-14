@@ -2010,7 +2010,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.api_recovery_code_regenerate()
 
             if method == "PUT" and path == "/api/password":
-                require_admin(conn, token)
+                # 任何已登入使用者都可修改自己的密碼；共用管理員密碼變更僅限共用管理員 session
                 return self.api_password(conn, token)
 
             if method == "PUT" and path == "/api/classes":
