@@ -3193,52 +3193,30 @@ class Handler(SimpleHTTPRequestHandler):
 
                 buf = io.BytesIO()
                 img.save(buf, format="PDF")
-                all_pages.append(buf.getvalue())
+                all_pages.append(img)
 
         if not all_pages:
             raise ApiError(404, "未能生成學生條碼名冊")
 
-        body = all_pages[0]
+        buf = io.BytesIO()
+        all_pages[0].save(buf, format="PDF", save_all=True, append_images=all_pages[1:])
+        body = buf.getvalue()
         self.send_pdf(body, "全園學生條碼名冊-{}.pdf".format(datetime.now().strftime("%Y%m%d-%H%M")))
 
     def api_report_teachers_qr_pdf(self, conn):
-        """全園老師條碼名冊（QR, 不含系統管理者）：從 docs/海育-員工名單1151029.xlsx 讀取。"""
+        """全園老師條碼名冊（QR, 不含系統管理者）：從 users 表讀取教職員條碼。"""
         import io
-        from openpyxl import load_workbook
         from PIL import Image, ImageDraw, ImageFont
 
-        xlsx_path = "docs/海育-員工名單1151029.xlsx"
-        try:
-            wb = load_workbook(xlsx_path, read_only=True)
-        except FileNotFoundError:
-            raise ApiError(404, "找不到員工名單檔：{}".format(xlsx_path))
-
-        ws = wb.active
-        rows = list(ws.iter_rows(values_only=True))
-
-        # Row 3: 序號, 姓名, 員工編號*, 部門, 職稱...
-        teachers = []
-        for r in rows[3:]:  # 跳過標題行
-            if not r[0]:
-                continue
-            name = r[1]
-            emp_id = r[2]
-            dept = r[3] if len(r) > 3 else ""
-            position = r[4] if len(r) > 4 else ""
-            if not name or not emp_id:
-                continue
-            # 排除系統管理者（Root 和 日常管理員）
-            # 辦公室/園長、教保組長等管理職不視為系統管理者，僅排除明確標示為管理者的
-            # 這裡根據 v2.2 表格：系統管理員Root（備用）與系統管理員（日常用）不出現在老師條碼名冊
-            # 員工名單中若職稱含「園長」或「行政」等管理職，視為系統管理者不列入
-            is_admin = any(kw in str(position) for kw in ("園長", "行政", "組長"))
-            if is_admin:
-                continue
-            barcode = "T" + str(emp_id).strip().zfill(3)
-            teachers.append((barcode, name.strip()))
+        rows = conn.execute(
+            "SELECT barcode, name FROM users "
+            "WHERE active = 1 AND role = 'teacher' AND barcode <> '' "
+            "ORDER BY barcode"
+        ).fetchall()
+        teachers = [(r["barcode"], r["name"]) for r in rows]
 
         if not teachers:
-            raise ApiError(404, "員工名單中未找到非管理者老師")
+            raise ApiError(404, "系統中沒有可列印條碼的教職員")
 
         # 生成單頁或多頁 A4
         MM_TO_PT = 2.83465
@@ -3295,12 +3273,14 @@ class Handler(SimpleHTTPRequestHandler):
 
             buf = io.BytesIO()
             img.save(buf, format="PDF")
-            all_pages.append(buf.getvalue())
+            all_pages.append(img)
 
         if not all_pages:
             raise ApiError(404, "未能生成老師條碼名冊")
 
-        body = all_pages[0]
+        buf = io.BytesIO()
+        all_pages[0].save(buf, format="PDF", save_all=True, append_images=all_pages[1:])
+        body = buf.getvalue()
         self.send_pdf(body, "全園老師條碼名冊-{}.pdf".format(datetime.now().strftime("%Y%m%d-%H%M")))
 
     def api_report_issues(self, conn):
