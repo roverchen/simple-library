@@ -2719,7 +2719,7 @@
         if (code.startsWith('borrow:')) { mode = 'borrow'; barcode = code.slice('borrow:'.length).trim(); currentMode = 'borrow'; const gm = document.getElementById('gunMode'); if (gm) gm.value = 'borrow'; }
         else if (code.startsWith('return:')) { mode = 'return'; barcode = code.slice('return:'.length).trim(); currentMode = 'return'; const gm = document.getElementById('gunMode'); if (gm) gm.value = 'return'; }
         if (!barcode) { showScanStatus('❌ 指令條碼缺少條碼', 'err'); return; }
-        if (isDuplicateScan(barcode)) return;
+        if (!(code.startsWith('borrow:') || code.startsWith('return:') || code.startsWith('member:')) && isDuplicateScan(barcode)) return;
         
         // 借書模式：必須先選會員，再掃書籍條碼
         if (mode === 'borrow') {
@@ -2795,7 +2795,7 @@
         if (code.startsWith('borrow:')) { mode = 'borrow'; barcode = code.slice('borrow:'.length).trim(); currentMode = 'borrow'; const gm = document.getElementById('gunMode'); if (gm) gm.value = 'borrow'; }
         else if (code.startsWith('return:')) { mode = 'return'; barcode = code.slice('return:'.length).trim(); currentMode = 'return'; const gm = document.getElementById('gunMode'); if (gm) gm.value = 'return'; }
         if (!barcode) { showScanStatus('❌ 指令條碼缺少條碼', 'err'); return; }
-        if (isDuplicateScan(barcode)) return;
+        if (!(code.startsWith('borrow:') || code.startsWith('return:') || code.startsWith('member:')) && isDuplicateScan(barcode)) return;
         scanQueue = scanQueue
             .then(() => processScan(barcode, mode))
             .catch(err => showScanStatus(`❌ ${err.message || '處理失敗'}`, 'err'));
