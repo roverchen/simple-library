@@ -3043,7 +3043,7 @@
             <div class="permBox">
                 <div class="permTitle">🔐 功能權限</div>
                 <div class="permGrid">
-                    <label${v.role === 'student' ? ' style="color:#999;"' : ''}><input type="checkbox" data-name="canLoan"${v.canLoan ? ' checked' : ''}${v.role === 'student' ? ' disabled' : ''}> 📖 借還書${v.role === 'student' ? '（學生不提供）' : ''}</label>
+                    <label><input type="checkbox" data-name="canLoan"${v.canLoan ? ' checked' : ''}> 📖 借還書</label>
                     <label><input type="checkbox" data-name="canMember"${v.canMember ? ' checked' : ''}> 👥 班級成員</label>
                     <label><input type="checkbox" data-name="canBook"${v.canBook ? ' checked' : ''}> 📚 圖書管理</label>
                     <label><input type="checkbox" data-name="canConfig"${v.canConfig ? ' checked' : ''}> ⚙️ 系統設定</label>
