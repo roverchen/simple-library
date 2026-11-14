@@ -1920,7 +1920,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.api_dashboard(conn)
 
             if method == "GET" and path == "/api/query/books":
-                require_any_permission(conn, token, ("loan", "report", "book"))
+                # 館藏查詢：所有登入者（含學生）皆可使用
                 return self.api_query_books(conn, query)
 
             if method == "GET" and path == "/api/query/member-history":

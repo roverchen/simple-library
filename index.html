@@ -314,6 +314,7 @@
         <div id="queryStats" class="query-stats" style="display:none;"></div>
         <div id="queryResults" style="color:#666; margin-top:10px;">請輸入關鍵字或選擇出版社，或留空列出全部館藏。</div>
 
+        <div id="queryHistorySection">
         <hr style="margin:22px 0; border:none; border-top:1px solid #e0e0e0;">
         <h3>📖 借還紀錄明細（已歸還歷史紀錄）</h3>
         <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
@@ -330,6 +331,7 @@
             <thead><tr><th>時間</th><th>書名</th><th>財產編號</th><th>動作</th></tr></thead>
             <tbody id="queryHistoryBody"><tr><td colspan="4" style="color:#666;">請選擇班級與姓名後查詢</td></tr></tbody>
         </table>
+        </div>
     </div>
 
     <div id="loanPage" class="page">
@@ -957,14 +959,17 @@
     function applyPermissionNav() {
         const p = currentUser.permissions || {};
         document.getElementById('btn-dashboardPage').style.display = '';
-        document.getElementById('btn-queryPage').style.display =
-            (p.canLoan || p.canReport || p.canBook) ? '' : 'none';
+        // 館藏查詢：所有登入者均可使用
+        document.getElementById('btn-queryPage').style.display = '';
         document.getElementById('btn-loanPage').style.display = p.canLoan ? '' : 'none';
         document.getElementById('btn-classPage').style.display = p.canMember ? '' : 'none';
         document.getElementById('btn-managePage').style.display = p.canBook ? '' : 'none';
         document.getElementById('btn-configPage').style.display = p.canConfig ? '' : 'none';
         document.getElementById('btn-reportPage').style.display = p.canReport ? '' : 'none';
-        // 無任何功能權限時（如學生帳號），僅保留儀表板
+        // 借還紀錄明細（館藏查詢頁內）：需借還書或報表權限
+        const hist = document.getElementById('queryHistorySection');
+        if (hist) hist.style.display = (p.canLoan || p.canReport) ? '' : 'none';
+        // 無任何功能權限時（如學生帳號），僅保留儀表板與館藏查詢
     }
 
     // 📊 儀表板：館藏／人數即時概況
@@ -2414,7 +2419,7 @@
         const p = currentUser.permissions || {};
         const pagePerms = {
             'dashboardPage': true,
-            'queryPage': !!(p.canLoan || p.canReport || p.canBook),
+            'queryPage': true,
             'loanPage': p.canLoan,
             'classPage': p.canMember,
             'managePage': p.canBook,
