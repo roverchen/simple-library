@@ -5048,30 +5048,20 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception as e:
             raise ApiError(500, "更新失敗：{}".format(e))
 
-        # 排程重啟：等回應送回後再 kill + 重啟
+        # 排程重啟：等回應送回後再 kill + 重啟（由獨立 shell 處理，避免 Python 程序自我終止）
         def _restart():
             time.sleep(2)
             try:
-                # 找出目前監聽 8080 的 PID 並結束
-                import subprocess as _sp
-                try:
-                    pids = _sp.check_output(
-                        ["lsof", "-iTCP:8080", "-sTCP:LISTEN", "-t", "-n", "-P"],
-                        stderr=_sp.DEVNULL,
-                    ).decode().split()
-                    for pid in pids:
-                        try:
-                            os.kill(int(pid), 15)
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
-                time.sleep(2)
-                # 重啟
-                log = open(os.path.join(BASE_DIR, "data", "server.log"), "a")
-                _sp.Popen(
-                    ["python3", "server.py", "--host", "0.0.0.0", "--port", "8080"],
-                    cwd=BASE_DIR, stdout=log, stderr=log,
+                script = (
+                    "sleep 2; "
+                    "PIDS=$(lsof -iTCP:8080 -sTCP:LISTEN -t -n -P 2>/dev/null); "
+                    "for p in $PIDS; do kill $p 2>/dev/null; done; "
+                    "sleep 2; "
+                    "cd {base} && nohup python3 server.py --host 0.0.0.0 --port 8080 >> data/server.log 2>&1 &"
+                ).format(base=BASE_DIR)
+                subprocess.Popen(
+                    ["bash", "-c", script],
+                    cwd=BASE_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                     start_new_session=True,
                 )
             except Exception:
