@@ -377,7 +377,7 @@
             <input type="text" id="memberSearchInput" placeholder="🔍 搜尋姓名／帳號／Email" oninput="memberSearchText = this.value.trim(); renderMemberTable();" style="padding:10px; border:1px solid #ccc; border-radius:8px; font-size:1rem; width:100%;">
         </div>
         <table id="memberTable">
-            <thead><tr><th>姓名</th><th>帳號</th><th>Email</th><th>班級</th><th>角色</th></tr></thead>
+            <thead><tr><th>姓名</th><th>帳號</th><th>Email</th><th>學年</th><th>班級</th><th>角色</th></tr></thead>
             <tbody></tbody>
         </table>
         <div id="memberQRSection" style="margin-top:16px;">
@@ -3161,7 +3161,7 @@
         const tbody = document.querySelector('#memberTable tbody');
         if (!tbody) return;
         if (!memberAccounts.length) {
-            tbody.innerHTML = '<tr><td colspan="5" style="color:#666;">尚無帳號資料。請先選擇班級並輸入姓名新增。</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" style="color:#666;">尚無帳號資料。請先選擇班級並輸入姓名新增。</td></tr>';
             return;
         }
         tbody.innerHTML = memberAccounts
@@ -3178,10 +3178,12 @@
             const userEsc = escapeHtml(a.username || '');
             const emailEsc = escapeHtml(a.email || '') || '未設定';
             const roleEsc = escapeHtml(roleLabel(a.role || ((a.classId === null) ? 'teacher' : 'student')));
+            const yearEsc = escapeHtml(a.schoolYear || '—');
             return `<tr data-act="viewMember" data-id="${a.id}" style="cursor:pointer;">
             <td>${nameEsc}</td>
             <td>${userEsc}</td>
             <td>${emailEsc}</td>
+            <td>${yearEsc}</td>
             <td>${clsEsc}</td>
             <td>${roleEsc}</td>
         </tr>`;
