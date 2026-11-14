@@ -2861,14 +2861,9 @@
         const memberType = currentLoanMember ? currentLoanMember.memberType : 'student';
         const action = mode === 'borrow' ? '借書' : '還書';
 
-        if (mode === 'borrow' && book.loanedTo) {
-            showScanStatus(`❌ 《${book.title}》已被 ${book.loanedTo} 借閱中`, 'warn');
-            return;
-        }
-        if (mode === 'return' && !book.loanedTo) {
-            showScanStatus(`❌ 《${book.title}》目前在館內，無需歸還`, 'warn');
-            return;
-        }
+        // 由伺服器端權威檢查借還狀態（避免前端快取過期導致誤判）；
+        // 若狀態不符，伺服器會回 409 並由下方 catch 顯示訊息。
+
 
         try {
             // 以伺服器為準：多人同時掃描時，由資料庫決定誰先借到

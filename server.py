@@ -3813,7 +3813,7 @@ class Handler(SimpleHTTPRequestHandler):
         barcode = _clean_text(data.get("barcode"), "條碼", 128, required=True)
         action = data.get("action")
         class_name = _clean_text(data.get("className", ""), "班級", 50)
-        user_name = _clean_text(data.get("userName", ""), "姓名", 50, required=True)
+        user_name = _clean_text(data.get("userName", ""), "姓名", 50)
         if action not in ("借書", "還書"):
             raise ApiError(400, "動作必須是「借書」或「還書」")
 
@@ -3852,6 +3852,16 @@ class Handler(SimpleHTTPRequestHandler):
                 raise ApiError(409, "《{}》已報廢，不可借還".format(row["title"]))
             if row["status"] in ("遺失", "修繕中", "爭議中") and action == "借書":
                 raise ApiError(409, "《{}》目前狀態為「{}」，不可借出".format(row["title"], row["status"]))
+
+            # 借書時必須指定借閱人
+            if action == "借書" and not user_name:
+                raise ApiError(400, "請先選擇借閱人")
+
+            # 還書時若未指定歸還人，以借閱人（loaned_to）為準
+            if action == "還書" and not user_name:
+                user_name = (row["loaned_to"] or "").strip()
+            if action == "還書" and not user_name:
+                raise ApiError(400, "無法判斷借閱人，請先選擇成員")
 
             overdue_at_return = False
             due_at_snapshot = None
