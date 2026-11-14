@@ -2945,8 +2945,6 @@
         const addRole = String(v.className || '') === '__staff__' ? 'teacher' : (v.role || 'student');
         if (memberModalState.mode === 'add') {
             container.innerHTML = `
-                <label for="mmClass">班級</label>
-                <select id="mmClass" data-name="className" onchange="onMemberClassChange()">${classHtml}</select>
                 <label for="mmRole">角色</label>
                 <select id="mmRole" data-name="role">
                     <option value="teacher"${String(addRole) === 'teacher' ? ' selected' : ''}>👨‍🏫 老師</option>
@@ -2956,14 +2954,14 @@
                 <input type="text" id="mmName" data-name="name" value="${escapeHtml(v.name || '')}">
                 <label for="mmSchoolYear">學年</label>
                 <input type="text" id="mmSchoolYear" data-name="schoolYear" value="${escapeHtml(v.schoolYear || '115')}" placeholder="如 115">
+                <label for="mmClass">班級</label>
+                <select id="mmClass" data-name="className" onchange="onMemberClassChange()">${classHtml}</select>
                 <label for="mmEmail">Email</label>
                 <input type="email" id="mmEmail" data-name="email" value="${escapeHtml(v.email || '')}">
                 <div id="memberPermBlock">${memberPermBoxHtml(v)}</div>
             `;
         } else {
             container.innerHTML = `
-                <label for="mmClass">班級</label>
-                <select id="mmClass" data-name="className" onchange="onMemberClassChange()">${classHtml}</select>
                 <label for="mmRole">角色</label>
                 <select id="mmRole" data-name="role">
                     <option value="teacher"${String(v.role || 'teacher') === 'teacher' ? ' selected' : ''}>👨‍🏫 老師</option>
@@ -2976,6 +2974,8 @@
                 <input type="text" id="mmName" data-name="name" value="${escapeHtml(v.name || '')}">
                 <label for="mmSchoolYear">學年</label>
                 <input type="text" id="mmSchoolYear" data-name="schoolYear" value="${escapeHtml(v.schoolYear || '115')}" placeholder="如 115">
+                <label for="mmClass">班級</label>
+                <select id="mmClass" data-name="className" onchange="onMemberClassChange()">${classHtml}</select>
                 <label for="mmEmail">Email</label>
                 <input type="email" id="mmEmail" data-name="email" value="${escapeHtml(v.email || '')}">
                 <div id="memberPermBlock">${memberPermBoxHtml(v)}</div>
