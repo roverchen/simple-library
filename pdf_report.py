@@ -427,8 +427,19 @@ def _wrap(text, canvas, size, max_width):
     return lines or [""]
 
 
-# 園所全稱：所有報表表頭第一行
+# 園所全稱：所有報表表頭（拆成兩行列印）
 SCHOOL_FULL_NAME = "國防部海軍司令部海育員工子女非營利幼兒園(委託社團法人高雄市社區教育協會辦理)"
+
+
+def _split_school_name(name):
+    """將園所全名拆成兩行：主要名稱／委託辦理說明。"""
+    for index, ch in enumerate(name):
+        if index > 0 and ch in "(（":
+            return [name[:index], name[index:]]
+    return [name]
+
+
+SCHOOL_NAME_LINES = _split_school_name(SCHOOL_FULL_NAME)
 
 def build_table_pdf(title, meta_lines, columns, rows, widths=None, landscape=False,
                     font_path=DEFAULT_FONT, sections=None):
@@ -456,9 +467,12 @@ def build_table_pdf(title, meta_lines, columns, rows, widths=None, landscape=Fal
     widths = [w / total * usable for w in widths]
 
     top = margin
-    # 表頭：園所全稱（第一行，小字）→ 清冊名稱（第二行，大字）→ 列印資訊
-    canvas.text(margin, top + 16, SCHOOL_FULL_NAME, size=9, color=(0.25, 0.25, 0.25))
-    y = top + 46
+    # 表頭：園所全稱（小字，分兩行列印）→ 清冊名稱（大字）→ 列印資訊
+    line_y = top + 12
+    for line in SCHOOL_NAME_LINES:
+        canvas.text(margin, line_y, line, size=9, color=(0.25, 0.25, 0.25))
+        line_y += 12
+    y = top + 46 + (len(SCHOOL_NAME_LINES) - 1) * 12
     canvas.text(margin, y, title, size=17)
     for line in meta_lines:
         y += 14

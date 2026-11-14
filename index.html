@@ -928,8 +928,11 @@
 <script>
     // 資料以伺服器端的 SQLite 為準；前端只保留本次操作所需的快取。
     let config = { classes: [] };
-    // 園所全稱：報表／清冊列印表頭使用（與 server.py 的 SCHOOL_FULL_NAME 一致）
-    const SCHOOL_FULL_NAME = '國防部海軍司令部海育員工子女非營利幼兒園（委託社團法人高雄市社區教育協會辦理）';
+    // 園所全稱：報表／清冊列印表頭使用（拆成兩行，與 server.py 的 SCHOOL_NAME_LINES 一致）
+    const SCHOOL_NAME_LINES = [
+        '國防部海軍司令部海育員工子女非營利幼兒園',
+        '（委託社團法人高雄市社區教育協會辦理）'
+    ];
     let members = {};
     let memberAccounts = [];
     let memberSearchText = '';
@@ -1546,8 +1549,13 @@
             '<tr>' + row.map(cell => `<td>${escapeHtml(cell)}</td>`).join('') + '</tr>'
         ).join('');
         const area = document.getElementById('singleLabelArea');
+        const schoolNameHtml = SCHOOL_NAME_LINES.map((line, index) =>
+            index === 0
+                ? `<div class="print-sheet-title">${escapeHtml(line)}</div>`
+                : `<div class="print-sheet-title" style="font-size:14px; font-weight:normal; margin-top:-2px;">${escapeHtml(line)}</div>`
+        ).join('');
         area.innerHTML = `<div class="print-sheet">` +
-            `<div class="print-sheet-title">${escapeHtml(SCHOOL_FULL_NAME)}</div>` +
+            schoolNameHtml +
             `<div class="print-sheet-title" style="font-size:16px;">${escapeHtml(title)}</div>` +
             `<div class="print-sheet-meta">${meta.map(line => `<span>${escapeHtml(line)}</span>`).join('')}</div>` +
             `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>` +

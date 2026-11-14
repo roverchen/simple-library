@@ -39,15 +39,13 @@ from email.message import EmailMessage
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-from pdf_report import build_table_pdf, SCHOOL_FULL_NAME
+from pdf_report import build_table_pdf, SCHOOL_NAME_LINES
 from qr import encode as qr_encode, matrix_to_png_bytes as qr_png
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_DB = os.path.join(BASE_DIR, "data", "library.db")
 
 APP_ID = "幼兒園圖書資訊管理系統"
-# 園所全稱：報表表頭使用
-SCHOOL_FULL_NAME = "國防部海軍司令部海育員工子女非營利幼兒園（委託社團法人高雄市社區教育協會辦理）"
 BACKUP_VERSION = 2
 BACKUP_DIR = os.path.join(BASE_DIR, "data", "backups")
 BACKUP_RETENTION = 10
@@ -1318,7 +1316,8 @@ class Handler(SimpleHTTPRequestHandler):
         if fmt == "csv":
             output = io.StringIO()
             writer = csv.writer(output, lineterminator="\r\n")
-            writer.writerow([SCHOOL_FULL_NAME])
+            for line in SCHOOL_NAME_LINES:
+                writer.writerow([line])
             writer.writerow([title])
             for line in (meta_lines or []):
                 writer.writerow([line])
@@ -1362,10 +1361,13 @@ class Handler(SimpleHTTPRequestHandler):
                     first = False
                 else:
                     ws = wb.create_sheet(title=sheet_name)
-                ws.cell(row=1, column=1, value=SCHOOL_FULL_NAME)
-                c = ws.cell(row=2, column=1, value=(title if not g_title else "{}（{}）".format(title, g_title)))
+                row_i = 1
+                for line in SCHOOL_NAME_LINES:
+                    ws.cell(row=row_i, column=1, value=line)
+                    row_i += 1
+                c = ws.cell(row=row_i, column=1, value=(title if not g_title else "{}（{}）".format(title, g_title)))
                 c.font = Font(bold=True, size=14)
-                row_i = 3
+                row_i += 1
                 for line in (meta_lines or []):
                     ws.cell(row=row_i, column=1, value=line)
                     row_i += 1
