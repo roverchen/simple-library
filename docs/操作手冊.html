@@ -123,6 +123,7 @@ href="#安全性資料庫備份密碼自救機制">安全性：資料庫、備�
 <li><a href="#館藏查詢系統">館藏查詢系統 (6)</a></li>
 <li><a href="#報表列印功能">報表／列印功能 (7)</a></li>
 <li><a href="#上線後交付文件">上線後交付文件 (8)</a></li>
+<li><a href="#行動裝置版">行動裝置版</a></li>
 <li><a href="#常見問題">常見問題</a></li>
 </ol>
 <hr />
@@ -211,6 +212,10 @@ href="#安全性資料庫備份密碼自救機制">安全性：資料庫、備�
 0，建議到「報表/列印」頁面載入「逾期未還清單」進行追蹤。</p>
 <hr />
 <h2 id="權限分級與多帳號管理-1.1">權限分級與多帳號管理 (1.1)</h2>
+<figure>
+<img src="images/03-members.png" alt="班級成員管理頁面（權限勾選）" />
+<figcaption aria-hidden="true">班級成員管理頁面（權限勾選）</figcaption>
+</figure>
 <p>系統設有五項獨立功能權限，可逐帳號勾選：</p>
 <table>
 <thead>
@@ -259,6 +264,10 @@ alt="編輯帳號與功能權限" />
 <hr />
 <h2 id="借閱期限借閱數量上限與續借-1.2">借閱期限、借閱數量上限與續借
 (1.2)</h2>
+<figure>
+<img src="images/13-config.png" alt="系統設定：借閱上限、學期末起訖與密碼救援" />
+<figcaption aria-hidden="true">系統設定：借閱上限、學期末起訖與密碼救援</figcaption>
+</figure>
 <p>「系統設定 → 借閱規則」可調整：</p>
 <table>
 <thead>
@@ -327,6 +336,10 @@ Excel／CSV 批次匯入學生名單的功能，避免開學初逐筆手動輸�
 <h2
 id="安全性資料庫備份密碼自救機制-3">安全性：資料庫、備份、密碼自救機制
 (3)</h2>
+<figure>
+<img src="images/06-config.png" alt="系統設定頁面" />
+<figcaption aria-hidden="true">系統設定頁面</figcaption>
+</figure>
 <h3 id="系統資料庫架構要求">3.1 系統資料庫架構要求</h3>
 <ul>
 <li>系統採用獨立資料庫系統（SQLite），確保資料持久性。</li>
@@ -364,6 +377,10 @@ Root（備用）」兩組最高權限帳號。配套措施：將「系統
 Root」的帳號密碼寫在紙上，鎖在幼兒園的實體保險箱。當日常帳號忘記密碼被鎖死時，用備用帳號登入去幫日常帳號重設密碼。</p>
 <hr />
 <h2 id="圖書館藏與財產管理-4">圖書館藏與財產管理 (4)</h2>
+<figure>
+<img src="images/05-books.png" alt="圖書管理頁面" />
+<figcaption aria-hidden="true">圖書管理頁面</figcaption>
+</figure>
 <h3 id="書目詳細資訊">4.1 書目詳細資訊</h3>
 <p>書籍建檔的欄位順序，比照幼兒園現行財產清冊的順序。欄位由左至右順序，請依照財產編號、書名、出版社、單價、數量、總金額、書籍購入日期、保管人、確認、盤點日期、ISBN、來源、備註、預約狀態。</p>
 <p>財產編號與書名是必要欄位，於系統登打完成就可以建檔完成進行儲存。</p>
@@ -380,6 +397,15 @@ Root」的帳號密碼寫在紙上，鎖在幼兒園的實體保險箱。當日�
 <tr><td>捐贈</td><td>EK</td><td>EK-000001</td></tr>
 </tbody></table>
 <p>操作：圖書管理頁 →「➕ 新增圖書（自動編號）」→ 填寫書名、選擇來源（必填）→ 系統自動產生條碼／財產編號。財產編號欄位為唯讀，不可手動修改。若同時選擇「主題分類」並輸入書名，索書號也會自動產生（可手動更正）。</p>
+<figure>
+<img src="images/18-book-new.png" alt="新增圖書（自動編號）" />
+<figcaption aria-hidden="true">新增圖書（自動編號）</figcaption>
+</figure>
+<p>「主題分類」維護位於「系統設定」頁，可新增／編輯分類；索書號依「分類字首＋流水號」自動產生：</p>
+<figure>
+<img src="images/19-category.png" alt="主題分類管理" />
+<figcaption aria-hidden="true">主題分類管理</figcaption>
+</figure>
 <h4 id="圖書編輯對話框欄位-4.1-財產欄位">🏷️ 圖書編輯對話框欄位 (4.1
 財產欄位)</h4>
 <p>開啟「編輯圖書」對話框後，除了原本的財產編號、書名、索書號、ISBN，下方還有以下欄位可填寫：</p>
@@ -507,6 +533,10 @@ CD、字卡或翻翻書）極易發生「書還能看，但少了一頁／少了
 當圖書狀態為「借出」時，提供下一位幼兒「預約排隊」的功能。只有「借出中」的書可以預約（在館的書直接借閱即可，系統會擋下）。同一成員同一本書同時只能有一筆「進行中」預約。</p>
 <hr />
 <h2 id="加快借還書速度-5">加快借還書速度 (5)</h2>
+<figure>
+<img src="images/02-loan.png" alt="借還書頁面（已啟動借書模式）" />
+<figcaption aria-hidden="true">借還書頁面（已啟動借書模式）</figcaption>
+</figure>
 <h3 id="學生借閱條碼-條碼體系">5.1 成員條碼 (條碼體系)</h3>
 <p>系統自動為每位成員生成一組專屬的條碼 (QR
 Code)，具備批次列印「全園學生條碼名冊」及「某一班幼兒條碼名冊」及「全園老師條碼名冊」的功能。</p>
@@ -516,7 +546,11 @@ QR，即可快速選定該位借閱人，無需手打姓名。</p>
 <h3 id="功能指令條碼-command-barcode">5.2 功能指令條碼 (Command
 Barcode)</h3>
 <p>老師在「借書」與「還書」模式之間切換，通常也要移動滑鼠去點擊網頁按鈕。系統批次產出幾組特殊的系統指令條碼，例如：「啟動借書模式」、「啟動還書模式」及「清除重來」。</p>
-<p>將這幾個指令條碼印出來，護貝貼在電腦螢幕邊框或桌面上。</p>
+<p>將這幾個指令條碼印出來，護貝貼在電腦螢幕邊框或桌面上。掃碼後借還書頁會自動切換模式：</p>
+<figure>
+<img src="images/16-loan-command.png" alt="借還書頁：掃描指令條碼後自動切換模式" />
+<figcaption aria-hidden="true">借還書頁：掃描指令條碼後自動切換模式</figcaption>
+</figure>
 <p>操作流程：</p>
 <ol type="1">
 <li>掃碼「啟動借書模式」，系統會自動切換螢幕畫面進入「借還書頁面」且滑鼠游標指向借書模式的「借閱者條碼」欄位。</li>
@@ -563,6 +597,15 @@ Microsoft Excel 開啟時不會產生亂碼（採用 UTF-8 with BOM 編碼）。
 <li>「系統設定 → 稽核紀錄」可匯出稽核紀錄（PDF／xlsx／CSV）。</li>
 <li>匯出中心另含「館藏清單」「成員清單」「預約清單」三筆全系統資料匯出。</li>
 </ul>
+<figure>
+<img src="images/14-report.png" alt="匯出中心：所有報表支援 PDF／xlsx／CSV" />
+<figcaption aria-hidden="true">匯出中心：所有報表支援 PDF／xlsx／CSV</figcaption>
+</figure>
+<p>「系統設定 → 稽核紀錄」可依動作／日期篩選查詢所有帳號的操作歷程，並匯出 PDF／xlsx／CSV：</p>
+<figure>
+<img src="images/09-audit.png" alt="稽核紀錄" />
+<figcaption aria-hidden="true">稽核紀錄</figcaption>
+</figure>
 <h3 id="列印項目">7.2 列印項目</h3>
 <h4 id="報表表頭-7.2">報表表頭 (7.2)</h4>
 <p>「書籍財產清冊」及「書籍報廢清冊」報表上方（或稱表頭）需有以下資訊：</p>
@@ -732,6 +775,13 @@ PDF。</li>
 <li><strong>安裝程式及程式碼檔案</strong>：預計上線日完成交付及確認。</li>
 </ol>
 <hr />
+<h2 id="行動裝置版">行動裝置版</h2>
+<p>手機／平板以瀏覽器開啟與電腦相同的網址（<code>http://&lt;伺服器IP&gt;:8080</code>）即可使用，介面會自動適應小螢幕，功能與權限控管完整。<code>mobile.html</code> 自 2026/11 起僅作為舊書籤的自動跳轉入口。</p>
+<figure>
+<img src="images/08-mobile.png" alt="行動裝置登入畫面" />
+<figcaption aria-hidden="true">行動裝置登入畫面</figcaption>
+</figure>
+<hr />
 <h2 id="常見問題">常見問題</h2>
 <p><strong>Q：</strong> 點了「借書」按鈕卻跳出一個錯誤視窗？<br />
 <strong>A：</strong> 多半是瀏覽器沒有允許使用相機。請確認網址是
@@ -742,6 +792,11 @@ PDF。</li>
 1. 確認游標在條碼輸入框上（點一下輸入框）。<br />
 2. 確認條碼槍插好，且檔案結尾是「換行」或「Enter」。<br />
 3. 先手動輸入數字按 Enter 測試看看。</p>
+<figure>
+<img src="images/17-loan-member.png" alt="無此條碼的錯誤提示" />
+<figcaption aria-hidden="true">無此條碼的錯誤提示</figcaption>
+</figure>
+<p>掃描到系統中尚未建檔的條碼時，借還書頁會出現紅色提示（請先至「圖書管理」建檔）。</p>
 <p><strong>Q：</strong> 同一本書重複掃了好幾次，會不會重複記錄？<br />
 <strong>A：</strong> 不會。系統內建去重，同一個條碼不會重複處理。</p>
 <p><strong>Q：</strong> 借了書之後，其他老師的畫面看得到嗎？<br />
