@@ -650,6 +650,26 @@
 
     <div id="reportPage" class="page">
 
+        <div id="logReportSection">
+            <h3>📊 借閱歷史紀錄</h3>
+            <div id="logFilterRow" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px;">
+                <input type="text" id="logTeacherFilter" placeholder="老師姓名 (留空為全部)" style="padding:8px; border-radius:5px; border:1px solid #ccc; min-width:140px;">
+                <input type="text" id="logYearFilter" placeholder="年度 (如: 2026)" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:110px;">
+                <input type="text" id="logSchoolYearFilter" placeholder="學年 (如: 115)" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:120px;">
+                <span style="display:inline-flex; align-items:center; gap:6px; color:#555; font-size:0.9rem;">起迄
+                    <input type="date" id="logDateFromFilter" aria-label="起始日期" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:140px;">
+                    <span>～</span>
+                    <input type="date" id="logDateToFilter" aria-label="結束日期" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:140px;">
+                </span>
+                <button onclick="renderReportTable()" style="padding:8px 12px; background:var(--secondary); color:white; border:none; border-radius:5px;">🔍 查詢</button>
+            </div>
+            <table>
+                <thead><tr><th>時間</th><th>班級</th><th>姓名</th><th>書名</th><th>動作</th></tr></thead>
+                <tbody id="reportTableBody"></tbody>
+            </table>
+            <div id="reportPager" class="no-print"></div>
+        </div>
+
         <div id="yearStatsSection" style="margin-top:20px;">
             <h3>📈 全園閱讀歷程統計（依學年）</h3>
             <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
@@ -683,26 +703,6 @@
                 <tbody id="memberHistoryBody"><tr><td colspan="4" style="color:#666;">請選擇班級與姓名後查詢</td></tr></tbody>
             </table>
         </div>
-        <div id="logReportSection">
-            <h3>📊 借閱歷史紀錄</h3>
-            <div id="logFilterRow" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px;">
-                <input type="text" id="logTeacherFilter" placeholder="老師姓名 (留空為全部)" style="padding:8px; border-radius:5px; border:1px solid #ccc; min-width:140px;">
-                <input type="text" id="logYearFilter" placeholder="年度 (如: 2026)" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:110px;">
-                <input type="text" id="logSchoolYearFilter" placeholder="學年 (如: 115)" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:120px;">
-                <span style="display:inline-flex; align-items:center; gap:6px; color:#555; font-size:0.9rem;">起迄
-                    <input type="date" id="logDateFromFilter" aria-label="起始日期" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:140px;">
-                    <span>～</span>
-                    <input type="date" id="logDateToFilter" aria-label="結束日期" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:140px;">
-                </span>
-                <button onclick="renderReportTable()" style="padding:8px 12px; background:var(--secondary); color:white; border:none; border-radius:5px;">🔍 查詢</button>
-            </div>
-            <table>
-                <thead><tr><th>時間</th><th>班級</th><th>姓名</th><th>書名</th><th>動作</th></tr></thead>
-                <tbody id="reportTableBody"></tbody>
-            </table>
-            <div id="reportPager" class="no-print"></div>
-        </div>
-
         <div id="overdueReportSection" style="margin-top:20px;">
             <h3>⏰ 逾期未還清單</h3>
             <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
