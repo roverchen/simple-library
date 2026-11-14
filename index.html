@@ -304,6 +304,12 @@
                 <select id="queryPublisher" style="min-width:140px;" onchange="scheduleBookQuery()"><option value="">全部出版社</option></select>
             </div>
             <small style="color:#666;">輸入關鍵字或選擇出版社即自動查詢；支援直接掃描 ISBN 條碼；相同 ISBN（或書名）的多本實體書會自動彙整。</small>
+            <div style="display:flex; gap:8px; align-items:center; margin-top:8px; flex-wrap:wrap;">
+                <span style="color:#555; font-size:0.9rem;">匯出本查詢結果：</span>
+                <button onclick="downloadReport(booksExportQS('/api/export/books'),'pdf')" style="padding:5px 12px; background:#607d8b; color:white; border:none; border-radius:4px;">PDF</button>
+                <button onclick="downloadReport(booksExportQS('/api/export/books'),'xlsx')" style="padding:5px 12px; background:#607d8b; color:white; border:none; border-radius:4px;">xlsx</button>
+                <button onclick="downloadReport(booksExportQS('/api/export/books'),'csv')" style="padding:5px 12px; background:#607d8b; color:white; border:none; border-radius:4px;">CSV</button>
+            </div>
         </div>
         <div id="queryStats" class="query-stats" style="display:none;"></div>
         <div id="queryResults" style="color:#666; margin-top:10px;">請輸入關鍵字或選擇出版社，或留空列出全部館藏。</div>
@@ -315,7 +321,9 @@
             <select id="queryHistoryMember" style="padding:8px; border-radius:5px; border:1px solid #ccc; min-width:130px;"></select>
             <input type="text" id="queryHistoryYear" placeholder="學年 (如: 115)" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:130px;">
             <button onclick="runHistoryQuery()" style="padding:10px; background:var(--primary); color:white; border:none; border-radius:5px;">📖 查詢紀錄</button>
-            <button onclick="downloadQueryHistoryPdf()" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 明細 PDF</button>
+            <button onclick="downloadQueryHistoryReport('pdf')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 明細 PDF</button>
+            <button onclick="downloadQueryHistoryReport('xlsx')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ xlsx</button>
+            <button onclick="downloadQueryHistoryReport('csv')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ CSV</button>
         </div>
         <div id="queryHistorySummary" style="color:#666; margin-bottom:6px;"></div>
         <table>
@@ -593,7 +601,9 @@
                     <option value="清除借閱紀錄">清除借閱紀錄</option>
                 </select>
                 <button onclick="renderAuditTable()" style="padding:8px 12px; background:var(--secondary); color:white; border:none; border-radius:5px;">🔍 查詢</button>
-                <button onclick="exportAuditCsv()" style="padding:8px 12px; background:var(--primary); color:white; border:none; border-radius:5px;">⬇️ 匯出 CSV</button>
+                <button onclick="exportAuditReport('csv')" style="padding:8px 12px; background:var(--primary); color:white; border:none; border-radius:5px;">⬇️ CSV</button>
+                <button onclick="exportAuditReport('xlsx')" style="padding:8px 12px; background:var(--primary); color:white; border:none; border-radius:5px;">⬇️ xlsx</button>
+                <button onclick="exportAuditReport('pdf')" style="padding:8px 12px; background:var(--primary); color:white; border:none; border-radius:5px;">⬇️ PDF</button>
             </div>
             <div style="overflow-x:auto; margin-top:10px;">
                 <table id="auditTable" style="width:100%; border-collapse:collapse; font-size:0.9rem;">
@@ -622,7 +632,6 @@
             <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
                 <input type="text" id="statsSchoolYear" placeholder="學年 (如: 115)" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:140px;">
                 <button onclick="loadYearStats()" style="padding:10px; background:var(--primary); color:white; border:none; border-radius:5px;">📊 載入統計</button>
-                <button onclick="exportYearStatsPdf()" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 全園統計 PDF</button>
             </div>
             <div id="yearStatsSummary" style="color:#666; margin-bottom:8px;"></div>
             <table>
@@ -642,7 +651,6 @@
                 <select id="memberHistoryMember" style="padding:8px; border-radius:5px; border:1px solid #ccc; min-width:130px;"></select>
                 <input type="text" id="memberHistoryYear" placeholder="學年 (如: 115)" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:140px;">
                 <button onclick="printMemberHistory()" style="padding:10px; background:var(--primary); color:white; border:none; border-radius:5px;">📖 列印個人歷程</button>
-                <button onclick="downloadMemberHistoryPdf()" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 個人歷程 PDF</button>
             </div>
             <div id="memberHistorySummary" style="color:#666;"></div>
             <table>
@@ -662,7 +670,6 @@
                     <input type="date" id="logDateToFilter" aria-label="結束日期" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:140px;">
                 </span>
                 <button onclick="renderReportTable()" style="padding:8px 12px; background:var(--secondary); color:white; border:none; border-radius:5px;">🔍 查詢</button>
-                <button onclick="exportLogsPdf()" style="padding:8px 12px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 匯出借閱紀錄 PDF</button>
             </div>
             <table>
                 <thead><tr><th>時間</th><th>班級</th><th>姓名</th><th>書名</th><th>動作</th></tr></thead>
@@ -681,8 +688,6 @@
                     <option value="teacher">僅老師</option>
                 </select>
                 <button onclick="loadOverdueReport()" style="padding:10px; background:#f0ad4e; color:white; border:none; border-radius:5px;">🔄 載入逾期清單</button>
-                <button onclick="downloadPdf(overduePdfUrl('/api/report/overdue.pdf'))" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 逾期清單 PDF</button>
-                <button onclick="downloadPdf(overduePdfUrl('/api/report/overdue-returned.pdf'))" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 逾期已還清冊 PDF</button>
             </div>
             <div style="color:#666; font-size:0.9rem; margin-bottom:6px;">「逾期已還清冊」列出設定期間內曾逾期才歸還的紀錄，可搭配班級／師生篩選與下方日期區間。</div>
             <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
@@ -707,23 +712,14 @@
             </div>
             <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
                 <button onclick="printInventoryReport('all')" style="padding:10px; background:var(--primary); color:white; border:none; border-radius:5px;">📋 列印財產清冊</button>
-                <button onclick="downloadPdf(inventoryPdfUrl('all'))" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 財產清冊 PDF</button>
                 <button onclick="printInventoryReport('scrap')" style="padding:10px; background:var(--danger); color:white; border:none; border-radius:5px;">🗑️ 列印報廢清冊</button>
-                <button onclick="downloadPdf(inventoryPdfUrl('scrap'))" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 報廢清冊 PDF</button>
                 <button onclick="printInventoryReport('checkedout')" style="padding:10px; background:var(--warning); color:white; border:none; border-radius:5px;">📤 列印已借出清單</button>
-                <button onclick="downloadPdf('/api/report/checked-out.pdf')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 已借出 PDF</button>
                 <button onclick="printInventoryReport('issues')" style="padding:10px; background:#8e24aa; color:white; border:none; border-radius:5px;">⚠️ 列印爭議/遺失/修繕清冊</button>
-                <button onclick="downloadPdf('/api/report/issues.pdf')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 爭議清冊 PDF</button>
-                <button onclick="exportIssuesReport()" style="padding:10px; background:var(--primary); color:white; border:none; border-radius:5px;">📄 匯出爭議/遺失/修繕借閱紀錄 (xlsx)</button>
-                <button onclick="downloadPdf('/api/report/publisher-stats.pdf')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">📊 出版社統計 PDF</button>
-                <button onclick="downloadPdf('/api/report/full-catalog.pdf')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">📚 全圖名冊 PDF</button>
-                <button onclick="downloadPdf('/api/report/callno-catalog.pdf')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">🔤 索書號清冊 PDF</button>
-                <button onclick="downloadPdf('/api/report/command-codes.pdf')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">📱 指令條碼名冊 PDF</button>
-                <button onclick="downloadPdf('/api/report/inventory-qr.pdf')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">🏷️ 書籍財產條碼名冊 (QR)</button>
-                <button onclick="downloadPdf('/api/report/members-qr.pdf')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">👶 全園學生條碼名冊 (QR)</button>
-                <button onclick="downloadPdf('/api/report/teachers-qr.pdf')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">👩‍🏫 全園老師條碼名冊 (QR)</button>
             </div>
-            <div style="color:#666; font-size:0.9rem;">財產清冊排除報廢書籍，含出版社／單價／數量／總金額／購入日期／保管人／確認／盤點日期；報廢清冊另列報廢日期；爭議清冊包含遺失、修繕中、爭議中。列印為 A4 表格，PDF 可直接下載留存。</div>
+            <div style="color:#666; font-size:0.9rem; margin-bottom:6px;">財產清冊排除報廢書籍，含出版社／單價／數量／總金額／購入日期／保管人／確認／盤點日期；報廢清冊另列報廢日期；爭議清冊包含遺失、修繕中、爭議中。</div>
+            <h4 style="margin:14px 0 4px;">📤 匯出中心（所有清單與統計報表皆支援 PDF／xlsx／CSV）</h4>
+            <div style="color:#666; font-size:0.85rem; margin-bottom:6px;">匯出內容與畫面上方的篩選條件一致（借閱紀錄篩選、逾期篩選、清冊日期區間、統計學年、館藏查詢關鍵字等）。</div>
+            <div id="exportCenterTable"></div>
         </div>
 
 
@@ -1167,8 +1163,8 @@
         }
     }
 
-    function downloadQueryHistoryPdf() {
-        window.open('/api/query/member-history.pdf?' + queryHistoryParams().toString(), '_blank');
+    function downloadQueryHistoryReport(fmt) {
+        downloadReport('/api/query/member-history.pdf?' + queryHistoryParams().toString(), fmt || 'pdf');
     }
 
     function showApp() {
@@ -1542,6 +1538,40 @@
         window.open(path, '_blank');
     }
 
+    async function downloadReport(url, fmt) {
+        // 統一匯出：pdf 直接開新視窗；xlsx/csv 以 fetch 下載檔案（沿用伺服器檔名）
+        fmt = fmt || 'pdf';
+        if (fmt === 'pdf') { window.open(url, '_blank'); return; }
+        try {
+            const res = await fetch(url, { credentials: 'same-origin' });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.error || `HTTP ${res.status}`);
+            }
+            const blob = await res.blob();
+            let filename = 'export.' + fmt;
+            const cd = res.headers.get('Content-Disposition') || '';
+            const m = cd.match(/filename\*=UTF-8''([^;\s]+)/);
+            if (m) { try { filename = decodeURIComponent(m[1]); } catch (e) {} }
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = filename;
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+        } catch (err) { alert('❌ 匯出失敗：' + err.message); }
+    }
+
+    function booksExportQS(base) {
+        // 依館藏查詢頁目前的篩選條件匯出
+        const qs = new URLSearchParams();
+        const kw = ((document.getElementById('queryKeyword') || {}).value || '').trim();
+        const pub = ((document.getElementById('queryPublisher') || {}).value || '').trim();
+        if (kw) qs.set('keyword', kw);
+        if (pub) qs.set('publisher', pub);
+        const str = qs.toString();
+        return base + (str ? '?' + str : '');
+    }
+
     function inventoryPdfUrl(kind) {
         const qs = new URLSearchParams();
         qs.set('kind', kind);
@@ -1684,10 +1714,10 @@
         } catch (err) { alert('❌ ' + err.message); }
     }
 
-    function downloadMemberHistoryPdf() {
+    function downloadMemberHistoryReport(fmt) {
         try {
             const qs = memberHistoryParams();
-            window.open('/api/report/member-history.pdf?' + qs, '_blank');
+            downloadReport('/api/report/member-history.pdf?' + qs, fmt || 'pdf');
         } catch (err) { alert('❌ ' + err.message); }
     }
 
@@ -1696,7 +1726,7 @@
         return el && el.value ? el.value : '';
     }
 
-    function exportLogsPdf() {
+    function logExportQS() {
         const teacher = (document.getElementById('logTeacherFilter') || {}).value || '';
         const year = (document.getElementById('logYearFilter') || {}).value || '';
         const schoolYear = (document.getElementById('logSchoolYearFilter') || {}).value || '';
@@ -1708,14 +1738,20 @@
         if (schoolYear) qs.set('schoolYear', schoolYear);
         if (dateFrom) qs.set('dateFrom', dateFrom);
         if (dateTo) qs.set('dateTo', dateTo);
-        window.open('/api/report/logs.pdf' + (qs.toString() ? '?' + qs.toString() : ''), '_blank');
+        return '/api/report/logs.pdf' + (qs.toString() ? '?' + qs.toString() : '');
     }
 
-    function exportYearStatsPdf() {
+    function exportLogsReport(fmt) { downloadReport(logExportQS(), fmt); }
+
+    function yearStatsExportQS() {
         const schoolYear = ((document.getElementById('statsSchoolYear') || {}).value || '').trim();
-        if (schoolYear && !/^\d{2,3}$/.test(schoolYear)) { alert('❌ 學年格式錯誤，請輸入民國年（例如 115）'); return; }
-        const qs = schoolYear ? '?schoolYear=' + encodeURIComponent(schoolYear) : '';
-        window.open('/api/report/stats.pdf' + qs, '_blank');
+        if (schoolYear && !/^\d{2,3}$/.test(schoolYear)) { alert('❌ 學年格式錯誤，請輸入民國年（例如 115）'); return null; }
+        return '/api/report/stats.pdf' + (schoolYear ? '?schoolYear=' + encodeURIComponent(schoolYear) : '');
+    }
+
+    function exportYearStatsReport(fmt) {
+        const url = yearStatsExportQS();
+        if (url) downloadReport(url, fmt);
     }
 
     function overdueFilterParams() {
@@ -1751,6 +1787,43 @@
                 ? list.map(b => `<tr><td>${escapeHtml(b.title)}</td><td>${escapeHtml(b.loanedTo || '')}</td><td>${escapeHtml(b.dueAt || '')}</td><td>${escapeHtml(String(b.daysOverdue ?? ''))}</td></tr>`).join('')
                 : '<tr><td colspan="4" style="color:#666;">無逾期清單</td></tr>';
         } catch (err) { tbody.innerHTML = `<tr><td colspan="4" style="color:#c62828;">載入失敗：${escapeHtml(err.message)}</td></tr>`; }
+    }
+
+    const EXPORT_REPORTS = [
+        { label: '📊 借閱歷史紀錄', url: () => logExportQS() },
+        { label: '⏰ 逾期未還清單', url: () => overduePdfUrl('/api/report/overdue.pdf') },
+        { label: '📦 逾期已還清冊', url: () => overduePdfUrl('/api/report/overdue-returned.pdf') },
+        { label: '📋 財產清冊', url: () => inventoryPdfUrl('all') },
+        { label: '🗑️ 報廢清冊', url: () => inventoryPdfUrl('scrap') },
+        { label: '📤 已借出清單', url: () => '/api/report/checked-out.pdf' },
+        { label: '⚠️ 爭議／遺失／修繕清冊', url: () => '/api/report/issues.pdf' },
+        { label: '📊 出版社統計', url: () => '/api/report/publisher-stats.pdf' },
+        { label: '📚 全圖名冊', url: () => '/api/report/full-catalog.pdf' },
+        { label: '🔤 索書號清冊', url: () => '/api/report/callno-catalog.pdf' },
+        { label: '📈 全園閱讀歷程統計', url: () => yearStatsExportQS() || '/api/report/stats.pdf' },
+        { label: '📖 個人閱讀歷程', url: () => '/api/report/member-history.pdf?' + memberHistoryParams().toString() },
+        { label: '📱 指令條碼名冊', url: () => '/api/report/command-codes.pdf' },
+        { label: '🏷️ 書籍財產條碼名冊 (QR)', url: () => '/api/report/inventory-qr.pdf' },
+        { label: '👶 全園學生條碼名冊 (QR)', url: () => '/api/report/members-qr.pdf' },
+        { label: '👩‍🏫 全園老師條碼名冊 (QR)', url: () => '/api/report/teachers-qr.pdf' },
+        { label: '📚 館藏清單', url: () => booksExportQS('/api/export/books') },
+        { label: '👥 成員清單', url: () => '/api/export/members' },
+        { label: '🔖 預約清單', url: () => '/api/export/reservations' },
+    ];
+
+    function renderExportCenter() {
+        const el = document.getElementById('exportCenterTable');
+        if (!el) return;
+        let html = '<table><thead><tr><th style="text-align:left;">清單／報表</th><th>PDF</th><th>xlsx</th><th>CSV</th></tr></thead><tbody>';
+        EXPORT_REPORTS.forEach((it, i) => {
+            html += '<tr><td style="font-weight:600;">' + it.label + '</td>'
+                + ['pdf', 'xlsx', 'csv'].map(f =>
+                    '<td style="text-align:center;"><button onclick="downloadReport(EXPORT_REPORTS[' + i + '].url(),\'' + f + '\')" style="padding:4px 10px; background:#607d8b; color:white; border:none; border-radius:4px; font-size:0.85rem;">' + f.toUpperCase() + '</button></td>'
+                  ).join('')
+                + '</tr>';
+        });
+        html += '</tbody></table>';
+        el.innerHTML = html;
     }
 
     function renderReportPager(total, pages) {
@@ -2368,6 +2441,7 @@
             showLogReportMode();
             reportPage = 1;
             renderReportTable();
+            renderExportCenter();
         }
     }
 
@@ -3695,9 +3769,12 @@
         }
     }
 
-    function exportAuditCsv() {
+    function exportAuditReport(fmt) {
+        fmt = fmt || 'csv';
         const qs = auditQS();
-        window.open('/api/audit.csv' + (qs.toString() ? '?' + qs.toString() : ''), '_blank');
+        const url = '/api/audit.csv' + (qs.toString() ? '?' + qs.toString() : '');
+        if (fmt === 'csv') { window.open(url, '_blank'); return; }
+        downloadReport(url, fmt);
     }
 
     // 匯出借閱紀錄為 CSV（由後端產生，含 UTF-8 BOM，Excel 可直接開啟）

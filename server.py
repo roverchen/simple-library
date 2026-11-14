@@ -38,7 +38,7 @@ from email.message import EmailMessage
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-from pdf_report import build_table_pdf
+from pdf_report import build_table_pdf, SCHOOL_FULL_NAME
 from qr import encode as qr_encode, matrix_to_png_bytes as qr_png
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -1233,6 +1233,85 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_table_export(self, fmt, title, meta_lines, columns, rows,
+                           widths=None, landscape=False, base="報表"):
+        """統一資料匯出：fmt = 'pdf' / 'xlsx' / 'csv'。
+
+        rows 為字串／數值二維清單，順序對應 columns。
+        """
+        fmt = (fmt or "pdf").lower()
+        if fmt not in ("pdf", "xlsx", "csv"):
+            fmt = "pdf"
+        stamp = datetime.now().strftime("%Y%m%d-%H%M")
+
+        if fmt == "csv":
+            output = io.StringIO()
+            writer = csv.writer(output, lineterminator="\r\n")
+            writer.writerow([SCHOOL_FULL_NAME])
+            writer.writerow([title])
+            for line in (meta_lines or []):
+                writer.writerow([line])
+            writer.writerow(columns)
+            for r in rows:
+                writer.writerow(["" if v is None else str(v) for v in r])
+            body = ("\ufeff" + output.getvalue()).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/csv; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header(
+                "Content-Disposition",
+                'attachment; filename="export.csv"; filename*=UTF-8\'\'{}'.format(
+                    quote("{}-{}.csv".format(base, stamp))
+                ),
+            )
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        if fmt == "xlsx":
+            from openpyxl import Workbook
+            from openpyxl.styles import Font
+            from openpyxl.utils import get_column_letter
+
+            wb = Workbook()
+            ws = wb.active
+            ws.title = (title or "報表")[:28]
+            ws.cell(row=1, column=1, value=SCHOOL_FULL_NAME)
+            c = ws.cell(row=2, column=1, value=title)
+            c.font = Font(bold=True, size=14)
+            row_i = 3
+            for line in (meta_lines or []):
+                ws.cell(row=row_i, column=1, value=line)
+                row_i += 1
+            row_i += 1
+            header_row = row_i
+            for j, col in enumerate(columns, 1):
+                ws.cell(row=row_i, column=j, value=col).font = Font(bold=True)
+            for r in rows:
+                row_i += 1
+                for j, v in enumerate(r, 1):
+                    ws.cell(row=row_i, column=j, value="" if v is None else v)
+            for j in range(1, len(columns) + 1):
+                width = max(
+                    [len(str(columns[j - 1])) + 4]
+                    + [len(str(r[j - 1])) + 2 for r in rows if j - 1 < len(r)]
+                )
+                ws.column_dimensions[get_column_letter(j)].width = max(10, min(45, width * 1.6))
+            ws.freeze_panes = ws.cell(row=header_row + 1, column=1)
+            buf = io.BytesIO()
+            wb.save(buf)
+            self.send_xlsx(buf.getvalue(), "{}-{}.xlsx".format(base, stamp))
+            return
+
+        body = build_table_pdf(title, meta_lines, columns, rows,
+                               widths=widths, landscape=landscape)
+        self.send_pdf(body, "{}-{}.pdf".format(base, stamp))
+
+    @staticmethod
+    def _export_format(query):
+        return ((query.get("format") or [""])[0].strip() or "pdf").lower()
+
     def _read_body(self, limit):
         """在路由前先把請求內容讀完，避免未授權請求留下未讀內容破壞 keep-alive。"""
         length = self.headers.get("Content-Length")
@@ -1668,6 +1747,18 @@ class Handler(SimpleHTTPRequestHandler):
                 require_permission(conn, token, "report")
                 return self.api_report_stats(conn, query)
 
+            if method == "GET" and path == "/api/export/books":
+                require_permission(conn, token, "report")
+                return self.api_export_books(conn, query)
+
+            if method == "GET" and path == "/api/export/members":
+                require_permission(conn, token, "report")
+                return self.api_export_members(conn, query)
+
+            if method == "GET" and path == "/api/export/reservations":
+                require_permission(conn, token, "loan")
+                return self.api_export_reservations(conn, query)
+
             if method == "GET" and path == "/api/report/logs.pdf":
                 require_permission(conn, token, "report")
                 return self.api_report_logs_pdf(conn, query)
@@ -1678,7 +1769,7 @@ class Handler(SimpleHTTPRequestHandler):
 
             if method == "GET" and path == "/api/report/checked-out.pdf":
                 require_permission(conn, token, "report")
-                return self.api_report_checked_out_pdf(conn)
+                return self.api_report_checked_out_pdf(conn, query)
 
             if method == "GET" and path == "/api/report/full-catalog.pdf":
                 require_permission(conn, token, "report")
@@ -1690,6 +1781,17 @@ class Handler(SimpleHTTPRequestHandler):
 
             if method == "GET" and path == "/api/report/command-codes.pdf":
                 require_permission(conn, token, "report")
+                fmt = self._export_format(query)
+                if fmt != "pdf":
+                    commands = [
+                        ("啟動借書模式", "啟動借書模式"),
+                        ("啟動還書模式", "啟動還書模式"),
+                        ("清除重來", "清除重來"),
+                    ]
+                    return self._send_table_export(
+                        fmt, "功能指令條碼名冊", [],
+                        ["名稱", "條碼內容"], commands, base="功能指令條碼名冊",
+                    )
                 return self.api_report_command_codes_pdf(conn)
 
             if method == "GET" and path == "/api/report/publisher-stats.pdf":
@@ -1698,7 +1800,7 @@ class Handler(SimpleHTTPRequestHandler):
 
             if method == "GET" and path == "/api/report/issues.pdf":
                 require_permission(conn, token, "report")
-                return self.api_report_issues_pdf(conn)
+                return self.api_report_issues_pdf(conn, query)
 
             if method == "GET" and path == "/api/report/member-history":
                 require_permission(conn, token, "report")
@@ -1722,14 +1824,55 @@ class Handler(SimpleHTTPRequestHandler):
 
             if method == "GET" and path == "/api/report/inventory-qr.pdf":
                 require_permission(conn, token, "report")
+                fmt = self._export_format(query)
+                if fmt != "pdf":
+                    rows = [
+                        (r["barcode"], r["title"])
+                        for r in conn.execute(
+                            "SELECT barcode, title FROM books WHERE status <> '報廢' ORDER BY barcode"
+                        ).fetchall()
+                    ]
+                    return self._send_table_export(
+                        fmt, "書籍財產條碼名冊", [],
+                        ["條碼", "書名"], rows, base="書籍財產條碼名冊",
+                    )
                 return self.api_report_inventory_qr_pdf(conn)
 
             if method == "GET" and path == "/api/report/members-qr.pdf":
                 require_permission(conn, token, "report")
+                fmt = self._export_format(query)
+                if fmt != "pdf":
+                    rows = [
+                        (r["barcode"], r["name"], r["class_name"] or "")
+                        for r in conn.execute(
+                            "SELECT u.barcode, u.name, c.name AS class_name "
+                            "FROM users u LEFT JOIN classes c ON c.id = u.class_id "
+                            "WHERE u.active = 1 AND u.role = 'student' "
+                            "ORDER BY c.sort_order, c.id, u.name"
+                        ).fetchall()
+                    ]
+                    return self._send_table_export(
+                        fmt, "全園學生條碼名冊", [],
+                        ["條碼", "姓名", "班級"], rows, base="全園學生條碼名冊",
+                    )
                 return self.api_report_members_qr_pdf(conn, query)
 
             if method == "GET" and path == "/api/report/teachers-qr.pdf":
                 require_permission(conn, token, "report")
+                fmt = self._export_format(query)
+                if fmt != "pdf":
+                    rows = [
+                        (r["barcode"], r["name"])
+                        for r in conn.execute(
+                            "SELECT barcode, name FROM users "
+                            "WHERE active = 1 AND role = 'teacher' AND barcode <> '' "
+                            "ORDER BY barcode"
+                        ).fetchall()
+                    ]
+                    return self._send_table_export(
+                        fmt, "全園老師條碼名冊", [],
+                        ["條碼", "姓名"], rows, base="全園老師條碼名冊",
+                    )
                 return self.api_report_teachers_qr_pdf(conn)
 
             if method == "GET" and path == "/api/audit":
@@ -1756,6 +1899,34 @@ class Handler(SimpleHTTPRequestHandler):
 
             if method == "GET" and path == "/api/audit.csv":
                 require_permission(conn, token, "config")
+                fmt = self._export_format(query)
+                if fmt != "csv":
+                    action = (query.get("action") or [""])[0].strip()[:50]
+                    conditions, params = [], []
+                    if action:
+                        conditions.append("action = ?")
+                        params.append(action)
+                    date_conds, date_params, _ = self._date_range_conds(query)
+                    conditions.extend(date_conds)
+                    params.extend(date_params)
+                    where_sql = (" WHERE " + " AND ".join(conditions)) if conditions else ""
+                    arows = conn.execute(
+                        "SELECT occurred_at, actor_name, action, target, detail, ip "
+                        "FROM audit_log" + where_sql + " ORDER BY id DESC",
+                        params,
+                    ).fetchall()
+                    atable = [[
+                        r["occurred_at"], r["actor_name"] or "", r["action"],
+                        r["target"] or "", r["detail"] or "", r["ip"] or "",
+                    ] for r in arows]
+                    meta = ["列印時間：{}".format(datetime.now().strftime("%Y/%m/%d %H:%M")),
+                            "共 {} 筆".format(len(arows))]
+                    return self._send_table_export(
+                        fmt, "稽核紀錄", meta,
+                        ["時間", "操作人", "動作", "目標", "內容", "IP"], atable,
+                        widths=[0.18, 0.12, 0.16, 0.16, 0.28, 0.1],
+                        landscape=True, base="稽核紀錄",
+                    )
                 return self.api_audit_csv(conn, query)
 
             if method == "GET" and path == "/api/logs.csv":
@@ -2509,12 +2680,12 @@ class Handler(SimpleHTTPRequestHandler):
         ] for r in rows]
         meta.insert(0, "列印時間：{}".format(datetime.now().strftime("%Y/%m/%d %H:%M")))
         meta.append("共 {} 筆".format(len(rows)))
-        body = build_table_pdf(
-            "借閱歷史紀錄", meta,
+        self._send_table_export(
+            self._export_format(query), "借閱歷史紀錄", meta,
             ["時間", "班級", "姓名", "書名", "財產編號", "動作"], table,
             widths=[0.18, 0.1, 0.1, 0.32, 0.15, 0.08], landscape=True,
+            base="借閱歷史紀錄",
         )
-        self.send_pdf(body, "借閱歷史紀錄-{}.pdf".format(datetime.now().strftime("%Y%m%d-%H%M")))
 
     def _inventory_rows(self, conn, query, kind):
         date_from = (query.get("dateFrom") or [""])[0].strip()
@@ -2584,14 +2755,13 @@ class Handler(SimpleHTTPRequestHandler):
             columns = ["財產編號", "書名", "出版社", "單價", "數量", "總金額",
                        "書籍購入日期", "保管人", "確認", "盤點日期"]
             widths = [0.13, 0.22, 0.11, 0.07, 0.05, 0.1, 0.11, 0.09, 0.07, 0.09]
-        body = build_table_pdf(
-            title, meta,
+        self._send_table_export(
+            self._export_format(query), title, meta,
             columns, table,
-            widths=widths, landscape=True,
+            widths=widths, landscape=True, base=title,
         )
-        self.send_pdf(body, "{}-{}.pdf".format(title, datetime.now().strftime("%Y%m%d-%H%M")))
 
-    def api_report_checked_out_pdf(self, conn):
+    def api_report_checked_out_pdf(self, conn, query):
         rows = conn.execute(
             "SELECT asset_id, title, call_no, loan_class, loaned_to, due_at "
             "FROM books WHERE status = '借出' ORDER BY due_at, asset_id"
@@ -2604,12 +2774,12 @@ class Handler(SimpleHTTPRequestHandler):
             "列印時間：{}".format(datetime.now().strftime("%Y/%m/%d %H:%M")),
             "共 {} 筆".format(len(rows)),
         ]
-        body = build_table_pdf(
-            "圖書已借出清單", meta,
+        self._send_table_export(
+            self._export_format(query), "圖書已借出清單", meta,
             ["財產編號", "書名", "索書號", "班級", "借閱人", "應還日期"], table,
             widths=[0.14, 0.3, 0.16, 0.12, 0.12, 0.16],
+            base="已借出清單",
         )
-        self.send_pdf(body, "已借出清單-{}.pdf".format(datetime.now().strftime("%Y%m%d-%H%M")))
 
     def api_report_full_catalog_pdf(self, conn, query):
         """全圖名冊：所有書籍（不含管理者相關，即所有館藏書籍）。"""
@@ -2629,13 +2799,12 @@ class Handler(SimpleHTTPRequestHandler):
             "列印時間：{}".format(datetime.now().strftime("%Y/%m/%d %H:%M")),
             "共 {} 筆".format(len(rows)),
         ]
-        body = build_table_pdf(
-            "全圖名冊", meta,
+        self._send_table_export(
+            self._export_format(query), "全圖名冊", meta,
             ["財產編號", "書名", "索書號", "主題分類", "狀態", "班級", "借閱人", "應還日期"], table,
             widths=[0.13, 0.22, 0.12, 0.1, 0.08, 0.1, 0.12, 0.13],
-            landscape=True,
+            landscape=True, base="全圖名冊",
         )
-        self.send_pdf(body, "全圖名冊-{}.pdf".format(datetime.now().strftime("%Y%m%d-%H%M")))
 
     def api_report_callno_catalog_pdf(self, conn, query):
         """索書號清冊：以索書號排序的書籍清冊（僅含有索書號之書籍）。"""
@@ -2655,13 +2824,12 @@ class Handler(SimpleHTTPRequestHandler):
             "列印時間：{}".format(datetime.now().strftime("%Y/%m/%d %H:%M")),
             "共 {} 筆".format(len(rows)),
         ]
-        body = build_table_pdf(
-            "索書號清冊", meta,
+        self._send_table_export(
+            self._export_format(query), "索書號清冊", meta,
             ["索書號", "財產編號", "書名", "主題分類", "狀態", "班級", "借閱人", "應還日期"], table,
             widths=[0.12, 0.13, 0.22, 0.1, 0.08, 0.1, 0.12, 0.13],
-            landscape=True,
+            landscape=True, base="索書號清冊",
         )
-        self.send_pdf(body, "索書號清冊-{}.pdf".format(datetime.now().strftime("%Y%m%d-%H%M")))
 
     def api_report_command_codes_pdf(self, conn):
         """功能指令條碼名冊（5.2）：列印啟動借書／還書模式、清除重來三張 QR Code，貼於螢幕邊框。"""
@@ -2751,14 +2919,14 @@ class Handler(SimpleHTTPRequestHandler):
             "館藏複本總數：{} 本".format(total_books),
             "借閱總次數：{} 次".format(total_loans),
         ]
-        body = build_table_pdf(
-            "出版社統計", meta,
+        self._send_table_export(
+            self._export_format(query), "出版社統計", meta,
             ["出版社", "館藏複本數", "借閱次數"], table,
             widths=[0.4, 0.3, 0.3],
+            base="出版社統計",
         )
-        self.send_pdf(body, "出版社統計-{}.pdf".format(datetime.now().strftime("%Y%m%d-%H%M")))
 
-    def api_report_issues_pdf(self, conn):
+    def api_report_issues_pdf(self, conn, query):
         rows = conn.execute(
             "SELECT asset_id, title, call_no, status, loan_class, loaned_to, remarks, updated_at "
             "FROM books WHERE status IN ('遺失', '修繕中', '爭議中') "
@@ -2773,12 +2941,12 @@ class Handler(SimpleHTTPRequestHandler):
             "列印時間：{}".format(datetime.now().strftime("%Y/%m/%d %H:%M")),
             "共 {} 筆".format(len(rows)),
         ]
-        body = build_table_pdf(
-            "爭議／遺失／修繕狀態清冊", meta,
+        self._send_table_export(
+            self._export_format(query), "爭議／遺失／修繕狀態清冊", meta,
             ["財產編號", "書名", "索書號", "狀態", "班級", "借閱人", "備註", "更新時間"],
             table, widths=[0.12, 0.24, 0.13, 0.08, 0.1, 0.1, 0.13, 0.1], landscape=True,
+            base="爭議遺失修繕清冊",
         )
-        self.send_pdf(body, "爭議遺失修繕清冊-{}.pdf".format(datetime.now().strftime("%Y%m%d-%H%M")))
 
     def _member_history_rows(self, conn, query):
         class_name = (query.get("className") or [""])[0].strip()
@@ -2830,14 +2998,12 @@ class Handler(SimpleHTTPRequestHandler):
                 sum(1 for r in rows if r["action"] == "還書"),
             ),
         ]
-        body = build_table_pdf(
-            "個人閱讀歷程統計", meta,
+        self._send_table_export(
+            self._export_format(query), "個人閱讀歷程統計", meta,
             ["時間", "書名", "財產編號", "動作"], table,
             widths=[0.28, 0.42, 0.18, 0.12],
+            base="個人閱讀歷程-" + user_name,
         )
-        self.send_pdf(body, "個人閱讀歷程-{}-{}.pdf".format(
-            user_name, datetime.now().strftime("%Y%m%d-%H%M")
-        ))
 
     def api_report_stats_pdf(self, conn, query):
         school_year = (query.get("schoolYear") or [""])[0].strip()
@@ -2859,12 +3025,133 @@ class Handler(SimpleHTTPRequestHandler):
             "學年：{}".format(school_year or "全部"),
             "全園借書總次數：{} 次".format(total),
         ]
-        body = build_table_pdf(
-            "全園閱讀歷程統計", meta,
+        self._send_table_export(
+            self._export_format(query), "全園閱讀歷程統計", meta,
             ["班級", "姓名", "借書次數"], table,
             widths=[0.4, 0.4, 0.2],
+            base="全園閱讀歷程統計",
         )
-        self.send_pdf(body, "全園閱讀歷程統計-{}.pdf".format(datetime.now().strftime("%Y%m%d-%H%M")))
+
+    def api_export_books(self, conn, query):
+        """館藏清單匯出（pdf／xlsx／csv）：支援 keyword／status／source 篩選。"""
+        keyword = ""
+        for key in ("keyword", "q", "title", "isbn", "assetId", "barcode"):
+            vals = query.get(key) or []
+            if vals and vals[0].strip():
+                keyword = vals[0].strip()
+                break
+        status = (query.get("status") or [""])[0].strip()
+        source = (query.get("source") or [""])[0].strip()
+        publisher = (query.get("publisher") or [""])[0].strip()
+        conditions, params, meta = [], [], []
+        if keyword:
+            conditions.append(
+                "(title LIKE ? OR asset_id LIKE ? OR barcode LIKE ? OR isbn LIKE ? OR call_no LIKE ? OR remarks LIKE ?)"
+            )
+            like = "%" + keyword + "%"
+            params.extend([like] * 6)
+            meta.append("關鍵字：{}".format(keyword))
+        if status:
+            conditions.append("status = ?")
+            params.append(status)
+            meta.append("狀態：{}".format(status))
+        if source:
+            conditions.append("source = ?")
+            params.append(source)
+            meta.append("來源：{}".format(source))
+        if publisher:
+            conditions.append("publisher = ?")
+            params.append(publisher)
+            meta.append("出版社：{}".format(publisher))
+        where_sql = (" WHERE " + " AND ".join(conditions)) if conditions else ""
+        rows = conn.execute(
+            "SELECT barcode, asset_id, title, call_no, category, isbn, publisher, source, "
+            "status, loaned_to, loan_class, purchase_date, keeper, remarks, price "
+            "FROM books" + where_sql + " ORDER BY barcode",
+            params,
+        ).fetchall()
+        table = [[
+            r["barcode"], r["asset_id"], r["title"], r["call_no"], r["category"] or "",
+            r["isbn"] or "", r["publisher"] or "", r["source"] or "", r["status"],
+            r["loaned_to"] or "", r["loan_class"] or "", r["purchase_date"] or "",
+            r["keeper"] or "", r["remarks"] or "", r["price"] if r["price"] is not None else "",
+        ] for r in rows]
+        meta.insert(0, "列印時間：{}".format(datetime.now().strftime("%Y/%m/%d %H:%M")))
+        meta.append("共 {} 筆".format(len(rows)))
+        self._send_table_export(
+            self._export_format(query), "館藏清單", meta,
+            ["條碼", "財產編號", "書名", "索書號", "主題分類", "ISBN", "出版社", "來源",
+             "狀態", "借閱人", "班級", "購入日期", "保管人", "備註", "單價"],
+            table,
+            widths=[0.07, 0.07, 0.2, 0.09, 0.06, 0.09, 0.09, 0.05, 0.05, 0.06, 0.05, 0.07, 0.06, 0.06, 0.04],
+            landscape=True, base="館藏清單",
+        )
+
+    def api_export_members(self, conn, query):
+        """成員清單匯出（pdf／xlsx／csv）：支援 class 篩選。"""
+        class_name = (query.get("class") or [""])[0].strip()
+        conditions, params, meta = ["u.active = 1"], [], []
+        if class_name:
+            conditions.append("c.name = ?")
+            params.append(class_name)
+            meta.append("班級：{}".format(class_name))
+        rows = conn.execute(
+            "SELECT u.username, u.barcode, u.name, u.role, u.school_year, u.email, "
+            "c.name AS class_name, u.can_loan, u.can_member, u.can_book, u.can_config, u.can_report "
+            "FROM users u LEFT JOIN classes c ON c.id = u.class_id "
+            "WHERE " + " AND ".join(conditions) + " "
+            "ORDER BY CASE WHEN u.class_id IS NULL THEN 1 ELSE 0 END, c.sort_order, c.id, u.id",
+            params,
+        ).fetchall()
+        flag = lambda v: "✓" if v else ""
+        table = [[
+            r["class_name"] or "", r["username"], r["barcode"], r["name"],
+            r["role"], r["school_year"] or "", r["email"] or "",
+            flag(r["can_loan"]), flag(r["can_member"]), flag(r["can_book"]),
+            flag(r["can_config"]), flag(r["can_report"]),
+        ] for r in rows]
+        meta.insert(0, "列印時間：{}".format(datetime.now().strftime("%Y/%m/%d %H:%M")))
+        meta.append("共 {} 位".format(len(rows)))
+        self._send_table_export(
+            self._export_format(query), "成員清單", meta,
+            ["班級", "帳號", "條碼", "姓名", "角色", "學年", "Email",
+             "可借書", "可管成員", "可圖書管理", "可系統設定", "可報表"],
+            table,
+            widths=[0.1, 0.08, 0.08, 0.1, 0.08, 0.06, 0.18, 0.06, 0.08, 0.09, 0.09, 0.07],
+            landscape=True, base="成員清單",
+        )
+
+    def api_export_reservations(self, conn, query):
+        """預約清單匯出（pdf／xlsx／csv）：支援 status 篩選。"""
+        status = (query.get("status") or [""])[0].strip()
+        conditions, params, meta = [], [], []
+        if status:
+            conditions.append("status = ?")
+            params.append(status)
+            meta.append("預約狀態：{}".format(status))
+        where_sql = (" WHERE " + " AND ".join(conditions)) if conditions else ""
+        rows = conn.execute(
+            "SELECT id, created_at, barcode, title, asset_id, class_name, user_name, status "
+            "FROM reservations" + where_sql + " ORDER BY id DESC",
+            params,
+        ).fetchall()
+        status_text = {
+            "pending": "排隊中", "ready": "可借預約", "fulfilled": "已借出",
+            "cancelled": "已取消", "expired": "已過期",
+        }
+        table = [[
+            r["id"], r["created_at"], r["barcode"], r["title"], r["asset_id"],
+            r["class_name"], r["user_name"], status_text.get(r["status"], r["status"]),
+        ] for r in rows]
+        meta.insert(0, "列印時間：{}".format(datetime.now().strftime("%Y/%m/%d %H:%M")))
+        meta.append("共 {} 筆".format(len(rows)))
+        self._send_table_export(
+            self._export_format(query), "預約清單", meta,
+            ["編號", "預約時間", "條碼", "書名", "財產編號", "班級", "預約人", "狀態"],
+            table,
+            widths=[0.06, 0.16, 0.09, 0.28, 0.1, 0.1, 0.11, 0.1],
+            landscape=True, base="預約清單",
+        )
 
     def api_report_overdue_pdf(self, conn, query):
         cls = (query.get("className") or [""])[0].strip()
@@ -2904,12 +3191,12 @@ class Handler(SimpleHTTPRequestHandler):
             "列印時間：{}".format(now.strftime("%Y/%m/%d %H:%M")),
             "共 {} 筆{}".format(len(rows), ("（班級：{}）".format(cls) if cls else "")),
         ]
-        body = build_table_pdf(
-            "逾期未還清單", meta,
+        self._send_table_export(
+            self._export_format(query), "逾期未還清單", meta,
             ["財產編號", "書名", "班級", "借閱人", "應還日期", "逾期天數"], table,
             widths=[0.15, 0.3, 0.12, 0.13, 0.2, 0.1],
+            base="逾期清單",
         )
-        self.send_pdf(body, "逾期清單-{}.pdf".format(now.strftime("%Y%m%d-%H%M")))
 
     def api_report_overdue_returned_pdf(self, conn, query):
         """逾期已還紀錄清冊（設定期間）：依班級／師生篩選，以借閱人為標題列出。"""
@@ -2969,13 +3256,12 @@ class Handler(SimpleHTTPRequestHandler):
                 ("（班級：{}）".format(cls) if cls else ""),
             ),
         ]
-        body = build_table_pdf(
-            "逾期已還紀錄清冊", meta,
+        self._send_table_export(
+            self._export_format(query), "逾期已還紀錄清冊", meta,
             ["還書日期", "書名", "財產編號", "應還日期", "逾期天數"], table,
             widths=[0.16, 0.4, 0.16, 0.18, 0.1],
-            landscape=True,
+            landscape=True, base="逾期已還清冊",
         )
-        self.send_pdf(body, "逾期已還清冊-{}.pdf".format(now.strftime("%Y%m%d-%H%M")))
 
     # ------------------------------------------------------------------
     # 大批：QR Code 條碼名冊（從 docs/*.xlsx 讀取，不進版控）
