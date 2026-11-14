@@ -1047,6 +1047,17 @@ def _clean_text(value, field, max_len=200, required=False):
     return value
 
 
+def _clean_publisher(value):
+    """出版社名稱清理：內部換行／全形空白轉為單一空白；
+    若移除空白後純為中文（不含 ASCII 字元），則連內部空白一併移除，
+    避免同名出版社因斷行或空格差異而分裂（英文出版社名如 Walker Books 保留單一空格）。"""
+    v = re.sub(r"[\s\u3000]+", " ", value or "").strip()
+    compact = v.replace(" ", "")
+    if compact and re.fullmatch(r"[^\x00-\x7f]+", compact):
+        v = compact
+    return v
+
+
 def validate_import(payload):
     if not isinstance(payload, dict):
         raise ApiError(400, "備份資料格式錯誤")
@@ -4227,7 +4238,7 @@ class Handler(SimpleHTTPRequestHandler):
         if not call_no and category:
             call_no = auto_call_no(category, title)
         isbn = _clean_text(data.get("isbn") or data.get("ISBN") or "", "ISBN", 32)
-        publisher = _clean_text(data.get("publisher") or "", "出版社", 100)
+        publisher = _clean_publisher(_clean_text(data.get("publisher") or "", "出版社", 100))
         source = _clean_text(data.get("source") or "", "來源", 20)
         if source and source not in ("自購", "軍購", "捐贈", "英補", "署補"):
             raise ApiError(400, "來源必須是「自購／軍購／捐贈／英補／署補」")
@@ -4846,7 +4857,7 @@ class Handler(SimpleHTTPRequestHandler):
             asset_id = _clean_text(item.get("assetId") or item.get("財產編號") or "", "財產編號", 64)
             isbn = _clean_text(item.get("isbn") or item.get("ISBN") or item.get("國際書號") or "", "ISBN", 32)
             status = _clean_text(item.get("status") or "在館", "狀態", 20) or "在館"
-            publisher = _clean_text(item.get("publisher") or item.get("出版社") or "", "出版社", 100)
+            publisher = _clean_publisher(_clean_text(item.get("publisher") or item.get("出版社") or "", "出版社", 100))
             source = _clean_text(item.get("source") or item.get("來源") or "", "來源", 20)
             purchase_date = self._roc_date(item.get("purchaseDate") or item.get("書籍購入日期") or item.get("購入日期") or "", "書籍購入日期")
             keeper = _clean_text(item.get("keeper") or item.get("保管人") or "", "保管人", 50)
