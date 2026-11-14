@@ -431,11 +431,13 @@ def _wrap(text, canvas, size, max_width):
 SCHOOL_FULL_NAME = "國防部海軍司令部海育員工子女非營利幼兒園(委託社團法人高雄市社區教育協會辦理)"
 
 def build_table_pdf(title, meta_lines, columns, rows, widths=None, landscape=False,
-                    font_path=DEFAULT_FONT):
+                    font_path=DEFAULT_FONT, sections=None):
     """產生 PDF bytes。
 
     columns: 欄位標題清單
     rows:    每列為字串清單，順序對應 columns
+    sections: 可選 [(組別標題, 該組 rows), ...]；提供時依組別分段列印，
+              各段有自己的小標題列並重複表頭（未提供時整份為單一段落）。
     widths:  各欄寬度比例（預設平均）
     """
     page_width, page_height = A4_LANDSCAPE if landscape else A4_PORTRAIT
@@ -480,32 +482,48 @@ def build_table_pdf(title, meta_lines, columns, rows, widths=None, landscape=Fal
         canvas.line(margin, y + header_height, margin + usable, y + header_height, width=0.5)
         return y + header_height
 
-    y = draw_header(canvas, y)
     bottom_limit = page_height - 46
-    page_index = 0
 
-    for row in rows:
-        wrapped = [_wrap(cell, canvas, font_size, w - cell_pad * 2) for cell, w in zip(row, widths)]
-        row_height = max(len(lines) for lines in wrapped) * line_height + cell_pad * 2
-        if y + row_height > bottom_limit:
-            canvas = doc.add_page(page_width, page_height)
-            page_index += 1
-            y = margin + 10
-            y = draw_header(canvas, y)
+    def render_rows(canvas, y, rows_data):
+        """畫表頭＋資料列，必要時自動換頁；回傳（最新 canvas, y）。"""
+        y = draw_header(canvas, y)
+        for row in rows_data:
+            wrapped = [_wrap(cell, canvas, font_size, w - cell_pad * 2) for cell, w in zip(row, widths)]
+            row_height = max(len(lines) for lines in wrapped) * line_height + cell_pad * 2
+            if y + row_height > bottom_limit:
+                canvas = doc.add_page(page_width, page_height)
+                y = margin + 10
+                y = draw_header(canvas, y)
 
-        x = margin
-        for lines, w in zip(wrapped, widths):
-            ty = y + cell_pad + font_size * 0.9
-            for line in lines:
-                canvas.text(x + cell_pad, ty, line, size=font_size)
-                ty += line_height
-            canvas.line(x, y, x, y + row_height, width=0.35, color=(0.45, 0.45, 0.45))
-            x += w
-        canvas.line(margin + usable, y, margin + usable, y + row_height, width=0.35, color=(0.45, 0.45, 0.45))
-        canvas.line(margin, y + row_height, margin + usable, y + row_height, width=0.35, color=(0.45, 0.45, 0.45))
-        y += row_height
+            x = margin
+            for lines, w in zip(wrapped, widths):
+                ty = y + cell_pad + font_size * 0.9
+                for line in lines:
+                    canvas.text(x + cell_pad, ty, line, size=font_size)
+                    ty += line_height
+                canvas.line(x, y, x, y + row_height, width=0.35, color=(0.45, 0.45, 0.45))
+                x += w
+            canvas.line(margin + usable, y, margin + usable, y + row_height, width=0.35, color=(0.45, 0.45, 0.45))
+            canvas.line(margin, y + row_height, margin + usable, y + row_height, width=0.35, color=(0.45, 0.45, 0.45))
+            y += row_height
+        return canvas, y
 
-    if not rows:
+    data_sections = sections if sections is not None else [(None, rows)]
+    has_data = False
+    for sec_title, sec_rows in data_sections:
+        if sec_title:
+            sec_h = 22
+            if y + sec_h > bottom_limit:
+                canvas = doc.add_page(page_width, page_height)
+                y = margin + 10
+            canvas.rect(margin, y, usable, sec_h, fill=(0.84, 0.87, 0.94))
+            canvas.text(margin + 6, y + cell_pad + font_size, sec_title, size=font_size + 1.5)
+            y += sec_h
+        if sec_rows:
+            has_data = True
+        canvas, y = render_rows(canvas, y, sec_rows)
+
+    if not has_data:
         y += 24
         canvas.text(margin, y, "（目前沒有資料）", size=10, color=(0.4, 0.4, 0.4))
 

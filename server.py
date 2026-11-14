@@ -1234,10 +1234,12 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def _send_table_export(self, fmt, title, meta_lines, columns, rows,
-                           widths=None, landscape=False, base="報表"):
+                           widths=None, landscape=False, base="報表", groups=None):
         """統一資料匯出：fmt = 'pdf' / 'xlsx' / 'csv'。
 
         rows 為字串／數值二維清單，順序對應 columns。
+        groups 為可選的 [(組別標題, 該組 rows), ...]：PDF 依組別分段列印、
+        xlsx 每組一個工作表、CSV 以組別標題列分隔（如圖書清冊依來源分類）。
         """
         fmt = (fmt or "pdf").lower()
         if fmt not in ("pdf", "xlsx", "csv"):
@@ -1251,9 +1253,14 @@ class Handler(SimpleHTTPRequestHandler):
             writer.writerow([title])
             for line in (meta_lines or []):
                 writer.writerow([line])
-            writer.writerow(columns)
-            for r in rows:
-                writer.writerow(["" if v is None else str(v) for v in r])
+            data_groups = groups if groups is not None else [(None, rows)]
+            for g_title, g_rows in data_groups:
+                if g_title:
+                    writer.writerow([])
+                    writer.writerow(["{}（{} 筆）".format(g_title, len(g_rows))])
+                writer.writerow(columns)
+                for r in g_rows:
+                    writer.writerow(["" if v is None else str(v) for v in r])
             body = ("\ufeff" + output.getvalue()).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/csv; charset=utf-8")
@@ -1275,37 +1282,53 @@ class Handler(SimpleHTTPRequestHandler):
             from openpyxl.utils import get_column_letter
 
             wb = Workbook()
-            ws = wb.active
-            ws.title = (title or "報表")[:28]
-            ws.cell(row=1, column=1, value=SCHOOL_FULL_NAME)
-            c = ws.cell(row=2, column=1, value=title)
-            c.font = Font(bold=True, size=14)
-            row_i = 3
-            for line in (meta_lines or []):
-                ws.cell(row=row_i, column=1, value=line)
+            # xlsx：每個組別一個工作表（無 groups 時單一工作表）
+            xlsx_groups = groups if groups is not None else [(None, rows)]
+            first = True
+            for g_title, g_rows in xlsx_groups:
+                sheet_name = (g_title or "")[:28] if g_title else (title or "報表")[:28]
+                if first:
+                    ws = wb.active
+                    ws.title = sheet_name
+                    first = False
+                else:
+                    ws = wb.create_sheet(title=sheet_name)
+                ws.cell(row=1, column=1, value=SCHOOL_FULL_NAME)
+                c = ws.cell(row=2, column=1, value=(title if not g_title else "{}（{}）".format(title, g_title)))
+                c.font = Font(bold=True, size=14)
+                row_i = 3
+                for line in (meta_lines or []):
+                    ws.cell(row=row_i, column=1, value=line)
+                    row_i += 1
+                if g_title:
+                    ws.cell(row=row_i, column=1, value="{}（{} 筆）".format(g_title, len(g_rows)))
+                    row_i += 1
                 row_i += 1
-            row_i += 1
-            header_row = row_i
-            for j, col in enumerate(columns, 1):
-                ws.cell(row=row_i, column=j, value=col).font = Font(bold=True)
-            for r in rows:
-                row_i += 1
-                for j, v in enumerate(r, 1):
-                    ws.cell(row=row_i, column=j, value="" if v is None else v)
-            for j in range(1, len(columns) + 1):
-                width = max(
-                    [len(str(columns[j - 1])) + 4]
-                    + [len(str(r[j - 1])) + 2 for r in rows if j - 1 < len(r)]
-                )
-                ws.column_dimensions[get_column_letter(j)].width = max(10, min(45, width * 1.6))
-            ws.freeze_panes = ws.cell(row=header_row + 1, column=1)
+                header_row = row_i
+                for j, col in enumerate(columns, 1):
+                    ws.cell(row=row_i, column=j, value=col).font = Font(bold=True)
+                for r in g_rows:
+                    row_i += 1
+                    for j, v in enumerate(r, 1):
+                        ws.cell(row=row_i, column=j, value="" if v is None else v)
+                for j in range(1, len(columns) + 1):
+                    width = max(
+                        [len(str(columns[j - 1])) + 4]
+                        + [len(str(r[j - 1])) + 2 for r in g_rows if j - 1 < len(r)]
+                    )
+                    ws.column_dimensions[get_column_letter(j)].width = max(10, min(45, width * 1.6))
+                ws.freeze_panes = ws.cell(row=header_row + 1, column=1)
             buf = io.BytesIO()
             wb.save(buf)
             self.send_xlsx(buf.getvalue(), "{}-{}.xlsx".format(base, stamp))
             return
 
+        pdf_sections = None
+        if groups is not None:
+            pdf_sections = [("{}（{} 筆）".format(g_title, len(g_rows)), g_rows)
+                            for g_title, g_rows in groups]
         body = build_table_pdf(title, meta_lines, columns, rows,
-                               widths=widths, landscape=landscape)
+                               widths=widths, landscape=landscape, sections=pdf_sections)
         self.send_pdf(body, "{}-{}.pdf".format(base, stamp))
 
     @staticmethod
@@ -2782,19 +2805,23 @@ class Handler(SimpleHTTPRequestHandler):
         )
 
     def api_report_full_catalog_pdf(self, conn, query):
-        """全圖名冊：所有書籍（不含管理者相關，即所有館藏書籍）。"""
+        """全圖名冊：所有書籍（不含管理者相關，即所有館藏書籍），依來源分類。"""
         rows = conn.execute(
-            "SELECT asset_id, title, call_no, category, status, loaned_to, loan_class, due_at "
-            "FROM books ORDER BY asset_id"
+            "SELECT asset_id, title, call_no, category, status, loaned_to, loan_class, due_at, source "
+            "FROM books ORDER BY source, asset_id"
         ).fetchall()
         table = []
+        grouped = {}
         for r in rows:
             display = display_status(r)
-            table.append([
+            t = [
                 r["asset_id"] or "", r["title"], r["call_no"] or "",
                 r["category"] or "", display,
                 r["loan_class"] or "", r["loaned_to"] or "", r["due_at"] or "",
-            ])
+            ]
+            table.append(t)
+            grouped.setdefault(r["source"] or "未設定", []).append(t)
+        groups = [(src, sub) for src, sub in grouped.items()]
         meta = [
             "列印時間：{}".format(datetime.now().strftime("%Y/%m/%d %H:%M")),
             "共 {} 筆".format(len(rows)),
@@ -2803,7 +2830,7 @@ class Handler(SimpleHTTPRequestHandler):
             self._export_format(query), "全圖名冊", meta,
             ["財產編號", "書名", "索書號", "主題分類", "狀態", "班級", "借閱人", "應還日期"], table,
             widths=[0.13, 0.22, 0.12, 0.1, 0.08, 0.1, 0.12, 0.13],
-            landscape=True, base="全圖名冊",
+            landscape=True, base="全圖名冊", groups=groups,
         )
 
     def api_report_callno_catalog_pdf(self, conn, query):
@@ -3067,7 +3094,7 @@ class Handler(SimpleHTTPRequestHandler):
         rows = conn.execute(
             "SELECT barcode, asset_id, title, call_no, category, isbn, publisher, source, "
             "status, loaned_to, loan_class, purchase_date, keeper, remarks, price "
-            "FROM books" + where_sql + " ORDER BY barcode",
+            "FROM books" + where_sql + " ORDER BY source, barcode",
             params,
         ).fetchall()
         table = [[
@@ -3076,6 +3103,11 @@ class Handler(SimpleHTTPRequestHandler):
             r["loaned_to"] or "", r["loan_class"] or "", r["purchase_date"] or "",
             r["keeper"] or "", r["remarks"] or "", r["price"] if r["price"] is not None else "",
         ] for r in rows]
+        # 依來源分組：PDF 依來源分段、xlsx 每來源一個工作表、CSV 以來源標題分隔
+        grouped = {}
+        for r, t in zip(rows, table):
+            grouped.setdefault(r["source"] or "未設定", []).append(t)
+        groups = [(src, sub) for src, sub in grouped.items()]
         meta.insert(0, "列印時間：{}".format(datetime.now().strftime("%Y/%m/%d %H:%M")))
         meta.append("共 {} 筆".format(len(rows)))
         self._send_table_export(
@@ -3084,7 +3116,7 @@ class Handler(SimpleHTTPRequestHandler):
              "狀態", "借閱人", "班級", "購入日期", "保管人", "備註", "單價"],
             table,
             widths=[0.07, 0.07, 0.2, 0.09, 0.06, 0.09, 0.09, 0.05, 0.05, 0.06, 0.05, 0.07, 0.06, 0.06, 0.04],
-            landscape=True, base="館藏清單",
+            landscape=True, base="館藏清單", groups=groups,
         )
 
     def api_export_members(self, conn, query):
