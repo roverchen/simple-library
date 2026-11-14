@@ -275,8 +275,6 @@
         <button onclick="changeTab('managePage')" id="btn-managePage">圖書管理</button>
         <button onclick="changeTab('configPage')" id="btn-configPage">系統設定</button>
         <button onclick="changeTab('reportPage')" id="btn-reportPage">報表/列印</button>
-        <button onclick="changeOwnPassword()" style="background:#5a7fa8; color:white;">🔑 修改密碼</button>
-        <button onclick="openSecurityQuestionModal()" style="background:#7b68ae; color:white;">🔒 安全提問</button>
         <button onclick="handleLogout()" style="background:#666; color:white;">登出</button>
     </div>
 
@@ -297,6 +295,10 @@
             <div class="dash-card"><div class="dash-num" id="dashTeachers">–</div><div class="dash-label">👨‍🏫 老師數</div></div>
         </div>
         <div id="dashboardHint" style="color:#666; font-size:0.9rem; margin-top:12px;"></div>
+        <div style="margin-top:16px; display:flex; gap:8px; flex-wrap:wrap;">
+            <button onclick="changeOwnPassword()" style="background:#5a7fa8; color:white; padding:8px 14px; border:none; border-radius:5px;">🔑 修改密碼</button>
+            <button onclick="openSecurityQuestionModal()" style="background:#7b68ae; color:white; padding:8px 14px; border:none; border-radius:5px;">🔒 安全提問</button>
+        </div>
     </div>
 
     <!-- 🔍 館藏查詢系統：老師可搜尋 ISBN／書名／出版社，複本彙整 -->
