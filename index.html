@@ -3474,20 +3474,20 @@
     async function loadSecurityQuestion() {
         const sel = document.getElementById('securityQuestionSelect');
         const display = document.getElementById('securityQuestionDisplay');
+        const questions = [
+            "你國小就讀的學校名稱是什麼？",
+            "你寵物的名字是什麼？",
+            "你母親的娘家姓氏是什麼？",
+            "你出生的城市是哪裡？",
+            "你最好的朋友的名字是什麼？"
+        ];
+        if (sel) {
+            sel.innerHTML = '<option value="">（請選擇安全提問）</option>' +
+                questions.map(q => `<option value="${escapeHtml(q)}">${escapeHtml(q)}</option>`).join('');
+        }
         try {
             const data = await api('GET', '/api/security-question');
-            if (sel) {
-                const questions = [
-                    "你國小就讀的學校名稱是什麼？",
-                    "你寵物的名字是什麼？",
-                    "你母親的娘家姓氏是什麼？",
-                    "你出生的城市是哪裡？",
-                    "你最好的朋友的名字是什麼？"
-                ];
-                sel.innerHTML = '<option value="">（請選擇安全提問）</option>' +
-                    questions.map(q => `<option value="${escapeHtml(q)}">${escapeHtml(q)}</option>`).join('');
-                if (data.question) sel.value = data.question;
-            }
+            if (sel && data.question) sel.value = data.question;
             if (display) {
                 display.innerHTML = data.hasQuestion
                     ? '已設定安全提問：' + escapeHtml(data.question)

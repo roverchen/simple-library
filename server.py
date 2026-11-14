@@ -5310,6 +5310,9 @@ class Handler(SimpleHTTPRequestHandler):
                 "SELECT security_question FROM users WHERE id = ? AND active = 1",
                 (user_id,),
             ).fetchone()
+        elif sess and sess["user_id"] is None:
+            # 共用管理員：無個人安全提問
+            return self.send_json({"hasQuestion": False, "question": ""})
         else:
             username = (query.get("username") or [""])[0].strip()
             if not username:
