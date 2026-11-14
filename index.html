@@ -481,17 +481,6 @@
         </div>
         <hr>
         <div class="input-group">
-            <label>🔢 學年編號重置（2.1）</label>
-            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-                <button onclick="resetStudentIds()" style="background:var(--warning); color:white; padding:10px 16px; border:none; border-radius:5px;">🔄 重設本學年所有學生學號</button>
-            </div>
-            <small style="color:#666; line-height:1.7;">
-                每學年重新編班後使用，將所有學生學號從各班 a01 起重新編排（格式：S＋班級代碼＋序號，如 SA01、SB01）。
-                依班級排序，班內依姓名排序。重設後會影響條碼掃描識別，請確認後再執行。
-            </small>
-        </div>
-        <hr>
-        <div class="input-group">
             <label>🔒 安全提問設定（3.3 離線密碼救援）</label>
             <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
                 <select id="securityQuestionSelect" style="min-width:200px; padding:8px; border:1px solid #ccc; border-radius:5px;"></select>
@@ -3374,14 +3363,6 @@
             const res = await api('POST', '/api/settings/reset-school-year', { schoolYear: year });
             alert('✅ 已歸檔 ' + res.schoolYear + ' 學年。');
             (document.getElementById('archiveSchoolYear') || {}).value = '';
-        } catch (err) { alert("❌ " + err.message); }
-    }
-
-    async function resetStudentIds() {
-        if (!confirm('確定要重設所有學生學號嗎？這會影響條碼掃描識別，請確認後再執行。')) return;
-        try {
-            const res = await api('POST', '/api/settings/reset-student-ids');
-            alert('✅ 已重設 ' + (res.updated || 0) + ' 位學生的學號。');
         } catch (err) { alert("❌ " + err.message); }
     }
 
