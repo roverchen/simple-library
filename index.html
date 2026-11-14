@@ -284,6 +284,9 @@
     <!-- 📊 儀表板：全員可見的即時概況 -->
     <div id="dashboardPage" class="page">
         <h3 style="margin-top:0;">📊 館藏概況</h3>
+        <div id="updateBanner" style="display:none; background:#fff3cd; border:1px solid #ffc107; border-radius:6px; padding:10px 14px; margin-bottom:12px; color:#856404;">
+            🆕 發現新版本！<a href="#" onclick="changeTab('configPage'); return false;" style="color:#856404; font-weight:bold;">前往系統設定更新</a>
+        </div>
         <div id="dashboardCards" class="dashboard-grid">
             <div class="dash-card"><div class="dash-num" id="dashTotal">–</div><div class="dash-label">📚 館藏總數</div></div>
             <div class="dash-card dash-in"><div class="dash-num" id="dashInLibrary">–</div><div class="dash-label">🏠 在館</div></div>
@@ -1198,6 +1201,8 @@
         applyPermissionNav();
         changeTab('dashboardPage');
         focusGunInput();
+        // 檢查系統更新（僅管理員顯示通知）
+        checkUpdateBanner();
     }
 
     async function bootstrap() {
@@ -3265,6 +3270,15 @@
                 if (el) el.textContent = '✅ 已是最新版本（' + r.local + '）';
             }
         } catch (err) { if (el) el.textContent = '❌ ' + err.message; }
+    }
+
+    async function checkUpdateBanner() {
+        try {
+            if (!currentUser || !currentUser.permissions || !currentUser.permissions.canConfig) return;
+            const r = await api('GET', '/api/update/status');
+            const banner = document.getElementById('updateBanner');
+            if (banner) banner.style.display = r.hasUpdate ? 'block' : 'none';
+        } catch (e) { /* ignore */ }
     }
 
     async function applySystemUpdate() {

@@ -1031,6 +1031,63 @@ def auto_backup_worker():
         time.sleep(60)
 
 
+def _do_update_check():
+    """比對本機與 GitHub main 最新 commit，更新 settings 中的更新狀態；若有新版本則寫入稽核紀錄。"""
+    try:
+        local = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=BASE_DIR, stderr=subprocess.STDOUT
+        ).decode().strip()
+    except Exception:
+        local = ""
+    remote = ""
+    try:
+        out = subprocess.check_output(
+            ["git", "ls-remote", "origin", "main"], cwd=BASE_DIR,
+            stderr=subprocess.STDOUT, timeout=30,
+        ).decode().strip()
+        remote = out.split()[0] if out.split() else ""
+    except Exception:
+        remote = ""
+    if not remote:
+        return
+    prev_available = False
+    try:
+        conn = connect()
+        try:
+            prev_available = get_setting(conn, "update_available", "0") == "1"
+            prev_remote = get_setting(conn, "update_remote_sha", "")
+            conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ("update_last_check", datetime.now().strftime("%Y/%m/%d %H:%M")))
+            conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ("update_remote_sha", remote))
+            has_update = bool(local and remote and remote != local)
+            conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ("update_available", "1" if has_update else "0"))
+            if has_update and not prev_available:
+                # 新發現更新：寫入稽核紀錄
+                try:
+                    log_audit(conn, "發現系統更新", None, "系統",
+                              target=remote[:7], detail="本機 {} → 遠端 {}".format(local[:7], remote[:7]),
+                              ip="127.0.0.1")
+                except Exception:
+                    pass
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+
+def update_check_worker():
+    # 啟動時先檢查一次，之後每 24 小時檢查一次
+    try:
+        _do_update_check()
+    except Exception:
+        pass
+    while True:
+        try:
+            time.sleep(24 * 3600)
+            _do_update_check()
+        except Exception:
+            pass
+
+
 # --------------------------------------------------------------------------
 # 匯入驗證
 # --------------------------------------------------------------------------
@@ -2016,6 +2073,10 @@ class Handler(SimpleHTTPRequestHandler):
             if method == "GET" and path == "/api/update/check":
                 require_admin(conn, token)
                 return self.api_update_check(conn)
+
+            if method == "GET" and path == "/api/update/status":
+                # 任何已登入者可讀（用於顯示更新通知），但通知僅管理員處理
+                return self.api_update_status(conn, token)
 
             if method == "POST" and path == "/api/update/apply":
                 require_admin(conn, token)
@@ -5035,6 +5096,28 @@ class Handler(SimpleHTTPRequestHandler):
             "hasUpdate": has_update,
         })
 
+    def api_update_status(self, conn, token):
+        local = ""
+        try:
+            local = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], cwd=BASE_DIR, stderr=subprocess.STDOUT
+            ).decode().strip()
+        except Exception:
+            local = ""
+        available = get_setting(conn, "update_available", "0") == "1"
+        remote = get_setting(conn, "update_remote_sha", "")
+        checked = get_setting(conn, "update_last_check", "")
+        # 若尚未檢查過，立即執行一次
+        if not checked:
+            _do_update_check()
+            available = get_setting(conn, "update_available", "0") == "1"
+            remote = get_setting(conn, "update_remote_sha", "")
+            checked = get_setting(conn, "update_last_check", "")
+        return self.send_json({
+            "ok": True, "hasUpdate": available, "local": local[:7],
+            "remote": remote[:7] if remote else "", "checkedAt": checked,
+        })
+
     def api_update_apply(self, conn, token):
         import threading, time
         # 先 git pull
@@ -5812,6 +5895,7 @@ def main():
 
     httpd = ThreadingHTTPServer((args.host, args.port), Handler)
     threading.Thread(target=auto_backup_worker, daemon=True).start()
+    threading.Thread(target=update_check_worker, daemon=True).start()
     httpd.daemon_threads = True
 
     scheme = "http"
