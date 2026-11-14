@@ -2587,6 +2587,7 @@ class Handler(SimpleHTTPRequestHandler):
                         "role": role,
                         "is_root": is_root,
                         "is_daily_admin": is_daily_admin,
+                        "is_shared_admin": user is None,
                         "permissions": perms,
                         "needSecurityQuestion": need_security_question,
                     },

@@ -1891,6 +1891,7 @@
                 permissions: (res.user && res.user.permissions) || {},
                 isRoot: (res.user && res.user.is_root) || false,
                 isDailyAdmin: (res.user && res.user.is_daily_admin) || false,
+                isSharedAdmin: (res.user && res.user.is_shared_admin) || false,
                 needSecurityQuestion: (res.user && res.user.needSecurityQuestion) || false,
             };
             const state = await api('GET', '/api/state');
@@ -3485,6 +3486,13 @@
             sel.innerHTML = '<option value="">（請選擇安全提問）</option>' +
                 questions.map(q => `<option value="${escapeHtml(q)}">${escapeHtml(q)}</option>`).join('');
         }
+        // 共用管理員無個人帳號，無法設定個人安全提問
+        if (currentUser && currentUser.isSharedAdmin) {
+            if (display) display.innerHTML = '共用管理員無個人安全提問；請以個人帳號登入後設定。';
+            const btn = document.querySelector('button[onclick="saveSecurityQuestion()"]');
+            if (btn) btn.disabled = true;
+            return;
+        }
         try {
             const data = await api('GET', '/api/security-question');
             if (sel && data.question) sel.value = data.question;
@@ -3505,6 +3513,10 @@
     }
 
     async function saveSecurityQuestion() {
+        if (currentUser && currentUser.isSharedAdmin) {
+            alert('❌ 共用管理員無個人安全提問，請以個人帳號登入後設定');
+            return;
+        }
         const modalOpen = document.getElementById('securityQuestionModal').classList.contains('open');
         const sel = document.getElementById(modalOpen ? 'sqQuestion' : 'securityQuestionSelect');
         const answerEl = document.getElementById(modalOpen ? 'sqAnswer' : 'securityAnswer');
