@@ -377,7 +377,7 @@
             <input type="text" id="memberSearchInput" placeholder="🔍 搜尋姓名／帳號／Email" oninput="memberSearchText = this.value.trim(); renderMemberTable();" style="padding:10px; border:1px solid #ccc; border-radius:8px; font-size:1rem; width:100%;">
         </div>
         <table id="memberTable">
-            <thead><tr><th>班級</th><th>姓名</th><th>帳號</th><th>Email</th><th>角色</th></tr></thead>
+            <thead><tr><th>姓名</th><th>帳號</th><th>Email</th><th>班級</th><th>角色</th></tr></thead>
             <tbody></tbody>
         </table>
         <div id="memberQRSection" style="margin-top:16px;">
@@ -3179,10 +3179,10 @@
             const emailEsc = escapeHtml(a.email || '') || '未設定';
             const roleEsc = escapeHtml(roleLabel(a.role || ((a.classId === null) ? 'teacher' : 'student')));
             return `<tr data-act="viewMember" data-id="${a.id}" style="cursor:pointer;">
-            <td>${clsEsc}</td>
             <td>${nameEsc}</td>
             <td>${userEsc}</td>
             <td>${emailEsc}</td>
+            <td>${clsEsc}</td>
             <td>${roleEsc}</td>
         </tr>`;
         }).join('');
