@@ -2716,8 +2716,8 @@
             return;
         }
         // 借書/還書指令條碼（v2.1 5.2）：支援 "borrow:<條碼>" 與 "return:<條碼>" 開頭的指令 QR
-        if (code.startsWith('borrow:')) { mode = 'borrow'; barcode = code.slice('borrow:'.length).trim(); }
-        else if (code.startsWith('return:')) { mode = 'return'; barcode = code.slice('return:'.length).trim(); }
+        if (code.startsWith('borrow:')) { mode = 'borrow'; barcode = code.slice('borrow:'.length).trim(); currentMode = 'borrow'; const gm = document.getElementById('gunMode'); if (gm) gm.value = 'borrow'; }
+        else if (code.startsWith('return:')) { mode = 'return'; barcode = code.slice('return:'.length).trim(); currentMode = 'return'; const gm = document.getElementById('gunMode'); if (gm) gm.value = 'return'; }
         if (!barcode) { showScanStatus('❌ 指令條碼缺少條碼', 'err'); return; }
         if (isDuplicateScan(barcode)) return;
         
@@ -2792,8 +2792,8 @@
             return;
         }
         // 借書／還書指令條碼（如未在此分支處理）
-        if (code.startsWith('borrow:')) { mode = 'borrow'; barcode = code.slice('borrow:'.length).trim(); }
-        else if (code.startsWith('return:')) { mode = 'return'; barcode = code.slice('return:'.length).trim(); }
+        if (code.startsWith('borrow:')) { mode = 'borrow'; barcode = code.slice('borrow:'.length).trim(); currentMode = 'borrow'; const gm = document.getElementById('gunMode'); if (gm) gm.value = 'borrow'; }
+        else if (code.startsWith('return:')) { mode = 'return'; barcode = code.slice('return:'.length).trim(); currentMode = 'return'; const gm = document.getElementById('gunMode'); if (gm) gm.value = 'return'; }
         if (!barcode) { showScanStatus('❌ 指令條碼缺少條碼', 'err'); return; }
         if (isDuplicateScan(barcode)) return;
         scanQueue = scanQueue
