@@ -24,6 +24,7 @@ import json
 import math
 import os
 import re
+import subprocess
 import secrets
 import smtplib
 import socket
@@ -2011,6 +2012,14 @@ class Handler(SimpleHTTPRequestHandler):
             if method == "PUT" and path == "/api/password":
                 # 任何已登入使用者都可修改自己的密碼；共用管理員密碼變更僅限共用管理員 session
                 return self.api_password(conn, token)
+
+            if method == "GET" and path == "/api/update/check":
+                require_admin(conn, token)
+                return self.api_update_check(conn)
+
+            if method == "POST" and path == "/api/update/apply":
+                require_admin(conn, token)
+                return self.api_update_apply(conn, token)
 
             if method == "PUT" and path == "/api/classes":
                 require_admin(conn, token)
@@ -5001,6 +5010,75 @@ class Handler(SimpleHTTPRequestHandler):
                     detail=("共用管理員密碼已變更" if session["user_id"] is None
                             else "個人密碼已變更"))
         return self.send_json({"ok": True})
+
+    def api_update_check(self, conn):
+        local = ""
+        try:
+            local = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], cwd=BASE_DIR, stderr=subprocess.STDOUT
+            ).decode().strip()
+        except Exception:
+            local = "unknown"
+        remote = ""
+        try:
+            out = subprocess.check_output(
+                ["git", "ls-remote", "origin", "main"], cwd=BASE_DIR,
+                stderr=subprocess.STDOUT, timeout=30,
+            ).decode().strip()
+            # output: "<sha>\trefs/heads/main"
+            remote = out.split()[0] if out.split() else ""
+        except Exception as e:
+            raise ApiError(502, "無法連線 GitHub：{}".format(str(e)[:200]))
+        has_update = bool(remote and local and remote != local)
+        return self.send_json({
+            "ok": True, "local": local[:7], "remote": remote[:7],
+            "hasUpdate": has_update,
+        })
+
+    def api_update_apply(self, conn, token):
+        import threading, time
+        # 先 git pull
+        try:
+            out = subprocess.check_output(
+                ["git", "pull", "origin", "main"], cwd=BASE_DIR,
+                stderr=subprocess.STDOUT, timeout=120,
+            ).decode()
+        except subprocess.CalledProcessError as e:
+            raise ApiError(500, "git pull 失敗：{}".format(e.output.decode()[:300]))
+        except Exception as e:
+            raise ApiError(500, "更新失敗：{}".format(e))
+
+        # 排程重啟：等回應送回後再 kill + 重啟
+        def _restart():
+            time.sleep(2)
+            try:
+                # 找出目前監聽 8080 的 PID 並結束
+                import subprocess as _sp
+                try:
+                    pids = _sp.check_output(
+                        ["lsof", "-iTCP:8080", "-sTCP:LISTEN", "-t", "-n", "-P"],
+                        stderr=_sp.DEVNULL,
+                    ).decode().split()
+                    for pid in pids:
+                        try:
+                            os.kill(int(pid), 15)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+                time.sleep(2)
+                # 重啟
+                log = open(os.path.join(BASE_DIR, "data", "server.log"), "a")
+                _sp.Popen(
+                    ["python3", "server.py", "--host", "0.0.0.0", "--port", "8080"],
+                    cwd=BASE_DIR, stdout=log, stderr=log,
+                    start_new_session=True,
+                )
+            except Exception:
+                pass
+
+        threading.Thread(target=_restart, daemon=True).start()
+        return self.send_json({"ok": True, "message": "更新完成，伺服器即將重啟…", "detail": out[:500]})
 
     def api_password_reset(self, conn):
         data = self.read_json()

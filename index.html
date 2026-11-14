@@ -507,6 +507,18 @@
         </div>
         <hr>
         <div class="input-group">
+            <label>🔄 系統更新（從 GitHub 取得最新版本）</label>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <button onclick="checkSystemUpdate()" style="background:var(--primary); color:white; padding:8px 14px; border:none; border-radius:5px;">🔍 檢查更新</button>
+                <button onclick="applySystemUpdate()" style="background:var(--dark); color:white; padding:8px 14px; border:none; border-radius:5px;">⬇️ 一鍵更新並重啟</button>
+            </div>
+            <div id="updateStatus" style="margin-top:6px; font-size:0.92rem; color:#333;"></div>
+            <small style="color:#666; line-height:1.7;">
+                需部署機可連線 GitHub；更新會執行 git pull 並重啟伺服器，期間約 5～10 秒無法使用。更新前請先備份資料庫。
+            </small>
+        </div>
+        <hr>
+        <div class="input-group">
             <label>🗓️ 學年結算／歸檔（2.1）</label>
             <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
                 <input type="text" id="archiveSchoolYear" placeholder="學年（例如 115）" style="padding:8px; border:1px solid #ccc; border-radius:5px; width:120px;">
@@ -3240,6 +3252,30 @@
             document.getElementById('newSystemPwd').value = '';
             alert("✅ 密碼已更新");
         } catch (err) { alert("❌ " + err.message); }
+    }
+
+    async function checkSystemUpdate() {
+        const el = document.getElementById('updateStatus');
+        if (el) el.textContent = '檢查中…';
+        try {
+            const r = await api('GET', '/api/update/check');
+            if (r.hasUpdate) {
+                if (el) el.innerHTML = '🆕 發現新版本！<br>本機：' + r.local + '<br>遠端：' + r.remote + '<br><a href="https://github.com/roverchen/simple-library/commits/main" target="_blank">查看更新內容</a>';
+            } else {
+                if (el) el.textContent = '✅ 已是最新版本（' + r.local + '）';
+            }
+        } catch (err) { if (el) el.textContent = '❌ ' + err.message; }
+    }
+
+    async function applySystemUpdate() {
+        if (!confirm('確定要更新系統並重啟伺服器嗎？\\n更新期間約 5～10 秒無法使用，請先備份資料庫。')) return;
+        const el = document.getElementById('updateStatus');
+        if (el) el.textContent = '更新中，請稍候…';
+        try {
+            const r = await api('POST', '/api/update/apply');
+            if (el) el.textContent = '✅ ' + (r.message || '更新完成，伺服器即將重啟…');
+            setTimeout(() => { location.reload(); }, 6000);
+        } catch (err) { if (el) el.textContent = '❌ ' + err.message; }
     }
 
     async function changeOwnPassword() {
