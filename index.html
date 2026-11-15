@@ -693,8 +693,8 @@
                 <select id="memberHistoryClass" onchange="populateMemberHistoryMembers()" style="padding:8px; border-radius:5px; border:1px solid #ccc; min-width:130px;"></select>
                 <select id="memberHistoryMember" style="padding:8px; border-radius:5px; border:1px solid #ccc; min-width:130px;"></select>
                 <input type="text" id="memberHistoryYear" placeholder="學年 (如: 115)" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:140px;">
-                <input type="date" id="memberHistoryDateFrom" style="padding:8px; border-radius:5px; border:1px solid #ccc;" title="起始日期">
-                <input type="date" id="memberHistoryDateTo" style="padding:8px; border-radius:5px; border:1px solid #ccc;" title="結束日期">
+                <input type="date" id="memberHistoryDateFrom" style="width:160px; padding:8px; border-radius:5px; border:1px solid #ccc;" title="起始日期">
+                <input type="date" id="memberHistoryDateTo" style="width:160px; padding:8px; border-radius:5px; border:1px solid #ccc;" title="結束日期">
                 <button onclick="queryMemberHistory()" style="padding:10px; background:var(--secondary); color:white; border:none; border-radius:5px;">🔍 查詢</button>
                 <button onclick="printMemberHistory()" style="padding:10px; background:var(--primary); color:white; border:none; border-radius:5px;">📖 列印個人歷程</button>
             </div>
@@ -717,9 +717,9 @@
             <div style="color:#666; font-size:0.9rem; margin-bottom:6px;">「逾期已還清冊」列出設定期間內曾逾期才歸還的紀錄，可搭配班級／師生篩選與下方日期區間。</div>
             <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
                 <span style="color:#555; font-size:0.9rem;">已還清冊期間</span>
-                <input type="date" id="overdueReturnedFrom" aria-label="起始日期" style="padding:8px; border-radius:5px; border:1px solid #ccc;">
+                <input type="date" id="overdueReturnedFrom" aria-label="起始日期" style="width:160px; padding:8px; border-radius:5px; border:1px solid #ccc;">
                 <span style="color:#555;">～</span>
-                <input type="date" id="overdueReturnedTo" aria-label="結束日期" style="padding:8px; border-radius:5px; border:1px solid #ccc;">
+                <input type="date" id="overdueReturnedTo" aria-label="結束日期" style="width:160px; padding:8px; border-radius:5px; border:1px solid #ccc;">
             </div>
             <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
                 <button onclick="loadOverdueReport()" style="padding:10px; background:#f0ad4e; color:white; border:none; border-radius:5px;">🔍 查詢逾期清單</button>
