@@ -674,7 +674,7 @@
             <h3>📈 全園閱讀歷程統計（依學年）</h3>
             <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
                 <input type="text" id="statsSchoolYear" placeholder="學年 (如: 115)" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:140px;">
-                <button onclick="loadYearStats()" style="padding:10px; background:var(--primary); color:white; border:none; border-radius:5px;">📊 載入統計</button>
+                <button onclick="loadYearStats()" style="padding:10px; background:var(--primary); color:white; border:none; border-radius:5px;">📊 查詢</button>
             </div>
             <div id="yearStatsSummary" style="color:#666; margin-bottom:8px;"></div>
             <table>
@@ -695,6 +695,7 @@
                 <input type="text" id="memberHistoryYear" placeholder="學年 (如: 115)" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:140px;">
                 <input type="date" id="memberHistoryDateFrom" style="padding:8px; border-radius:5px; border:1px solid #ccc;" title="起始日期">
                 <input type="date" id="memberHistoryDateTo" style="padding:8px; border-radius:5px; border:1px solid #ccc;" title="結束日期">
+                <button onclick="queryMemberHistory()" style="padding:10px; background:var(--secondary); color:white; border:none; border-radius:5px;">🔍 查詢</button>
                 <button onclick="printMemberHistory()" style="padding:10px; background:var(--primary); color:white; border:none; border-radius:5px;">📖 列印個人歷程</button>
             </div>
             <div id="memberHistorySummary" style="color:#666;"></div>
@@ -712,7 +713,6 @@
                     <option value="student">僅學生</option>
                     <option value="teacher">僅老師</option>
                 </select>
-                <button onclick="loadOverdueReport()" style="padding:10px; background:#f0ad4e; color:white; border:none; border-radius:5px;">🔄 載入逾期清單</button>
             </div>
             <div style="color:#666; font-size:0.9rem; margin-bottom:6px;">「逾期已還清冊」列出設定期間內曾逾期才歸還的紀錄，可搭配班級／師生篩選與下方日期區間。</div>
             <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
@@ -720,6 +720,9 @@
                 <input type="date" id="overdueReturnedFrom" aria-label="起始日期" style="padding:8px; border-radius:5px; border:1px solid #ccc;">
                 <span style="color:#555;">～</span>
                 <input type="date" id="overdueReturnedTo" aria-label="結束日期" style="padding:8px; border-radius:5px; border:1px solid #ccc;">
+            </div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
+                <button onclick="loadOverdueReport()" style="padding:10px; background:#f0ad4e; color:white; border:none; border-radius:5px;">🔍 查詢逾期清單</button>
             </div>
             <table>
                 <thead><tr><th>書名</th><th>借閱人</th><th>應還日期</th><th>逾期天數</th></tr></thead>
@@ -1741,6 +1744,14 @@
                 `<td>${escapeHtml(log.assetId || '')}</td><td>${escapeHtml(log.action)}</td></tr>`).join('')
             : '<tr><td colspan="4" style="color:#666;">此學年沒有借閱紀錄</td></tr>';
         return data;
+    }
+
+    async function queryMemberHistory() {
+        try {
+            await loadMemberHistory();
+        } catch (err) {
+            alert('❌ ' + err.message);
+        }
     }
 
     async function printMemberHistory() {
