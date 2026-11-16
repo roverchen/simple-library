@@ -151,6 +151,12 @@
         .query-copies th, .query-copies td { border: 1px solid #e5e5e5; padding: 6px 8px; text-align: left; }
         .query-copies th { background: #f7f7f7; }
 
+        /* 報表頁籤 */
+        .report-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid #e2e2e2; }
+        .report-tab { padding: 7px 12px; border: 1px solid #d6d6d6; background: #f5f5f5; color: #444; border-radius: 6px; font-size: 0.88rem; cursor: pointer; }
+        .report-tab:hover { background: #ececec; }
+        .report-tab.active { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: bold; }
+
         /* 清冊列印（財產清冊／報廢清冊） */
         .print-sheet-title { font-size: 18px; font-weight: bold; text-align: center; margin-bottom: 6px; }
         .print-sheet-meta { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 8px; }
@@ -650,6 +656,8 @@
 
     <div id="reportPage" class="page">
 
+        <div id="reportTabs" class="no-print"></div>
+
         <div id="logReportSection">
             <h3>📊 借閱歷史紀錄</h3>
             <div id="logFilterRow" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px;">
@@ -711,8 +719,8 @@
             </table>
         </div>
         <div id="overdueReportSection" style="margin-top:20px;">
-            <h3>⏰ 逾期未還清單</h3>
-            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
+            <h3 id="overdueSectionTitle">⏰ 逾期未還清單</h3>
+            <div id="overdueFilterRow" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
                 <select id="overdueClassFilter" style="padding:8px; border-radius:5px; border:1px solid #ccc; min-width:130px;"></select>
                 <select id="overdueTypeFilter" style="padding:8px; border-radius:5px; border:1px solid #ccc; min-width:120px;">
                     <option value="">全部（師生）</option>
@@ -722,36 +730,35 @@
             </div>
             <div style="color:#666; font-size:0.9rem; margin-bottom:6px;">「逾期已還清冊」列出設定期間內曾逾期才歸還的紀錄，可搭配班級／師生篩選與下方日期區間。</div>
             <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
-                <span style="color:#555; font-size:0.9rem;">已還清冊期間</span>
-                <input type="date" id="overdueReturnedFrom" aria-label="起始日期" style="width:160px; padding:8px; border-radius:5px; border:1px solid #ccc;">
-                <span style="color:#555;">～</span>
-                <input type="date" id="overdueReturnedTo" aria-label="結束日期" style="width:160px; padding:8px; border-radius:5px; border:1px solid #ccc;">
-                <button onclick="loadOverdueReport()" style="padding:10px; background:#f0ad4e; color:white; border:none; border-radius:5px;">🔍 查詢逾期清單</button>
+                <span id="overdueDateFields" style="display:inline-flex; align-items:center; gap:6px;">
+                    <span style="color:#555; font-size:0.9rem;">已還清冊期間</span>
+                    <input type="date" id="overdueReturnedFrom" aria-label="起始日期" style="width:160px; padding:8px; border-radius:5px; border:1px solid #ccc;">
+                    <span style="color:#555;">～</span>
+                    <input type="date" id="overdueReturnedTo" aria-label="結束日期" style="width:160px; padding:8px; border-radius:5px; border:1px solid #ccc;">
+                </span>
+                <button id="overdueQueryBtn" onclick="loadOverdueReport()" style="padding:10px; background:#f0ad4e; color:white; border:none; border-radius:5px;">🔍 查詢逾期清單</button>
             </div>
-            <table>
+            <table id="overdueTable">
                 <thead><tr><th>書名</th><th>借閱人</th><th>應還日期</th><th>逾期天數</th></tr></thead>
                 <tbody id="overdueTableBody"></tbody>
             </table>
         </div>
 
         <div id="inventoryReportSection" style="margin-top:20px;">
-            <h3>📋 清冊列印</h3>
-            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
+            <h3 id="inventorySectionTitle">📋 清冊列印</h3>
+            <div id="invDateRow" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
                 <span style="color:#555; font-size:0.9rem;">清冊日期區間（民國年 115/05/16，適用財產／報廢清冊）</span>
                 <input type="text" id="invDateFrom" placeholder="起 115/01/01" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:120px;">
                 <span style="color:#555;">～</span>
                 <input type="text" id="invDateTo" placeholder="迄 115/12/31" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:120px;">
             </div>
             <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
-                <button onclick="printInventoryReport('all')" style="padding:10px; background:var(--primary); color:white; border:none; border-radius:5px;">📋 列印財產清冊</button>
-                <button onclick="printInventoryReport('scrap')" style="padding:10px; background:var(--danger); color:white; border:none; border-radius:5px;">🗑️ 列印報廢清冊</button>
-                <button onclick="printInventoryReport('checkedout')" style="padding:10px; background:var(--warning); color:white; border:none; border-radius:5px;">📤 列印已借出清單</button>
-                <button onclick="printInventoryReport('issues')" style="padding:10px; background:#8e24aa; color:white; border:none; border-radius:5px;">⚠️ 列印爭議/遺失/修繕清冊</button>
+                <button id="btnInvAll" onclick="printInventoryReport('all')" style="padding:10px; background:var(--primary); color:white; border:none; border-radius:5px;">📋 列印財產清冊</button>
+                <button id="btnInvScrap" onclick="printInventoryReport('scrap')" style="padding:10px; background:var(--danger); color:white; border:none; border-radius:5px;">🗑️ 列印報廢清冊</button>
+                <button id="btnInvCheckedOut" onclick="printInventoryReport('checkedout')" style="padding:10px; background:var(--warning); color:white; border:none; border-radius:5px;">📤 列印已借出清單</button>
+                <button id="btnInvIssues" onclick="printInventoryReport('issues')" style="padding:10px; background:#8e24aa; color:white; border:none; border-radius:5px;">⚠️ 列印爭議/遺失/修繕清冊</button>
             </div>
             <div style="color:#666; font-size:0.9rem; margin-bottom:6px;">財產清冊排除報廢書籍，含出版社／單價／數量／總金額／購入日期／保管人／確認／盤點日期；報廢清冊另列報廢日期；爭議清冊包含遺失、修繕中、爭議中。</div>
-            <h4 style="margin:14px 0 4px;">📤 匯出中心（所有清單與統計報表皆支援 PDF／xlsx／CSV）</h4>
-            <div style="color:#666; font-size:0.85rem; margin-bottom:6px;">匯出內容與畫面上方的篩選條件一致（借閱紀錄篩選、逾期篩選、清冊日期區間、統計學年、館藏查詢關鍵字等）。</div>
-            <div id="exportCenterTable"></div>
         </div>
 
 
@@ -776,6 +783,21 @@
             </div>
             <div id="labelPrintSummary" class="no-print" style="color:#666; margin-bottom:8px;"></div>
             <div class="qr-label-grid" id="qrLabelContainer"></div>
+        </div>
+
+        <div id="exportCenterSection" style="display:none;">
+            <h3>📤 匯出中心（所有清單與統計報表皆支援 PDF／xlsx／CSV）</h3>
+            <div style="color:#666; font-size:0.9rem; margin-bottom:8px;">匯出內容與畫面上方的篩選條件一致（借閱紀錄篩選、逾期篩選、清冊日期區間、統計學年、館藏查詢關鍵字等）。</div>
+            <div id="exportCenterTable"></div>
+        </div>
+
+        <div id="reportGenericPanel" style="display:none;">
+            <h3 id="reportGenericTitle"></h3>
+            <div id="reportGenericDesc" style="color:#666; margin-bottom:12px;"></div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                <span id="reportGenericLead" style="color:#555; font-size:0.9rem;"></span>
+                <div id="reportGenericButtons" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
+            </div>
         </div>
     </div>
 
@@ -1289,31 +1311,11 @@
 
     // --- 報表與標籤模式切換 ---
     function togglePrintMode() {
-        // 若不在報表頁，先切換過去，讓標籤列印區塊可見
+        // 若不在報表頁，先切換過去，讓標籤列印頁籤可見
         if (!document.getElementById('reportPage').classList.contains('active')) {
             changeTab('reportPage');
         }
-        isLabelMode = !isLabelMode;
-        const tagSection = document.getElementById('tagReportSection');
-        const logModeSections = ['logReportSection', 'overdueReportSection', 'inventoryReportSection', 'memberHistorySection', 'yearStatsSection'];
-
-        if (isLabelMode) {
-            logModeSections.forEach(id => {
-                const el = document.getElementById(id);
-                if (el) el.style.display = 'none';
-            });
-            if (tagSection) tagSection.style.display = 'block';
-            document.querySelectorAll('.print-mode-btn').forEach(btn => { btn.innerText = "切換至：紀錄模式"; });
-            renderQRLabels();
-        } else {
-            logModeSections.forEach(id => {
-                const el = document.getElementById(id);
-                if (el) el.style.display = 'block';
-            });
-            if (tagSection) tagSection.style.display = 'none';
-            document.querySelectorAll('.print-mode-btn').forEach(btn => { btn.innerText = "切換至：標籤模式"; });
-            renderReportTable();
-        }
+        setReportTab(activeReportTab === 'labels' ? 'log' : 'labels');
     }
 
     // --- 索書號條碼（Code 128B，不需外部函式庫） ---
@@ -1867,6 +1869,140 @@
         { label: '👥 成員清單', url: () => '/api/export/members' },
         { label: '🔖 預約清單', url: () => '/api/export/reservations' },
     ];
+
+    // 報表／列印頁籤：對應匯出中心的清單／報表名稱
+    const REPORT_TAB_DEFS = [
+        { key: 'log', label: '📊 借閱歷史紀錄', section: 'logReportSection' },
+        { key: 'overdue', label: '⏰ 逾期未還清單', section: 'overdueReportSection', exportLabel: '⏰ 逾期未還清單' },
+        { key: 'overdueReturned', label: '📦 逾期已還清冊', section: 'overdueReportSection', exportLabel: '📦 逾期已還清冊' },
+        { key: 'inventoryAll', label: '📋 財產清冊', section: 'inventoryReportSection', exportLabel: '📋 財產清冊' },
+        { key: 'inventoryScrap', label: '🗑️ 報廢清冊', section: 'inventoryReportSection', exportLabel: '🗑️ 報廢清冊' },
+        { key: 'checkedOut', label: '📤 已借出清單', section: 'inventoryReportSection', exportLabel: '📤 已借出清單' },
+        { key: 'issues', label: '⚠️ 爭議／遺失／修繕清冊', section: 'inventoryReportSection', exportLabel: '⚠️ 爭議／遺失／修繕清冊' },
+        { key: 'publisher', label: '📊 出版社統計', exportLabel: '📊 出版社統計' },
+        { key: 'fullCatalog', label: '📚 全圖名冊', exportLabel: '📚 全圖名冊' },
+        { key: 'callno', label: '🔤 索書號清冊', exportLabel: '🔤 索書號清冊' },
+        { key: 'yearStats', label: '📈 全園閱讀歷程統計', section: 'yearStatsSection', exportLabel: '📈 全園閱讀歷程統計' },
+        { key: 'memberHistory', label: '📖 個人閱讀歷程', section: 'memberHistorySection', exportLabel: '📖 個人閱讀歷程' },
+        { key: 'commands', label: '📱 指令條碼名冊', exportLabel: '📱 指令條碼名冊' },
+        { key: 'inventoryQr', label: '🏷️ 書籍財產條碼名冊 (QR)', exportLabel: '🏷️ 書籍財產條碼名冊 (QR)' },
+        { key: 'membersQr', label: '👶 全園學生條碼名冊 (QR)', exportLabel: '👶 全園學生條碼名冊 (QR)' },
+        { key: 'teachersQr', label: '👩‍🏫 全園老師條碼名冊 (QR)', exportLabel: '👩‍🏫 全園老師條碼名冊 (QR)' },
+        { key: 'booksExport', label: '📚 館藏清單', exportLabel: '📚 館藏清單' },
+        { key: 'membersExport', label: '👥 成員清單', exportLabel: '👥 成員清單' },
+        { key: 'reservations', label: '🔖 預約清單', exportLabel: '🔖 預約清單' },
+        { key: 'labels', label: '🏷️ 圖書標籤列印', section: 'tagReportSection' },
+        { key: 'exportCenter', label: '📤 匯出中心（全部）', section: 'exportCenterSection' },
+    ];
+
+    const REPORT_TAB_DESCRIPTIONS = {
+        '📊 出版社統計': '依出版社統計館藏數量，支援 PDF／xlsx／CSV 匯出。',
+        '📚 全圖名冊': '全館圖書完整名冊，PDF 依來源分段列印。',
+        '🔤 索書號清冊': '依索書號排序的館藏清冊。',
+        '📱 指令條碼名冊': '借書、還書、清除重來等系統指令條碼名冊。',
+        '🏷️ 書籍財產條碼名冊 (QR)': '每本書的財產編號 QR 條碼名冊。',
+        '👶 全園學生條碼名冊 (QR)': '全園學生帳號 QR 條碼名冊。',
+        '👩‍🏫 全園老師條碼名冊 (QR)': '全園老師帳號 QR 條碼名冊。',
+        '📚 館藏清單': '依「館藏查詢」目前篩選條件匯出館藏清單。',
+        '👥 成員清單': '全園成員清單（含帳號、班級與角色）。',
+        '🔖 預約清單': '目前預約狀態清單。',
+    };
+
+    let activeReportTab = 'log';
+
+    function reportTabDef(key) {
+        return REPORT_TAB_DEFS.find(t => t.key === key) || REPORT_TAB_DEFS[0];
+    }
+
+    function renderReportTabs() {
+        const el = document.getElementById('reportTabs');
+        if (!el) return;
+        el.innerHTML = REPORT_TAB_DEFS.map(t => {
+            const active = t.key === activeReportTab ? ' active' : '';
+            return `<button type="button" class="report-tab${active}" onclick="setReportTab('${t.key}')">${escapeHtml(t.label)}</button>`;
+        }).join('');
+    }
+
+    function showReportEl(id, show, display) {
+        const el = document.getElementById(id);
+        if (el) el.style.display = show ? (display || '') : 'none';
+    }
+
+    function renderReportGenericExport(label, detailed) {
+        const index = EXPORT_REPORTS.findIndex(r => r.label === label);
+        if (index < 0) return;
+        const panel = document.getElementById('reportGenericPanel');
+        if (!panel) return;
+        const title = document.getElementById('reportGenericTitle');
+        const desc = document.getElementById('reportGenericDesc');
+        const lead = document.getElementById('reportGenericLead');
+        const buttons = document.getElementById('reportGenericButtons');
+        if (detailed) {
+            title.style.display = 'none';
+            desc.style.display = 'none';
+            lead.textContent = '匯出此報表：';
+        } else {
+            title.style.display = '';
+            desc.style.display = '';
+            title.textContent = label;
+            desc.textContent = REPORT_TAB_DESCRIPTIONS[label] || '此報表提供 PDF／xlsx／CSV 匯出。';
+            lead.textContent = '';
+        }
+        buttons.innerHTML = ['pdf', 'xlsx', 'csv'].map(f =>
+            `<button onclick="exportCenterClick(${index}, '${f}')" style="padding:6px 16px; background:#607d8b; color:white; border:none; border-radius:4px;">${f.toUpperCase()}</button>`
+        ).join('');
+        panel.style.display = 'block';
+    }
+
+    function applyReportTabVariant(tab) {
+        const key = tab.key;
+        if (key === 'overdue' || key === 'overdueReturned') {
+            const returned = key === 'overdueReturned';
+            const title = document.getElementById('overdueSectionTitle');
+            if (title) title.textContent = returned ? '📦 逾期已還清冊' : '⏰ 逾期未還清單';
+            showReportEl('overdueFilterRow', true, 'flex');
+            showReportEl('overdueDateFields', returned, 'inline-flex');
+            showReportEl('overdueQueryBtn', !returned, 'inline-block');
+            showReportEl('overdueTable', !returned);
+        }
+        if (['inventoryAll', 'inventoryScrap', 'checkedOut', 'issues'].includes(key)) {
+            const dated = key === 'inventoryAll' || key === 'inventoryScrap';
+            const titles = {
+                inventoryAll: '📋 財產清冊',
+                inventoryScrap: '🗑️ 報廢清冊',
+                checkedOut: '📤 已借出清單',
+                issues: '⚠️ 爭議／遺失／修繕清冊',
+            };
+            const title = document.getElementById('inventorySectionTitle');
+            if (title) title.textContent = titles[key] || '📋 清冊列印';
+            showReportEl('invDateRow', dated, 'flex');
+            showReportEl('btnInvAll', key === 'inventoryAll', 'inline-block');
+            showReportEl('btnInvScrap', key === 'inventoryScrap', 'inline-block');
+            showReportEl('btnInvCheckedOut', key === 'checkedOut', 'inline-block');
+            showReportEl('btnInvIssues', key === 'issues', 'inline-block');
+        }
+    }
+
+    function setReportTab(key) {
+        const tab = reportTabDef(key);
+        activeReportTab = tab.key;
+        ['logReportSection', 'yearStatsSection', 'memberHistorySection', 'overdueReportSection',
+         'inventoryReportSection', 'tagReportSection', 'exportCenterSection'].forEach(id => showReportEl(id, false));
+        showReportEl('reportGenericPanel', false);
+        if (tab.section) showReportEl(tab.section, true, 'block');
+        isLabelMode = tab.key === 'labels';
+        applyReportTabVariant(tab);
+        if (tab.exportLabel && tab.key !== 'log') {
+            renderReportGenericExport(tab.exportLabel, !!tab.section);
+        }
+        if (tab.key === 'labels') renderQRLabels();
+        if (tab.key === 'log') renderReportTable();
+        if (tab.key === 'exportCenter') renderExportCenter();
+        document.querySelectorAll('.print-mode-btn').forEach(btn => {
+            btn.innerText = isLabelMode ? '切換至：紀錄模式' : '切換至：標籤模式';
+        });
+        renderReportTabs();
+    }
 
     function exportCenterClick(i, fmt) {
         // 統一接住條件檢查錯誤（如「個人閱讀歷程」未選姓名），避免按鍵靜默失敗
@@ -2504,9 +2640,8 @@
         if(pageId === 'loanPage') focusGunInput();
         if(pageId === 'configPage') { loadRecoverySettings(); renderAuditTable(); loadBackupSettings(); loadCategories(); loadSecurityQuestion(); }
         if(pageId === 'reportPage') {
-            showLogReportMode();
             reportPage = 1;
-            renderReportTable();
+            showLogReportMode();
             renderExportCenter();
         }
     }
@@ -2526,19 +2661,10 @@
 
     // 回到報表的「紀錄模式」，並清掉可能殘留的標籤列印狀態。
     function showLogReportMode() {
-        isLabelMode = false;
-        ['logReportSection', 'overdueReportSection', 'inventoryReportSection',
-         'memberHistorySection', 'yearStatsSection'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.style.display = 'block';
-        });
-        const tag = document.getElementById('tagReportSection');
-        if (tag) tag.style.display = 'none';
-        const btn = document.getElementById('printModeBtn');
-        if (btn) btn.innerText = "切換至：標籤模式";
         document.body.classList.remove('printing-label');
         const area = document.getElementById('singleLabelArea');
         if (area) area.innerHTML = '';
+        setReportTab(activeReportTab || 'log');
     }
 
     // 列印目前報表模式：先清掉單張標籤列印殘留的狀態，避免印出空白。
