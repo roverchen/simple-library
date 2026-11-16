@@ -3284,7 +3284,7 @@ class Handler(SimpleHTTPRequestHandler):
     def api_export_books(self, conn, query):
         """館藏清單匯出（pdf／xlsx／csv）：支援 keyword／status／source 篩選。"""
         keyword = ""
-        for key in ("keyword", "q", "title", "isbn", "assetId", "barcode"):
+        for key in ("keyword", "q", "title", "assetId", "barcode"):
             vals = query.get(key) or []
             if vals and vals[0].strip():
                 keyword = vals[0].strip()
@@ -3292,14 +3292,19 @@ class Handler(SimpleHTTPRequestHandler):
         status = (query.get("status") or [""])[0].strip()
         source = (query.get("source") or [""])[0].strip()
         publisher = (query.get("publisher") or [""])[0].strip()
+        isbn = (query.get("isbn") or [""])[0].strip()
         conditions, params, meta = [], [], []
         if keyword:
             conditions.append(
-                "(title LIKE ? OR asset_id LIKE ? OR barcode LIKE ? OR isbn LIKE ? OR call_no LIKE ? OR remarks LIKE ?)"
+                "(title LIKE ? OR asset_id LIKE ? OR barcode LIKE ? OR isbn LIKE ? OR remarks LIKE ?)"
             )
             like = "%" + keyword + "%"
-            params.extend([like] * 6)
+            params.extend([like] * 5)
             meta.append("關鍵字：{}".format(keyword))
+        if isbn:
+            conditions.append("isbn LIKE ?")
+            params.append("%" + isbn + "%")
+            meta.append("ISBN：{}".format(isbn))
         if status:
             conditions.append("status = ?")
             params.append(status)
@@ -3314,13 +3319,13 @@ class Handler(SimpleHTTPRequestHandler):
             meta.append("出版社：{}".format(publisher))
         where_sql = (" WHERE " + " AND ".join(conditions)) if conditions else ""
         rows = conn.execute(
-            "SELECT asset_id, title, call_no, category, isbn, publisher, source, "
+            "SELECT asset_id, title, category, isbn, publisher, source, "
             "status, purchase_date, keeper, remarks, price "
             "FROM books" + where_sql + " ORDER BY source, barcode",
             params,
         ).fetchall()
         table = [[
-            r["asset_id"], r["title"], r["call_no"], r["category"] or "",
+            r["asset_id"], r["title"], r["category"] or "",
             r["isbn"] or "", r["publisher"] or "", r["source"] or "", r["status"],
             r["purchase_date"] or "", r["keeper"] or "", r["remarks"] or "",
             r["price"] if r["price"] is not None else "",
@@ -3334,10 +3339,10 @@ class Handler(SimpleHTTPRequestHandler):
         meta.append("共 {} 筆".format(len(rows)))
         self._send_table_export(
             self._export_format(query), "館藏清單", meta,
-            ["財產編號", "書名", "索書號", "主題分類", "ISBN", "出版社", "來源",
+            ["財產編號", "書名", "主題分類", "ISBN", "出版社", "來源",
              "狀態", "購入日期", "保管人", "備註", "單價"],
             table,
-            widths=[0.08, 0.24, 0.10, 0.08, 0.10, 0.11, 0.07, 0.06, 0.07, 0.07, 0.09, 0.05],
+            widths=[0.09, 0.22, 0.09, 0.11, 0.11, 0.07, 0.06, 0.08, 0.08, 0.09, 0.05],
             landscape=True, base="館藏清單", groups=groups,
         )
 
