@@ -1012,8 +1012,12 @@
     function applyState(state) {
         config = {
             classes: (state.libConfig && state.libConfig.classes) || [],
+            categories: (state.libConfig && state.libConfig.categories) || [],
             reportPageSize: Math.max(1, Math.min(500, parseInt((state.libConfig && state.libConfig.reportPageSize) || 20, 10) || 20)),
         };
+        if (Array.isArray(config.categories)) {
+            allCategories = config.categories.map(c => ({ code: c.code, name: c.name, color: c.color }));
+        }
         members = state.memberDB || {};
         bookDatabase = state.bookDB || {};
         logCount = state.logCount || 0;
@@ -2161,11 +2165,19 @@
         const catSel = document.getElementById('fullCatalogCategoryFilter');
         const srcSel = document.getElementById('fullCatalogSourceFilter');
         if (!catSel || !srcSel) return;
-        const cats = Array.from(new Set(Object.values(bookDatabase || {}).map(b => (b.category || '').trim()).filter(Boolean))).sort();
-        const srcs = Array.from(new Set(Object.values(bookDatabase || {}).map(b => (b.source || '').trim()).filter(Boolean))).sort();
         const keepCat = catSel.value;
         const keepSrc = srcSel.value;
-        catSel.innerHTML = '<option value="">（全部主題分類）</option>' + cats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+        if (config.categories && config.categories.length) {
+            catSel.innerHTML = '<option value="">（全部主題分類）</option>' +
+                config.categories.map(c => `<option value="${escapeHtml(c.code)}">${escapeHtml(c.code)} ${escapeHtml(c.name)}</option>`).join('');
+        } else {
+            const cats = Array.from(new Set(Object.values(bookDatabase || {}).map(b => (b.category || '').trim()).filter(Boolean))).sort();
+            catSel.innerHTML = '<option value="">（全部主題分類）</option>' + cats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+        }
+        const standardSources = ['軍購', '自購', '英補', '署補', '捐贈'];
+        const srcs = Array.from(new Set(standardSources.concat(
+            Object.values(bookDatabase || {}).map(b => (b.source || '').trim()).filter(Boolean)
+        ))).sort();
         srcSel.innerHTML = '<option value="">（全部來源）</option>' + srcs.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
         catSel.value = keepCat;
         srcSel.value = keepSrc;

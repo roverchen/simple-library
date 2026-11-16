@@ -903,6 +903,13 @@ def build_state(conn):
         )
     ]
 
+    categories = [
+        {"code": r["code"], "name": r["name"], "color": r["color"]}
+        for r in conn.execute(
+            "SELECT code, name, color FROM categories WHERE active = 1 ORDER BY sort_order, id"
+        )
+    ]
+
     # 成員名單包含「已停用班級」的成員，避免調整班級清單時資料消失。
     member_db = {}
     for r in conn.execute(
@@ -931,7 +938,7 @@ def build_state(conn):
     if report_page_size < 1 or report_page_size > 500:
         report_page_size = 20
     return {
-        "libConfig": {"classes": classes, "reportPageSize": report_page_size},
+        "libConfig": {"classes": classes, "categories": categories, "reportPageSize": report_page_size},
         "memberDB": member_db,
         "bookDB": books,
         "logCount": log_count,
