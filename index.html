@@ -752,13 +752,13 @@
                 <input type="text" id="invDateFrom" placeholder="起 115/01/01" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:120px;">
                 <span style="color:#555;">～</span>
                 <input type="text" id="invDateTo" placeholder="迄 115/12/31" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:120px;">
+                <button id="btnInvQuery" onclick="runInventoryPreview()" style="padding:8px 14px; background:var(--secondary); color:white; border:none; border-radius:5px;">🔍 查詢</button>
             </div>
             <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
                 <button id="btnInvAll" onclick="printInventoryReport('all')" style="padding:10px; background:var(--primary); color:white; border:none; border-radius:5px;">📋 列印財產清冊</button>
                 <button id="btnInvScrap" onclick="printInventoryReport('scrap')" style="padding:10px; background:var(--danger); color:white; border:none; border-radius:5px;">🗑️ 列印報廢清冊</button>
                 <button id="btnInvCheckedOut" onclick="printInventoryReport('checkedout')" style="padding:10px; background:var(--warning); color:white; border:none; border-radius:5px;">📤 列印已借出清單</button>
                 <button id="btnInvIssues" onclick="printInventoryReport('issues')" style="padding:10px; background:#8e24aa; color:white; border:none; border-radius:5px;">⚠️ 列印爭議/遺失/修繕清冊</button>
-                <button id="btnInvQuery" onclick="runInventoryPreview()" style="padding:10px; background:var(--secondary); color:white; border:none; border-radius:5px;">🔍 查詢</button>
             </div>
             <div style="color:#666; font-size:0.9rem; margin-bottom:6px;">財產清冊排除報廢書籍，含出版社／單價／數量／總金額／購入日期／保管人／確認／盤點日期；報廢清冊另列報廢日期；爭議清冊包含遺失、修繕中、爭議中。</div>
             <div id="inventoryPreviewSummary" style="color:#666; margin-bottom:8px;"></div>
@@ -801,9 +801,9 @@
 
         <div id="reportGenericPanel" style="display:none;">
             <h3 id="reportGenericTitle"></h3>
-            <div id="reportGenericDesc" style="color:#666; margin-bottom:12px;"></div>
-            <div id="reportGenericQueryRow" class="no-print" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px;">
-                <button id="reportGenericQueryBtn" type="button" onclick="runReportPreview()" style="padding:9px 16px; background:var(--secondary); color:white; border:none; border-radius:5px;">🔍 查詢</button>
+            <div id="reportGenericQueryRow" class="no-print" style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-start; margin-bottom:10px;">
+                <div id="reportGenericDesc" style="color:#666; flex:1 1 360px; min-width:220px;"></div>
+                <button id="reportGenericQueryBtn" type="button" onclick="runReportPreview()" style="padding:8px 16px; background:var(--secondary); color:white; border:none; border-radius:5px; flex:0 0 auto;">🔍 查詢</button>
             </div>
             <div id="reportGenericSummary" style="color:#666; margin-bottom:8px;"></div>
             <table id="reportGenericTable" style="display:none;">
