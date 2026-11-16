@@ -434,12 +434,6 @@
     <div id="configPage" class="page">
         <h3>⚙️ 設定</h3>
         <div class="input-group">
-            <label>🔑 修改密碼</label>
-            <input type="password" id="newSystemPwd" placeholder="新密碼">
-            <button onclick="updatePassword()" style="background:var(--dark); color:white; padding:10px; border:none; border-radius:5px;">更新</button>
-        </div>
-        <hr>
-        <div class="input-group">
             <label>🛟 密碼救援設定（Email 驗證碼）</label>
             <small style="color:#666; line-height:1.7;">帳號留空登入的「共用管理員」沒有個人帳號，請在此設定救援信箱。個別帳號的 Email 請見下方「帳號與救援 Email」。</small>
             <input type="email" id="adminRecoveryEmail" placeholder="共用管理員救援信箱（例：admin@school.edu.tw）" autocomplete="off">
@@ -519,20 +513,6 @@
                 建立分類後，於「圖書管理」新增/編輯圖書時選擇分類即可自動產生索書號（可手動更正）。
             </small>
         </div>
-        <hr>
-        <div class="input-group">
-            <label>🔒 安全提問設定（3.3 離線密碼救援）</label>
-            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-                <select id="securityQuestionSelect" style="min-width:200px; padding:8px; border:1px solid #ccc; border-radius:5px;"></select>
-                <input type="text" id="securityAnswer" placeholder="安全提問答案" style="padding:8px; border:1px solid #ccc; border-radius:5px; min-width:180px;">
-                <button onclick="saveSecurityQuestion()" style="background:var(--primary); color:white; padding:8px 14px; border:none; border-radius:5px;">💾 儲存安全提問</button>
-            </div>
-            <div id="securityQuestionDisplay" style="margin-top:6px; font-size:0.92rem; color:#333;"></div>
-            <small style="color:#666; line-height:1.7;">
-                設定安全提問與答案後，若忘記密碼且無法使用 Email 救援，可於登入畫面的「🔑 忘記密碼？」→「安全提問（離線）」進行密碼重設。
-            </small>
-        </div>
-        <hr>
         <div class="input-group">
             <label>🔄 系統更新（從 GitHub 取得最新版本）</label>
             <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
@@ -911,10 +891,11 @@
 <div class="modal-overlay" id="securityQuestionModal">
     <div class="modal-box">
         <div style="display:flex; justify-content:space-between; align-items:center;">
-            <h3>🔒 設定安全提問（初次登入必填）</h3>
+            <h3>🔒 設定安全提問</h3>
             <button type="button" class="modal-close" onclick="closeSecurityQuestionModal()" aria-label="關閉">✕</button>
         </div>
         <p class="modal-hint">為保護您的帳號安全，請設定安全提問與答案。忘記密碼時可透過此方式重設。</p>
+        <p id="sqCurrentStatus" class="modal-hint" style="color:#555;"></p>
         <div style="margin:16px 0;">
             <label for="sqQuestion">安全提問</label>
             <select id="sqQuestion" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:5px;">
@@ -932,7 +913,7 @@
         </div>
         <div style="display:flex; gap:8px; justify-content:flex-end;">
             <button type="button" class="btn-secondary" onclick="closeSecurityQuestionModal()">稍後設定</button>
-            <button type="button" class="btn-primary" onclick="saveSecurityQuestion()">✅ 儲存並進入系統</button>
+            <button type="button" id="sqSaveBtn" class="btn-primary" onclick="saveSecurityQuestion()">✅ 儲存</button>
         </div>
     </div>
 </div>
@@ -2860,7 +2841,7 @@
         if(pageId === 'classPage') { loadMemberAccounts(); populateMemberQRClass(); }
         if(pageId === 'managePage') { refreshManageBooks(); return; }
         if(pageId === 'loanPage') focusGunInput();
-        if(pageId === 'configPage') { loadRecoverySettings(); loadReportDisplaySettings(); renderAuditTable(); loadBackupSettings(); loadCategories(); loadSecurityQuestion(); }
+        if(pageId === 'configPage') { loadRecoverySettings(); loadReportDisplaySettings(); renderAuditTable(); loadBackupSettings(); loadCategories(); }
         if(pageId === 'reportPage') {
             reportPage = 1;
             showLogReportMode();
@@ -3619,16 +3600,6 @@
         } catch (err) { alert("❌ " + err.message); }
     }
 
-    async function updatePassword() {
-        const p = document.getElementById('newSystemPwd').value;
-        if (!p) return;
-        try {
-            await api('PUT', '/api/password', { password: p });
-            document.getElementById('newSystemPwd').value = '';
-            alert("✅ 密碼已更新");
-        } catch (err) { alert("❌ " + err.message); }
-    }
-
     async function checkSystemUpdate() {
         const el = document.getElementById('updateStatus');
         if (el) el.textContent = '檢查中…';
@@ -3869,41 +3840,30 @@
         } catch (err) { alert("❌ " + err.message); }
     }
 
-    async function loadSecurityQuestion() {
-        const sel = document.getElementById('securityQuestionSelect');
-        const display = document.getElementById('securityQuestionDisplay');
-        const questions = [
-            "你國小就讀的學校名稱是什麼？",
-            "你寵物的名字是什麼？",
-            "你母親的娘家姓氏是什麼？",
-            "你出生的城市是哪裡？",
-            "你最好的朋友的名字是什麼？"
-        ];
-        if (sel) {
-            sel.innerHTML = '<option value="">（請選擇安全提問）</option>' +
-                questions.map(q => `<option value="${escapeHtml(q)}">${escapeHtml(q)}</option>`).join('');
-        }
-        // 共用管理員無個人帳號，無法設定個人安全提問
-        if (currentUser && currentUser.isSharedAdmin) {
-            if (display) display.innerHTML = '共用管理員無個人安全提問；請以個人帳號登入後設定。';
-            const btn = document.querySelector('button[onclick="saveSecurityQuestion()"]');
-            if (btn) btn.disabled = true;
-            return;
-        }
-        try {
-            const data = await api('GET', '/api/security-question');
-            if (sel && data.question) sel.value = data.question;
-            if (display) {
-                display.innerHTML = data.hasQuestion
-                    ? '已設定安全提問：' + escapeHtml(data.question)
-                    : '尚未設定安全提問';
-            }
-        } catch (err) { /* 載入失敗不阻斷 */ }
-    }
-
     async function openSecurityQuestionModal() {
         const ans = document.getElementById('sqAnswer');
+        const sel = document.getElementById('sqQuestion');
+        const status = document.getElementById('sqCurrentStatus');
+        const saveBtn = document.getElementById('sqSaveBtn');
         if (ans) ans.value = '';
+        if (currentUser && currentUser.isSharedAdmin) {
+            if (status) status.textContent = '共用管理員沒有個人帳號，無法設定個人安全提問；請以個人帳號登入後設定。';
+            if (saveBtn) saveBtn.disabled = true;
+            if (sel) sel.disabled = true;
+        } else {
+            if (saveBtn) saveBtn.disabled = false;
+            if (sel) sel.disabled = false;
+            if (status) status.textContent = '目前尚未設定安全提問。';
+            try {
+                const data = await api('GET', '/api/security-question');
+                if (sel && data.question) sel.value = data.question;
+                if (status) {
+                    status.textContent = data.hasQuestion
+                        ? '目前已設定：' + data.question
+                        : '目前尚未設定安全提問。';
+                }
+            } catch (err) { /* 讀取失敗時仍可設定 */ }
+        }
         document.getElementById('securityQuestionModal').classList.add('open');
     }
 
@@ -3916,9 +3876,8 @@
             alert('❌ 共用管理員無個人安全提問，請以個人帳號登入後設定');
             return;
         }
-        const modalOpen = document.getElementById('securityQuestionModal').classList.contains('open');
-        const sel = document.getElementById(modalOpen ? 'sqQuestion' : 'securityQuestionSelect');
-        const answerEl = document.getElementById(modalOpen ? 'sqAnswer' : 'securityAnswer');
+        const sel = document.getElementById('sqQuestion');
+        const answerEl = document.getElementById('sqAnswer');
         const answer = (answerEl || {}).value.trim();
         const question = (sel || {}).value.trim();
         if (!question || !answer) { alert('❌ 提問與答案皆不可空白'); return; }
@@ -3926,7 +3885,8 @@
             await api('PUT', '/api/security-question', { securityQuestion: question, securityAnswer: answer });
             alert('✅ 安全提問已儲存');
             (answerEl || {}).value = '';
-            loadSecurityQuestion();
+            const status = document.getElementById('sqCurrentStatus');
+            if (status) status.textContent = '目前已設定：' + question;
             // 若是從登入強制設定modal來的，關閉modal並標記已設定
             const modal = document.getElementById('securityQuestionModal');
             if (modal && modal.classList.contains('open')) {
