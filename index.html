@@ -1893,7 +1893,7 @@
         { label: '👩‍🏫 全園老師條碼名冊 (QR)', url: () => '/api/report/teachers-qr.pdf' + qrDateQS() },
         { label: '📚 館藏清單', url: () => booksExportQS('/api/export/books') },
         { label: '👥 成員清單', url: () => '/api/export/members' + membersExportQS() },
-        { label: '🔖 預約清單', url: () => '/api/export/reservations' },
+        { label: '🔖 預約清單', url: () => '/api/export/reservations' + reservationsQS() },
     ];
 
     // 報表／列印頁籤：對應匯出中心的清單／報表名稱
@@ -2004,7 +2004,7 @@
             case 'teachersQr': return withJson('/api/report/teachers-qr.pdf' + qrDateQS());
             case 'booksExport': return withJson(booksExportQS('/api/export/books'));
             case 'membersExport': return withJson('/api/export/members' + membersExportQS());
-            case 'reservations': return withJson('/api/export/reservations');
+            case 'reservations': return withJson('/api/export/reservations' + reservationsQS());
         }
         return '';
     }
@@ -2279,6 +2279,28 @@
         }
     }
 
+    function reservationsQS() {
+        const v = ((document.getElementById('reservationsReserverFilter') || {}).value || '').trim();
+        const qs = new URLSearchParams();
+        if (v) qs.set('user', v);
+        const str = qs.toString();
+        return str ? ('?' + str) : '';
+    }
+
+    function ensureReservationsFilter() {
+        const row = document.getElementById('reportGenericQueryRow');
+        if (!row) return;
+        let box = document.getElementById('reservationsFilterBox');
+        if (!box) {
+            box = document.createElement('div');
+            box.id = 'reservationsFilterBox';
+            box.style.cssText = 'display:flex; gap:8px; flex-wrap:wrap; align-items:center;';
+            box.innerHTML = '<input id="reservationsReserverFilter" type="text" placeholder="預約人（留空為全部）" style="padding:8px; border:1px solid #ccc; border-radius:5px; min-width:180px;">';
+            const btn = document.getElementById('reportGenericQueryBtn');
+            if (btn) row.insertBefore(box, btn); else row.appendChild(box);
+        }
+    }
+
     function applyReportTabVariant(tab) {
         const key = tab.key;
         if (key === 'overdue' || key === 'overdueReturned') {
@@ -2303,6 +2325,9 @@
         const membersBox = document.getElementById('membersFiltersBox');
         if (membersBox) membersBox.style.display = (key === 'membersExport') ? 'flex' : 'none';
         if (key === 'membersExport') ensureMembersFilters();
+        const reservationsBox = document.getElementById('reservationsFilterBox');
+        if (reservationsBox) reservationsBox.style.display = (key === 'reservations') ? 'flex' : 'none';
+        if (key === 'reservations') ensureReservationsFilter();
         if (['inventoryAll', 'inventoryScrap', 'checkedOut', 'issues'].includes(key)) {
             const dated = key === 'inventoryAll' || key === 'inventoryScrap';
             const titles = {

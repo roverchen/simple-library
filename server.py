@@ -3390,11 +3390,16 @@ class Handler(SimpleHTTPRequestHandler):
     def api_export_reservations(self, conn, query):
         """預約清單匯出（pdf／xlsx／csv）：支援 status 篩選。"""
         status = (query.get("status") or [""])[0].strip()
+        reserver = (query.get("user") or query.get("userName") or query.get("reserver") or [""])[0].strip()
         conditions, params, meta = [], [], []
         if status:
             conditions.append("status = ?")
             params.append(status)
             meta.append("預約狀態：{}".format(status))
+        if reserver:
+            conditions.append("user_name LIKE ?")
+            params.append("%" + reserver + "%")
+            meta.append("預約人：{}".format(reserver))
         where_sql = (" WHERE " + " AND ".join(conditions)) if conditions else ""
         rows = conn.execute(
             "SELECT id, created_at, barcode, title, asset_id, class_name, user_name, status "
