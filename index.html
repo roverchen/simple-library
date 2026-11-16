@@ -1126,7 +1126,8 @@
     async function runBookQuery() {
         const box = document.getElementById('queryResults');
         const kw = ((document.getElementById('queryKeyword') || {}).value || '').trim();
-        const isbn = ((document.getElementById('queryIsbn') || {}).value || '').trim();
+        const isbn = ((document.getElementById('queryIsbn') || {}).value || '').trim() ||
+            ((document.getElementById('booksExportIsbnFilter') || {}).value || '').trim();
         const pub = ((document.getElementById('queryPublisher') || {}).value || '').trim();
         box.dataset.loaded = '1';
         box.innerHTML = '<div style="color:#666;">查詢中…</div>';
@@ -1646,6 +1647,22 @@
         if (pub) qs.set('publisher', pub);
         const str = qs.toString();
         return base + (str ? '?' + str : '');
+    }
+
+    function ensureBooksExportFilters() {
+        const row = document.getElementById('reportGenericQueryRow');
+        if (!row) return;
+        let box = document.getElementById('booksExportFiltersBox');
+        if (!box) {
+            box = document.createElement('div');
+            box.id = 'booksExportFiltersBox';
+            box.style.cssText = 'display:flex; gap:8px; flex-wrap:nowrap; align-items:center;';
+            box.innerHTML = '<input id="booksExportIsbnFilter" type="text" placeholder="ISBN（留空為全部）" style="padding:8px; border:1px solid #ccc; border-radius:5px; min-width:180px;">' +
+                '<button type="button" onclick="runReportPreview()" style="padding:8px 16px; background:var(--secondary); color:white; border:none; border-radius:5px; flex:0 0 auto;">🔍 查詢</button>';
+            const btn = document.getElementById('reportGenericQueryBtn');
+            if (btn) row.insertBefore(box, btn); else row.appendChild(box);
+            if (btn) btn.style.display = 'none';
+        }
     }
 
     function inventoryPdfUrl(kind) {
@@ -2350,10 +2367,18 @@
         if (key === 'reservations') ensureReservationsFilter();
         const genBtn2 = document.getElementById('reportGenericQueryBtn');
         if (genBtn2) {
-            const special = ['inventoryQr','membersQr','teachersQr','membersExport','fullCatalog'];
+            const special = ['inventoryQr','membersQr','teachersQr','membersExport','fullCatalog','booksExport'];
             if (special.includes(key)) genBtn2.style.display = 'none';
             else genBtn2.style.display = '';
         }
+        const booksExportBox = document.getElementById('booksExportFiltersBox');
+        const genBtnBe = document.getElementById('reportGenericQueryBtn');
+        if (booksExportBox) booksExportBox.style.display = (key === 'booksExport') ? 'flex' : 'none';
+        if (genBtnBe) {
+            if (key === 'booksExport') genBtnBe.style.display = 'none';
+            else if (!['inventoryQr','membersQr','teachersQr','membersExport','fullCatalog','booksExport'].includes(key)) genBtnBe.style.display = '';
+        }
+        if (key === 'booksExport') ensureBooksExportFilters();
         if (['inventoryAll', 'inventoryScrap', 'checkedOut', 'issues'].includes(key)) {
             const dated = key === 'inventoryAll' || key === 'inventoryScrap';
             const titles = {
