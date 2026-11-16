@@ -800,16 +800,18 @@
         <div id="reportGenericPanel" style="display:none;">
             <h3 id="reportGenericTitle"></h3>
             <div id="reportGenericDesc" style="color:#666; margin-bottom:12px;"></div>
-            <div class="no-print" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px;">
+            <div id="reportGenericQueryRow" class="no-print" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px;">
                 <button id="reportGenericQueryBtn" type="button" onclick="runReportPreview()" style="padding:9px 16px; background:var(--secondary); color:white; border:none; border-radius:5px;">🔍 查詢</button>
-                <span id="reportGenericLead" style="color:#555; font-size:0.9rem;"></span>
-                <div id="reportGenericButtons" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
             </div>
             <div id="reportGenericSummary" style="color:#666; margin-bottom:8px;"></div>
             <table id="reportGenericTable" style="display:none;">
                 <thead id="reportGenericHead"></thead>
                 <tbody id="reportGenericBody"></tbody>
             </table>
+            <div class="no-print" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:12px;">
+                <span id="reportGenericLead" style="color:#555; font-size:0.9rem;"></span>
+                <div id="reportGenericButtons" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
+            </div>
         </div>
     </div>
 
@@ -1861,9 +1863,15 @@
                 const cols = data.columns || [];
                 if (head) head.innerHTML = '<tr>' + cols.map(c => `<th>${escapeHtml(String(c))}</th>`).join('') + '</tr>';
                 const rows = data.rows || [];
-                tbody.innerHTML = rows.length
-                    ? rows.map(r => '<tr>' + cols.map((_, i) => `<td>${escapeHtml(r[i] == null ? '' : String(r[i]))}</td>`).join('') + '</tr>').join('')
-                    : `<tr><td colspan="${Math.max(1, cols.length)}" style="color:#666;">查無資料</td></tr>`;
+                const shown = rows.slice(0, PREVIEW_ROW_LIMIT);
+                const colSpan = Math.max(1, cols.length);
+                let html = shown.length
+                    ? shown.map(r => '<tr>' + cols.map((_, i) => `<td>${escapeHtml(r[i] == null ? '' : String(r[i]))}</td>`).join('') + '</tr>').join('')
+                    : `<tr><td colspan="${colSpan}" style="color:#666;">查無資料</td></tr>`;
+                if (rows.length > PREVIEW_ROW_LIMIT) {
+                    html += `<tr><td colspan="${colSpan}" style="color:#8a6d3b; background:#fff8e1;">僅顯示前 ${PREVIEW_ROW_LIMIT} 筆（共 ${rows.length} 筆），完整資料請使用下方 PDF／XLSX／CSV 匯出。</td></tr>`;
+                }
+                tbody.innerHTML = html;
                 return;
             }
             if (head) head.innerHTML = '<tr><th>書名</th><th>借閱人</th><th>應還日期</th><th>逾期天數</th></tr>';
@@ -1966,7 +1974,7 @@
         const desc = document.getElementById('reportGenericDesc');
         const lead = document.getElementById('reportGenericLead');
         const buttons = document.getElementById('reportGenericButtons');
-        showReportEl('reportGenericQueryBtn', !detailed, 'inline-block');
+        showReportEl('reportGenericQueryRow', !detailed, 'flex');
         showReportEl('reportGenericSummary', !detailed, 'block');
         showReportEl('reportGenericTable', !detailed && document.getElementById('reportGenericBody').children.length > 0, 'table');
         if (detailed) {
@@ -2011,6 +2019,8 @@
     }
 
     // 通用預覽表格：prefix 對應 reportGeneric / inventoryPreview 兩組元素。
+    const PREVIEW_ROW_LIMIT = 20; // 螢幕預覽最多顯示 20 筆，完整資料請匯出。
+
     function renderPreviewTable(prefix, data) {
         const head = document.getElementById(prefix + 'Head');
         const body = document.getElementById(prefix + 'Body');
@@ -2018,29 +2028,52 @@
         const summary = document.getElementById(prefix + 'Summary');
         if (!head || !body) return;
         const columns = data.columns || [];
+        const colSpan = Math.max(1, columns.length);
         head.innerHTML = '<tr>' + columns.map(c => '<th>' + escapeHtml(String(c)) + '</th>').join('') + '</tr>';
-        const blankRow = (text) => '<tr><td colspan="' + Math.max(1, columns.length) + '" style="color:#666;">' + text + '</td></tr>';
+        const blankRow = (text) => '<tr><td colspan="' + colSpan + '" style="color:#666;">' + text + '</td></tr>';
+        const dataRow = (r) => '<tr>' + columns.map((_, i) => '<td>' + escapeHtml(r[i] == null ? '' : String(r[i])) + '</td>').join('') + '</tr>';
+        const allRows = Array.isArray(data.groups) && data.groups.length
+            ? data.groups.reduce((n, g) => n + (g.rows || []).length, 0)
+            : (data.rows || []).length;
+        const total = Number.isFinite(data.total) ? data.total : allRows;
         let html = '';
+        let shown = 0;
         if (Array.isArray(data.groups) && data.groups.length) {
-            data.groups.forEach(g => {
+            for (const g of data.groups) {
+                if (shown >= PREVIEW_ROW_LIMIT) break;
                 const rows = g.rows || [];
-                html += '<tr class="preview-group-row"><td colspan="' + Math.max(1, columns.length) + '" style="font-weight:bold; background:#f3f6f8;">'
+                html += '<tr class="preview-group-row"><td colspan="' + colSpan + '" style="font-weight:bold; background:#f3f6f8;">'
                     + escapeHtml(g.title || '') + '（' + rows.length + ' 筆）</td></tr>';
                 if (!rows.length) {
                     html += blankRow('（本組無資料）');
-                } else {
-                    rows.forEach(r => { html += '<tr>' + columns.map((_, i) => '<td>' + escapeHtml(r[i] == null ? '' : String(r[i])) + '</td>').join('') + '</tr>'; });
+                    continue;
                 }
-            });
+                for (const r of rows) {
+                    if (shown >= PREVIEW_ROW_LIMIT) break;
+                    html += dataRow(r);
+                    shown += 1;
+                }
+            }
         } else {
             const rows = data.rows || [];
-            html = rows.length
-                ? rows.map(r => '<tr>' + columns.map((_, i) => '<td>' + escapeHtml(r[i] == null ? '' : String(r[i])) + '</td>').join('') + '</tr>').join('')
-                : blankRow('查無資料');
+            if (!rows.length) {
+                html = blankRow('查無資料');
+            } else {
+                for (const r of rows) {
+                    if (shown >= PREVIEW_ROW_LIMIT) break;
+                    html += dataRow(r);
+                    shown += 1;
+                }
+            }
+        }
+        if (total > PREVIEW_ROW_LIMIT) {
+            html += '<tr><td colspan="' + colSpan + '" style="color:#8a6d3b; background:#fff8e1;">'
+                + '僅顯示前 ' + PREVIEW_ROW_LIMIT + ' 筆（共 ' + total + ' 筆），完整資料請使用下方 PDF／XLSX／CSV 匯出。'
+                + '</td></tr>';
         }
         body.innerHTML = html;
         if (summary) {
-            summary.textContent = (data.meta || []).join('　') || ('共 ' + (data.total || 0) + ' 筆');
+            summary.textContent = (data.meta || []).join('　') || ('共 ' + total + ' 筆');
         }
         if (table) table.style.display = 'table';
     }
