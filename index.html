@@ -2239,13 +2239,15 @@
         if (!box) {
             box = document.createElement('div');
             box.id = 'qrDateFilterBox';
-            box.style.cssText = 'display:flex; gap:8px; flex-wrap:wrap; align-items:center;';
+            box.style.cssText = 'display:flex; gap:8px; flex-wrap:nowrap; align-items:center;';
             box.innerHTML =
                 '<input id="qrDateFrom" type="date" title="起始日期" style="padding:8px; border:1px solid #ccc; border-radius:5px;">' +
                 '<span style="color:#555;">～</span>' +
-                '<input id="qrDateTo" type="date" title="結束日期" style="padding:8px; border:1px solid #ccc; border-radius:5px;">';
+                '<input id="qrDateTo" type="date" title="結束日期" style="padding:8px; border:1px solid #ccc; border-radius:5px;">' +
+                '<button type="button" onclick="runReportPreview()" style="padding:8px 16px; background:var(--secondary); color:white; border:none; border-radius:5px; flex:0 0 auto;">🔍 查詢</button>';
             const btn = document.getElementById('reportGenericQueryBtn');
             if (btn) row.insertBefore(box, btn); else row.appendChild(box);
+            if (btn) btn.style.display = 'none';
         }
     }
 
@@ -2320,14 +2322,19 @@
         if (callnoBox) callnoBox.style.display = (key === 'callno') ? 'flex' : 'none';
         if (key === 'callno') ensureCallnoFilter();
         const qrBox = document.getElementById('qrDateFilterBox');
-        if (qrBox) qrBox.style.display = (['inventoryQr','membersQr','teachersQr'].includes(key)) ? 'flex' : 'none';
-        if (['inventoryQr','membersQr','teachersQr'].includes(key)) ensureQrDateFilter();
+        const genBtn = document.getElementById('reportGenericQueryBtn');
+        const isQr = ['inventoryQr','membersQr','teachersQr'].includes(key);
+        if (qrBox) qrBox.style.display = isQr ? 'flex' : 'none';
+        if (genBtn) genBtn.style.display = isQr ? 'none' : '';
+        if (isQr) ensureQrDateFilter();
         const membersBox = document.getElementById('membersFiltersBox');
         if (membersBox) membersBox.style.display = (key === 'membersExport') ? 'flex' : 'none';
         if (key === 'membersExport') ensureMembersFilters();
         const reservationsBox = document.getElementById('reservationsFilterBox');
         if (reservationsBox) reservationsBox.style.display = (key === 'reservations') ? 'flex' : 'none';
         if (key === 'reservations') ensureReservationsFilter();
+        const genBtn2 = document.getElementById('reportGenericQueryBtn');
+        if (genBtn2 && !['inventoryQr','membersQr','teachersQr'].includes(key)) genBtn2.style.display = '';
         if (['inventoryAll', 'inventoryScrap', 'checkedOut', 'issues'].includes(key)) {
             const dated = key === 'inventoryAll' || key === 'inventoryScrap';
             const titles = {
