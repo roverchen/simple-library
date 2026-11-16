@@ -2190,12 +2190,14 @@
         if (!box) {
             box = document.createElement('div');
             box.id = 'fullCatalogFilters';
-            box.style.cssText = 'display:flex; gap:8px; flex-wrap:wrap; align-items:center;';
+            box.style.cssText = 'display:flex; gap:8px; flex-wrap:nowrap; align-items:center;';
             box.innerHTML =
                 '<select id="fullCatalogCategoryFilter" style="padding:8px; border:1px solid #ccc; border-radius:5px; min-width:150px;"></select>' +
-                '<select id="fullCatalogSourceFilter" style="padding:8px; border:1px solid #ccc; border-radius:5px; min-width:150px;"></select>';
+                '<select id="fullCatalogSourceFilter" style="padding:8px; border:1px solid #ccc; border-radius:5px; min-width:150px;"></select>' +
+                '<button type="button" onclick="runReportPreview()" style="padding:8px 16px; background:var(--secondary); color:white; border:none; border-radius:5px; flex:0 0 auto;">🔍 查詢</button>';
             const btn = document.getElementById('reportGenericQueryBtn');
             if (btn) row.insertBefore(box, btn); else row.appendChild(box);
+            if (btn) btn.style.display = 'none';
             populateFullCatalogFilters();
         }
     }
@@ -2318,7 +2320,9 @@
             showReportEl('overdueQueryBtn', true, 'inline-block');
         }
         const fcBox = document.getElementById('fullCatalogFilters');
+        const genBtnFc = document.getElementById('reportGenericQueryBtn');
         if (fcBox) fcBox.style.display = (key === 'fullCatalog') ? 'flex' : 'none';
+        if (genBtnFc) genBtnFc.style.display = (key === 'fullCatalog') ? 'none' : '';
         if (key === 'fullCatalog') { ensureFullCatalogFilters(); populateFullCatalogFilters(); }
         const callnoBox = document.getElementById('callnoFilterBox');
         if (callnoBox) callnoBox.style.display = (key === 'callno') ? 'flex' : 'none';
@@ -2338,7 +2342,7 @@
         if (reservationsBox) reservationsBox.style.display = (key === 'reservations') ? 'flex' : 'none';
         if (key === 'reservations') ensureReservationsFilter();
         const genBtn2 = document.getElementById('reportGenericQueryBtn');
-        if (genBtn2 && !['inventoryQr','membersQr','teachersQr','membersExport'].includes(key)) genBtn2.style.display = '';
+        if (genBtn2 && !['inventoryQr','membersQr','teachersQr','membersExport','fullCatalog'].includes(key)) genBtn2.style.display = '';
         if (['inventoryAll', 'inventoryScrap', 'checkedOut', 'issues'].includes(key)) {
             const dated = key === 'inventoryAll' || key === 'inventoryScrap';
             const titles = {
