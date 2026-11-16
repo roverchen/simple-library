@@ -2268,12 +2268,14 @@
         if (!box) {
             box = document.createElement('div');
             box.id = 'membersFiltersBox';
-            box.style.cssText = 'display:flex; gap:8px; flex-wrap:wrap; align-items:center;';
+            box.style.cssText = 'display:flex; gap:8px; flex-wrap:nowrap; align-items:center;';
             box.innerHTML =
                 '<select id="membersClassFilter" style="padding:8px; border:1px solid #ccc; border-radius:5px; min-width:140px;"><option value="">（全部班級）</option></select>' +
-                '<input id="membersYearFilter" type="text" placeholder="學年 (如: 115)" style="padding:8px; border:1px solid #ccc; border-radius:5px; width:120px;">';
+                '<input id="membersYearFilter" type="text" placeholder="學年 (如: 115)" style="padding:8px; border:1px solid #ccc; border-radius:5px; width:120px;">' +
+                '<button type="button" onclick="runReportPreview()" style="padding:8px 16px; background:var(--secondary); color:white; border:none; border-radius:5px; flex:0 0 auto;">🔍 查詢</button>';
             const btn = document.getElementById('reportGenericQueryBtn');
             if (btn) row.insertBefore(box, btn); else row.appendChild(box);
+            if (btn) btn.style.display = 'none';
             const sel = document.getElementById('membersClassFilter');
             if (sel && config.classes && config.classes.length) {
                 sel.innerHTML = '<option value="">（全部班級）</option>' + config.classes.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
@@ -2328,13 +2330,15 @@
         if (genBtn) genBtn.style.display = isQr ? 'none' : '';
         if (isQr) ensureQrDateFilter();
         const membersBox = document.getElementById('membersFiltersBox');
+        const genBtnMem = document.getElementById('reportGenericQueryBtn');
         if (membersBox) membersBox.style.display = (key === 'membersExport') ? 'flex' : 'none';
+        if (genBtnMem) genBtnMem.style.display = (key === 'membersExport') ? 'none' : '';
         if (key === 'membersExport') ensureMembersFilters();
         const reservationsBox = document.getElementById('reservationsFilterBox');
         if (reservationsBox) reservationsBox.style.display = (key === 'reservations') ? 'flex' : 'none';
         if (key === 'reservations') ensureReservationsFilter();
         const genBtn2 = document.getElementById('reportGenericQueryBtn');
-        if (genBtn2 && !['inventoryQr','membersQr','teachersQr'].includes(key)) genBtn2.style.display = '';
+        if (genBtn2 && !['inventoryQr','membersQr','teachersQr','membersExport'].includes(key)) genBtn2.style.display = '';
         if (['inventoryAll', 'inventoryScrap', 'checkedOut', 'issues'].includes(key)) {
             const dated = key === 'inventoryAll' || key === 'inventoryScrap';
             const titles = {
