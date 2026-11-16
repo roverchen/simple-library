@@ -1741,9 +1741,10 @@
         const sel = document.getElementById('memberHistoryClass');
         if (!sel) return;
         const classes = config.classes || [];
-        sel.innerHTML = classes.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('') || '<option value="">(無班級)</option>';
-        if (classes.length) sel.value = classes[0];
-        populateMemberHistoryMembers();
+        sel.innerHTML = '<option value="">（請選擇班級）</option>' +
+            classes.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+        const memberSel = document.getElementById('memberHistoryMember');
+        if (memberSel) memberSel.innerHTML = '<option value="">（請選擇姓名）</option>';
     }
 
     function populateMemberHistoryMembers() {
