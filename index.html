@@ -479,10 +479,14 @@
                 <span>老師：最多借閱 <input type="number" id="loanTeacherLimit" min="0" value="90" style="width:70px;"> 本，期限 <input type="number" id="loanTeacherDays" min="0" value="180" style="width:70px;"> 天</span>
                 <button onclick="saveLoanRules()" style="background:var(--primary); color:white; padding:10px; border:none; border-radius:5px;">💾 儲存借閱設定</button>
             </div>
-            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:8px;">
-                <span>老師借閱至學期末：自 <input type="date" id="termTeacherStart" style="padding:6px; border:1px solid #ccc; border-radius:5px;"> 起，至 <input type="date" id="termTeacherEnd" style="padding:6px; border:1px solid #ccc; border-radius:5px;"> 止</span>
-                <small style="color:#666;">填寫「結束日」後，老師借書的應還日期將直接設為該學期結束日（取代固定天數）；留空則沿用天數設定。</small>
+            <div style="display:flex; gap:8px; flex-wrap:nowrap; align-items:center; margin-top:8px; white-space:nowrap; overflow-x:auto;">
+                <span style="display:inline-flex; align-items:center; gap:6px; white-space:nowrap;">老師借閱至學期末：自
+                    <input type="date" id="termTeacherStart" style="width:150px; padding:6px; border:1px solid #ccc; border-radius:5px;">
+                    起，至
+                    <input type="date" id="termTeacherEnd" style="width:150px; padding:6px; border:1px solid #ccc; border-radius:5px;">
+                    止</span>
             </div>
+            <small style="display:block; color:#666; margin-top:4px;">填寫「結束日」後，老師借書的應還日期將直接設為該學期結束日（取代固定天數）；留空則沿用天數設定。</small>
             <small style="color:#666; line-height:1.7;">
                 ⚠️ 借書時將依借閱人類別（學生／老師）套用對應的借閱上限與期限；超過上限者無法借出。
             </small>
