@@ -434,33 +434,6 @@
     <div id="configPage" class="page">
         <h3>⚙️ 設定</h3>
         <div class="input-group">
-            <label>🛟 密碼救援設定（Email 驗證碼）</label>
-            <small style="color:#666; line-height:1.7;">帳號留空登入的「共用管理員」沒有個人帳號，請在此設定救援信箱。個別帳號的 Email 請見下方「帳號與救援 Email」。</small>
-            <input type="email" id="adminRecoveryEmail" placeholder="共用管理員救援信箱（例：admin@school.edu.tw）" autocomplete="off">
-            <div class="settings-grid">
-                <div><label>SMTP 主機</label><input type="text" id="smtpHost" placeholder="smtp.gmail.com" autocomplete="off"></div>
-                <div><label>連接埠</label><input type="number" id="smtpPort" value="587" min="1" max="65535"></div>
-                <div><label>加密方式</label>
-                    <select id="smtpSecurity">
-                        <option value="starttls">STARTTLS（587）</option>
-                        <option value="ssl">SSL（465）</option>
-                        <option value="none">不加密（僅內網）</option>
-                    </select>
-                </div>
-                <div><label>SMTP 帳號</label><input type="text" id="smtpUsername" autocomplete="off"></div>
-                <div><label>SMTP 密碼</label><input type="password" id="smtpPassword" placeholder="留空＝不變更" autocomplete="new-password"></div>
-                <div><label>寄件者信箱</label><input type="email" id="smtpFrom" placeholder="library@school.edu.tw" autocomplete="off"></div>
-            </div>
-            <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                <button onclick="saveRecoverySettings()" style="flex:1; min-width:150px; background:var(--primary); color:white; padding:10px; border:none; border-radius:5px;">💾 儲存救援設定</button>
-                <button onclick="regenerateRecoveryCode()" style="flex:1; min-width:150px; background:var(--warning); color:white; padding:10px; border:none; border-radius:5px;">🔄 重新產生本機復原碼</button>
-            </div>
-            <small style="color:#666; line-height:1.7;">
-                ⚠️ Email 寄不出去時，可在伺服器主機開啟 <code>data/recovery_code.txt</code>，用裡面的復原碼重設「共用管理員」密碼。變更 SMTP 密碼後若留空，會保留舊密碼。
-            </small>
-        </div>
-        <hr>
-        <div class="input-group">
             <label>🏫 班級清單</label>
             <input type="text" id="classListInput">
             <button onclick="updateClassList()" style="background:var(--secondary); color:white; padding:10px; border:none; border-radius:5px;">更新班級</button>
@@ -580,6 +553,33 @@
             <small style="color:#666; line-height:1.7;">
                 系統會於每日設定時間自動執行備份，備份檔儲存於指定目錄（可為 NAS／雲端磁碟掛載點，即實現「雲端備份」）。
                 僅保留最近 10 份備份，較舊者會自動刪除。
+            </small>
+        </div>
+        <hr>
+        <div class="input-group">
+            <label>🛟 密碼救援設定（Email 驗證碼）</label>
+            <small style="color:#666; line-height:1.7;">帳號留空登入的「共用管理員」沒有個人帳號，請在此設定救援信箱。個別帳號的 Email 請見下方「帳號與救援 Email」。</small>
+            <input type="email" id="adminRecoveryEmail" placeholder="共用管理員救援信箱（例：admin@school.edu.tw）" autocomplete="off">
+            <div class="settings-grid">
+                <div><label>SMTP 主機</label><input type="text" id="smtpHost" placeholder="smtp.gmail.com" autocomplete="off"></div>
+                <div><label>連接埠</label><input type="number" id="smtpPort" value="587" min="1" max="65535"></div>
+                <div><label>加密方式</label>
+                    <select id="smtpSecurity">
+                        <option value="starttls">STARTTLS（587）</option>
+                        <option value="ssl">SSL（465）</option>
+                        <option value="none">不加密（僅內網）</option>
+                    </select>
+                </div>
+                <div><label>SMTP 帳號</label><input type="text" id="smtpUsername" autocomplete="off"></div>
+                <div><label>SMTP 密碼</label><input type="password" id="smtpPassword" placeholder="留空＝不變更" autocomplete="new-password"></div>
+                <div><label>寄件者信箱</label><input type="email" id="smtpFrom" placeholder="library@school.edu.tw" autocomplete="off"></div>
+            </div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <button onclick="saveRecoverySettings()" style="flex:1; min-width:150px; background:var(--primary); color:white; padding:10px; border:none; border-radius:5px;">💾 儲存救援設定</button>
+                <button onclick="regenerateRecoveryCode()" style="flex:1; min-width:150px; background:var(--warning); color:white; padding:10px; border:none; border-radius:5px;">🔄 重新產生本機復原碼</button>
+            </div>
+            <small style="color:#666; line-height:1.7;">
+                ⚠️ Email 寄不出去時，可在伺服器主機開啟 <code>data/recovery_code.txt</code>，用裡面的復原碼重設「共用管理員」密碼。變更 SMTP 密碼後若留空，會保留舊密碼。
             </small>
         </div>
         <hr>
