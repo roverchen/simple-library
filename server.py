@@ -2345,6 +2345,7 @@ class Handler(SimpleHTTPRequestHandler):
         """館藏查詢：關鍵字（書名／ISBN／條碼／財編／索書號）＋出版社篩選，複本彙整。"""
         keyword = (query.get("q") or [""])[0].strip()
         publisher = (query.get("publisher") or [""])[0].strip()
+        isbn = (query.get("isbn") or [""])[0].strip()
         conds, params = [], []
         if keyword:
             like = "%" + keyword + "%"
@@ -2352,6 +2353,9 @@ class Handler(SimpleHTTPRequestHandler):
                 "(title LIKE ? OR isbn LIKE ? OR barcode LIKE ? OR asset_id LIKE ? OR call_no LIKE ?)"
             )
             params.extend([like, like, like, like, like])
+        if isbn:
+            conds.append("isbn LIKE ?")
+            params.append("%" + isbn + "%")
         if publisher:
             conds.append("publisher = ?")
             params.append(publisher)
