@@ -4456,13 +4456,26 @@ class Handler(SimpleHTTPRequestHandler):
         ).fetchall()
         roles = {(r["role"] or "") for r in rows}
         is_teacher = "teacher" in roles or (row["loan_class"] or "").startswith("教職員")
+        term_based = False
         if is_teacher:
             loan_days = int(get_setting(conn, "loan_days_teacher", "180"))
             member_type = "teacher"
+            # 若已設定「老師借閱至學期末」且學期末尚未過去，續借直接沿用該學期末日
+            term_end = get_setting(conn, "term_teacher_end", "")
+            if term_end:
+                try:
+                    term_due = datetime.strptime(term_end, "%Y-%m-%d")
+                    term_due = term_due.replace(hour=23, minute=59, second=59)
+                    if term_due > datetime.now():
+                        new_due = term_due.strftime("%Y/%m/%d %H:%M:%S")
+                        term_based = True
+                except ValueError:
+                    pass
         else:
             loan_days = int(get_setting(conn, "loan_days_student", "7"))
             member_type = "student"
-        new_due = (datetime.now() + timedelta(days=loan_days)).strftime("%Y/%m/%d %H:%M:%S")
+        if not term_based:
+            new_due = (datetime.now() + timedelta(days=loan_days)).strftime("%Y/%m/%d %H:%M:%S")
         conn.execute(
             "UPDATE books SET due_at = ?, updated_at = ? WHERE barcode = ?",
             (new_due, now_display(), barcode),
@@ -4478,6 +4491,7 @@ class Handler(SimpleHTTPRequestHandler):
             "newDueAt": new_due,
             "loanDays": loan_days,
             "memberType": member_type,
+            "termBased": term_based,
         })
 
     def api_barcode_next(self, conn, query):

@@ -2616,7 +2616,9 @@
         errorEl.textContent = '';
         try {
             const res = await api('POST', '/api/books/' + encodeURIComponent(barcode) + '/renew', {});
-            const days = res.memberType === 'teacher' ? '一學期（180 天）' : (res.loanDays + ' 天');
+            const days = res.termBased
+                ? '至學期末'
+                : (res.memberType === 'teacher' ? '一學期（' + res.loanDays + ' 天）' : (res.loanDays + ' 天'));
             bookDatabase[barcode] = res.book;
             if (bookModalState && bookModalState.barcode === barcode) {
                 bookModalState.book = res.book;
