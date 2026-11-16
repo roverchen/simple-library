@@ -738,8 +738,8 @@
                 </span>
                 <button id="overdueQueryBtn" onclick="loadOverdueReport()" style="padding:10px; background:#f0ad4e; color:white; border:none; border-radius:5px;">🔍 查詢逾期清單</button>
             </div>
-            <table id="overdueTable">
-                <thead><tr><th>書名</th><th>借閱人</th><th>應還日期</th><th>逾期天數</th></tr></thead>
+            <table id="overdueTable" style="display:none;">
+                <thead id="overdueTableHead"><tr><th>書名</th><th>借閱人</th><th>應還日期</th><th>逾期天數</th></tr></thead>
                 <tbody id="overdueTableBody"></tbody>
             </table>
         </div>
@@ -757,8 +757,14 @@
                 <button id="btnInvScrap" onclick="printInventoryReport('scrap')" style="padding:10px; background:var(--danger); color:white; border:none; border-radius:5px;">🗑️ 列印報廢清冊</button>
                 <button id="btnInvCheckedOut" onclick="printInventoryReport('checkedout')" style="padding:10px; background:var(--warning); color:white; border:none; border-radius:5px;">📤 列印已借出清單</button>
                 <button id="btnInvIssues" onclick="printInventoryReport('issues')" style="padding:10px; background:#8e24aa; color:white; border:none; border-radius:5px;">⚠️ 列印爭議/遺失/修繕清冊</button>
+                <button id="btnInvQuery" onclick="runInventoryPreview()" style="padding:10px; background:var(--secondary); color:white; border:none; border-radius:5px;">🔍 查詢</button>
             </div>
             <div style="color:#666; font-size:0.9rem; margin-bottom:6px;">財產清冊排除報廢書籍，含出版社／單價／數量／總金額／購入日期／保管人／確認／盤點日期；報廢清冊另列報廢日期；爭議清冊包含遺失、修繕中、爭議中。</div>
+            <div id="inventoryPreviewSummary" style="color:#666; margin-bottom:8px;"></div>
+            <table id="inventoryPreviewTable" style="display:none;">
+                <thead id="inventoryPreviewHead"></thead>
+                <tbody id="inventoryPreviewBody"></tbody>
+            </table>
         </div>
 
 
@@ -794,10 +800,16 @@
         <div id="reportGenericPanel" style="display:none;">
             <h3 id="reportGenericTitle"></h3>
             <div id="reportGenericDesc" style="color:#666; margin-bottom:12px;"></div>
-            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+            <div class="no-print" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px;">
+                <button id="reportGenericQueryBtn" type="button" onclick="runReportPreview()" style="padding:9px 16px; background:var(--secondary); color:white; border:none; border-radius:5px;">🔍 查詢</button>
                 <span id="reportGenericLead" style="color:#555; font-size:0.9rem;"></span>
                 <div id="reportGenericButtons" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
             </div>
+            <div id="reportGenericSummary" style="color:#666; margin-bottom:8px;"></div>
+            <table id="reportGenericTable" style="display:none;">
+                <thead id="reportGenericHead"></thead>
+                <tbody id="reportGenericBody"></tbody>
+            </table>
         </div>
     </div>
 
@@ -1836,8 +1848,25 @@
 
     async function loadOverdueReport() {
         const tbody = document.getElementById('overdueTableBody');
-        tbody.innerHTML = '<tr><td colspan="4" style="color:#666;">載入中…</td></tr>';
+        const head = document.getElementById('overdueTableHead');
+        const returned = activeReportTab === 'overdueReturned';
+        const table = document.getElementById('overdueTable');
+        if (table) table.style.display = 'table';
+        const loadingCols = returned ? 5 : 4;
+        tbody.innerHTML = `<tr><td colspan="${loadingCols}" style="color:#666;">載入中…</td></tr>`;
         try {
+            if (returned) {
+                // 逾期已還清冊：與 PDF／xlsx／CSV 相同的查詢範圍，於畫面預覽。
+                const data = await api('GET', jsonPreviewUrl('overdueReturned'));
+                const cols = data.columns || [];
+                if (head) head.innerHTML = '<tr>' + cols.map(c => `<th>${escapeHtml(String(c))}</th>`).join('') + '</tr>';
+                const rows = data.rows || [];
+                tbody.innerHTML = rows.length
+                    ? rows.map(r => '<tr>' + cols.map((_, i) => `<td>${escapeHtml(r[i] == null ? '' : String(r[i]))}</td>`).join('') + '</tr>').join('')
+                    : `<tr><td colspan="${Math.max(1, cols.length)}" style="color:#666;">查無資料</td></tr>`;
+                return;
+            }
+            if (head) head.innerHTML = '<tr><th>書名</th><th>借閱人</th><th>應還日期</th><th>逾期天數</th></tr>';
             const qs = overdueFilterParams();
             const s = qs.toString();
             const data = await api('GET', '/api/report/overdue' + (s ? '?' + s : ''));
@@ -1845,7 +1874,7 @@
             tbody.innerHTML = list.length
                 ? list.map(b => `<tr><td>${escapeHtml(b.title)}</td><td>${escapeHtml(b.loanedTo || '')}</td><td>${escapeHtml(b.dueAt || '')}</td><td>${escapeHtml(String(b.daysOverdue ?? ''))}</td></tr>`).join('')
                 : '<tr><td colspan="4" style="color:#666;">無逾期清單</td></tr>';
-        } catch (err) { tbody.innerHTML = `<tr><td colspan="4" style="color:#c62828;">載入失敗：${escapeHtml(err.message)}</td></tr>`; }
+        } catch (err) { tbody.innerHTML = `<tr><td colspan="${loadingCols}" style="color:#c62828;">載入失敗：${escapeHtml(err.message)}</td></tr>`; }
     }
 
     const EXPORT_REPORTS = [
@@ -1937,6 +1966,9 @@
         const desc = document.getElementById('reportGenericDesc');
         const lead = document.getElementById('reportGenericLead');
         const buttons = document.getElementById('reportGenericButtons');
+        showReportEl('reportGenericQueryBtn', !detailed, 'inline-block');
+        showReportEl('reportGenericSummary', !detailed, 'block');
+        showReportEl('reportGenericTable', !detailed && document.getElementById('reportGenericBody').children.length > 0, 'table');
         if (detailed) {
             title.style.display = 'none';
             desc.style.display = 'none';
@@ -1945,13 +1977,106 @@
             title.style.display = '';
             desc.style.display = '';
             title.textContent = label;
-            desc.textContent = REPORT_TAB_DESCRIPTIONS[label] || '此報表提供 PDF／xlsx／CSV 匯出。';
+            desc.textContent = REPORT_TAB_DESCRIPTIONS[label] || '按下「🔍 查詢」可在畫面預覽，再依查詢範圍匯出 PDF／xlsx／CSV。';
             lead.textContent = '';
         }
         buttons.innerHTML = ['pdf', 'xlsx', 'csv'].map(f =>
             `<button onclick="exportCenterClick(${index}, '${f}')" style="padding:6px 16px; background:#607d8b; color:white; border:none; border-radius:4px;">${f.toUpperCase()}</button>`
         ).join('');
         panel.style.display = 'block';
+    }
+
+    // 將匯出端點加上 format=json，取得與 PDF／xlsx／CSV 相同的資料供螢幕預覽。
+    function jsonPreviewUrl(key) {
+        const withJson = (u) => u + (u.includes('?') ? '&' : '?') + 'format=json';
+        switch (key) {
+            case 'overdue': return withJson(overduePdfUrl('/api/report/overdue.pdf'));
+            case 'overdueReturned': return withJson(overduePdfUrl('/api/report/overdue-returned.pdf'));
+            case 'inventoryAll': return withJson(inventoryPdfUrl('all'));
+            case 'inventoryScrap': return withJson(inventoryPdfUrl('scrap'));
+            case 'checkedOut': return withJson('/api/report/checked-out.pdf');
+            case 'issues': return withJson('/api/report/issues.pdf');
+            case 'publisher': return withJson('/api/report/publisher-stats.pdf');
+            case 'fullCatalog': return withJson('/api/report/full-catalog.pdf');
+            case 'callno': return withJson('/api/report/callno-catalog.pdf');
+            case 'commands': return withJson('/api/report/command-codes.pdf');
+            case 'inventoryQr': return withJson('/api/report/inventory-qr.pdf');
+            case 'membersQr': return withJson('/api/report/members-qr.pdf');
+            case 'teachersQr': return withJson('/api/report/teachers-qr.pdf');
+            case 'booksExport': return withJson(booksExportQS('/api/export/books'));
+            case 'membersExport': return withJson('/api/export/members');
+            case 'reservations': return withJson('/api/export/reservations');
+        }
+        return '';
+    }
+
+    // 通用預覽表格：prefix 對應 reportGeneric / inventoryPreview 兩組元素。
+    function renderPreviewTable(prefix, data) {
+        const head = document.getElementById(prefix + 'Head');
+        const body = document.getElementById(prefix + 'Body');
+        const table = document.getElementById(prefix + 'Table');
+        const summary = document.getElementById(prefix + 'Summary');
+        if (!head || !body) return;
+        const columns = data.columns || [];
+        head.innerHTML = '<tr>' + columns.map(c => '<th>' + escapeHtml(String(c)) + '</th>').join('') + '</tr>';
+        const blankRow = (text) => '<tr><td colspan="' + Math.max(1, columns.length) + '" style="color:#666;">' + text + '</td></tr>';
+        let html = '';
+        if (Array.isArray(data.groups) && data.groups.length) {
+            data.groups.forEach(g => {
+                const rows = g.rows || [];
+                html += '<tr class="preview-group-row"><td colspan="' + Math.max(1, columns.length) + '" style="font-weight:bold; background:#f3f6f8;">'
+                    + escapeHtml(g.title || '') + '（' + rows.length + ' 筆）</td></tr>';
+                if (!rows.length) {
+                    html += blankRow('（本組無資料）');
+                } else {
+                    rows.forEach(r => { html += '<tr>' + columns.map((_, i) => '<td>' + escapeHtml(r[i] == null ? '' : String(r[i])) + '</td>').join('') + '</tr>'; });
+                }
+            });
+        } else {
+            const rows = data.rows || [];
+            html = rows.length
+                ? rows.map(r => '<tr>' + columns.map((_, i) => '<td>' + escapeHtml(r[i] == null ? '' : String(r[i])) + '</td>').join('') + '</tr>').join('')
+                : blankRow('查無資料');
+        }
+        body.innerHTML = html;
+        if (summary) {
+            summary.textContent = (data.meta || []).join('　') || ('共 ' + (data.total || 0) + ' 筆');
+        }
+        if (table) table.style.display = 'table';
+    }
+
+    async function runReportPreview() {
+        const key = activeReportTab;
+        const url = jsonPreviewUrl(key);
+        if (!url) return;
+        const summary = document.getElementById('reportGenericSummary');
+        const table = document.getElementById('reportGenericTable');
+        if (summary) summary.textContent = '查詢中…';
+        if (table) table.style.display = 'none';
+        try {
+            const data = await api('GET', url);
+            renderPreviewTable('reportGeneric', data);
+        } catch (err) {
+            if (table) table.style.display = 'none';
+            if (summary) summary.innerHTML = '<span style="color:#c62828;">查詢失敗：' + escapeHtml(err.message) + '</span>';
+        }
+    }
+
+    async function runInventoryPreview() {
+        const key = activeReportTab;
+        if (!['inventoryAll', 'inventoryScrap', 'checkedOut', 'issues'].includes(key)) return;
+        const url = jsonPreviewUrl(key);
+        const summary = document.getElementById('inventoryPreviewSummary');
+        const table = document.getElementById('inventoryPreviewTable');
+        if (summary) summary.textContent = '查詢中…';
+        if (table) table.style.display = 'none';
+        try {
+            const data = await api('GET', url);
+            renderPreviewTable('inventoryPreview', data);
+        } catch (err) {
+            if (table) table.style.display = 'none';
+            if (summary) summary.innerHTML = '<span style="color:#c62828;">查詢失敗：' + escapeHtml(err.message) + '</span>';
+        }
     }
 
     function applyReportTabVariant(tab) {
@@ -1962,8 +2087,9 @@
             if (title) title.textContent = returned ? '📦 逾期已還清冊' : '⏰ 逾期未還清單';
             showReportEl('overdueFilterRow', true, 'flex');
             showReportEl('overdueDateFields', returned, 'inline-flex');
-            showReportEl('overdueQueryBtn', !returned, 'inline-block');
-            showReportEl('overdueTable', !returned);
+            const qBtn = document.getElementById('overdueQueryBtn');
+            if (qBtn) qBtn.textContent = returned ? '🔍 查詢逾期已還清冊' : '🔍 查詢逾期清單';
+            showReportEl('overdueQueryBtn', true, 'inline-block');
         }
         if (['inventoryAll', 'inventoryScrap', 'checkedOut', 'issues'].includes(key)) {
             const dated = key === 'inventoryAll' || key === 'inventoryScrap';
@@ -1992,12 +2118,19 @@
         if (tab.section) showReportEl(tab.section, true, 'block');
         isLabelMode = tab.key === 'labels';
         applyReportTabVariant(tab);
+        const gBody = document.getElementById('reportGenericBody');
+        if (gBody) gBody.innerHTML = '';
+        const gSummary = document.getElementById('reportGenericSummary');
+        if (gSummary) gSummary.textContent = '';
         if (tab.exportLabel && tab.key !== 'log') {
             renderReportGenericExport(tab.exportLabel, !!tab.section);
         }
         if (tab.key === 'labels') renderQRLabels();
         if (tab.key === 'log') renderReportTable();
         if (tab.key === 'exportCenter') renderExportCenter();
+        if (tab.key === 'overdue' || tab.key === 'overdueReturned') loadOverdueReport();
+        if (['inventoryAll', 'inventoryScrap', 'checkedOut', 'issues'].includes(tab.key)) runInventoryPreview();
+        if (!tab.section && tab.exportLabel) runReportPreview();
         document.querySelectorAll('.print-mode-btn').forEach(btn => {
             btn.innerText = isLabelMode ? '切換至：紀錄模式' : '切換至：標籤模式';
         });

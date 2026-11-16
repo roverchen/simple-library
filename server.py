@@ -1309,9 +1309,29 @@ class Handler(SimpleHTTPRequestHandler):
         xlsx 每組一個工作表、CSV 以組別標題列分隔（如圖書清冊依來源分類）。
         """
         fmt = (fmt or "pdf").lower()
-        if fmt not in ("pdf", "xlsx", "csv"):
+        if fmt not in ("pdf", "xlsx", "csv", "json"):
             fmt = "pdf"
         stamp = datetime.now().strftime("%Y%m%d-%H%M")
+
+        if fmt == "json":
+            # 螢幕查詢預覽：回傳與 PDF／xlsx／CSV 相同的表格資料。
+            payload = {
+                "title": title,
+                "meta": ["" if v is None else str(v) for v in (meta_lines or [])],
+                "columns": [str(c) for c in columns],
+                "rows": [["" if v is None else str(v) for v in r] for r in rows],
+                "total": len(rows),
+            }
+            if groups is not None:
+                payload["groups"] = [
+                    {
+                        "title": g_title or "",
+                        "rows": [["" if v is None else str(v) for v in r] for r in g_rows],
+                    }
+                    for g_title, g_rows in groups
+                ]
+            self.send_json(payload)
+            return
 
         if fmt == "csv":
             output = io.StringIO()
