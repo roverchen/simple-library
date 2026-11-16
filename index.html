@@ -303,7 +303,6 @@
         <div id="dashboardHint" style="color:#666; font-size:0.9rem; margin-top:12px;"></div>
         <div style="margin-top:16px; display:flex; gap:8px; flex-wrap:wrap;">
             <button onclick="changeOwnPassword()" style="background:#5a7fa8; color:white; padding:8px 14px; border:none; border-radius:5px;">👤 個人資料與密碼</button>
-            <button onclick="openSecurityQuestionModal()" style="background:#7b68ae; color:white; padding:8px 14px; border:none; border-radius:5px;">🔒 安全提問</button>
         </div>
     </div>
 
@@ -2728,6 +2727,14 @@
                 let control;
                 if (field.type === 'textarea') {
                     control = `<textarea id="${id}" data-name="${name}" rows="4" placeholder="${placeholder}">${escapeHtml(field.value || '')}</textarea>`;
+                } else if (field.type === 'select') {
+                    const opts = (field.options || []).map(function (o) {
+                        const val = (o && typeof o === 'object') ? (o.value || '') : o;
+                        const lab = (o && typeof o === 'object') ? (o.label || val) : o;
+                        const sel = String(val) === String(field.value || '') ? ' selected' : '';
+                        return `<option value="${escapeHtml(val)}"${sel}>${escapeHtml(lab)}</option>`;
+                    }).join('');
+                    control = `<select id="${id}" data-name="${name}" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:5px;">${opts}</select>`;
                 } else {
                     const type = field.type || 'text';
                     const readonly = field.readOnly ? ' readonly' : '';
@@ -3658,12 +3665,27 @@
             } catch (err) { alert('❌ ' + err.message); }
             return;
         }
+        const sqQuestions = [
+            '你國小就讀的學校名稱是什麼？',
+            '你寵物的名字是什麼？',
+            '你母親的娘家姓氏是什麼？',
+            '你出生的城市是哪裡？',
+            '你最好的朋友的名字是什麼？'
+        ];
+        let currentSq = '';
+        try {
+            const sq = await api('GET', '/api/security-question');
+            currentSq = sq.question || '';
+        } catch (err) { /* 讀取失敗時仍可設定 */ }
+
         const result = await showInputDialog({
             title: '👤 個人資料與密碼',
-            message: '可更新姓名、Email；新密碼留空代表不變更。',
+            message: '可更新姓名、Email、安全提問；新密碼留空代表不變更。',
             fields: [
                 { name: 'name', label: '姓名', type: 'text', value: (currentUser && currentUser.name) || '' },
                 { name: 'email', label: 'Email', type: 'email', value: (currentUser && currentUser.email) || '' },
+                { name: 'securityQuestion', label: '安全提問（離線救援）', type: 'select', value: currentSq || sqQuestions[0], options: sqQuestions.map(function (q) { return { value: q, label: q }; }) },
+                { name: 'securityAnswer', label: '安全提問答案（留空＝不變更）', type: 'text', placeholder: '輸入新答案才會更新' },
                 { name: 'password', label: '新密碼（至少 4 字）', type: 'password', placeholder: '留空＝不變更' },
                 { name: 'confirm', label: '確認新密碼', type: 'password' },
             ],
@@ -3675,6 +3697,8 @@
                     if (v.password.length < 4) return '密碼至少需 4 個字元';
                     if (v.password !== v.confirm) return '兩次輸入的密碼不一致';
                 }
+                if ((v.securityAnswer || '').trim() && !(v.securityQuestion || '').trim()) return '請選擇安全提問';
+                if ((v.securityQuestion || '').trim() !== currentSq && !(v.securityAnswer || '').trim()) return '變更安全提問時請一併輸入答案';
                 return '';
             }
         });
@@ -3690,7 +3714,13 @@
                 currentUser.name = res.name || payload.name;
                 currentUser.email = res.email || payload.email;
             }
-            alert('✅ 個人資料已更新' + (res.passwordChanged ? '（密碼已變更）' : ''));
+            // 安全提問：只有輸入答案時才更新
+            const newAnswer = (result.securityAnswer || '').trim();
+            const newQuestion = (result.securityQuestion || '').trim();
+            if (newAnswer) {
+                await api('PUT', '/api/security-question', { securityQuestion: newQuestion, securityAnswer: newAnswer });
+            }
+            alert('✅ 個人資料已更新' + (res.passwordChanged ? '（密碼已變更）' : '') + (newAnswer ? '（安全提問已更新）' : ''));
         } catch (err) { alert('❌ ' + err.message); }
     }
 
