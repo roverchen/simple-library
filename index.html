@@ -667,7 +667,7 @@
                 <button onclick="renderReportTable()" style="padding:8px 12px; background:var(--secondary); color:white; border:none; border-radius:5px;">🔍 查詢</button>
             </div>
             <table>
-                <thead><tr><th>時間</th><th>班級</th><th>姓名</th><th>書名</th><th>動作</th></tr></thead>
+                <thead><tr><th>時間</th><th>姓名</th><th>書名</th><th>動作</th></tr></thead>
                 <tbody id="reportTableBody"></tbody>
             </table>
             <div id="reportPager" class="no-print"></div>
@@ -1518,10 +1518,10 @@
             logCount = data.total;
             tbody.innerHTML = data.logs.length
                 ? data.logs.map(log =>
-                    `<tr><td>${escapeHtml(log.date)}</td><td>${escapeHtml(log.className)}</td>` +
+                    `<tr><td>${escapeHtml(log.date)}</td>` +
                     `<td>${escapeHtml(log.userName)}</td><td>${escapeHtml(log.title)}</td>` +
                     `<td>${escapeHtml(log.action)}</td></tr>`).join('')
-                : '<tr><td colspan="5" style="color:#666;">尚無借閱紀錄</td></tr>';
+                : '<tr><td colspan="4" style="color:#666;">尚無借閱紀錄</td></tr>';
             renderReportPager(reportTotal, reportPages);
         } catch (err) {
             tbody.innerHTML = `<tr><td colspan="5" style="color:#c62828;">載入失敗：${escapeHtml(err.message)}</td></tr>`;

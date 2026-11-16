@@ -2816,20 +2816,20 @@ class Handler(SimpleHTTPRequestHandler):
         meta.extend(date_meta)
         where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
         rows = conn.execute(
-            "SELECT l.occurred_at, l.class_name, l.user_name, l.title, l.asset_id, l.action "
+            "SELECT l.occurred_at, l.user_name, l.title, l.asset_id, l.action "
             "FROM loan_logs l" + where + " ORDER BY l.occurred_at DESC, l.id DESC",
             params,
         ).fetchall()
         table = [[
-            r["occurred_at"], r["class_name"], r["user_name"],
+            r["occurred_at"], r["user_name"],
             r["title"], r["asset_id"], r["action"],
         ] for r in rows]
         meta.insert(0, "列印時間：{}".format(datetime.now().strftime("%Y/%m/%d %H:%M")))
         meta.append("共 {} 筆".format(len(rows)))
         self._send_table_export(
             self._export_format(query), "借閱歷史紀錄", meta,
-            ["時間", "班級", "姓名", "書名", "財產編號", "動作"], table,
-            widths=[0.18, 0.1, 0.1, 0.32, 0.15, 0.08], landscape=True,
+            ["時間", "姓名", "書名", "財產編號", "動作"], table,
+            widths=[0.2, 0.12, 0.34, 0.18, 0.1], landscape=True,
             base="借閱歷史紀錄",
         )
 
