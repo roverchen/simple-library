@@ -668,6 +668,12 @@
                 <tbody id="reportTableBody"></tbody>
             </table>
             <div id="reportPager" class="no-print"></div>
+            <div class="no-print" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px;">
+                <span style="color:#555; font-size:0.9rem;">匯出本查詢結果：</span>
+                <button onclick="exportLogsReport('pdf')" style="padding:4px 12px; background:#607d8b; color:white; border:none; border-radius:4px; font-size:0.85rem;">PDF</button>
+                <button onclick="exportLogsReport('xlsx')" style="padding:4px 12px; background:#607d8b; color:white; border:none; border-radius:4px; font-size:0.85rem;">xlsx</button>
+                <button onclick="exportLogsReport('csv')" style="padding:4px 12px; background:#607d8b; color:white; border:none; border-radius:4px; font-size:0.85rem;">CSV</button>
+            </div>
         </div>
 
         <div id="yearStatsSection" style="margin-top:20px;">
