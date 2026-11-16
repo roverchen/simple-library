@@ -4255,7 +4255,7 @@
 
     // 稽核紀錄（系統設定頁）
     let auditPage = 1, auditPages = 1, auditTotal = 0;
-    const AUDIT_PAGE_SIZE = 50;
+    // 稽核紀錄每頁筆數與「報表每頁筆數」設定共用。
 
     function auditQS() {
         const action = (document.getElementById('auditAction') || {}).value || '';
@@ -4276,7 +4276,7 @@
         try {
             const qs = auditQS();
             qs.set('page', String(auditPage));
-            qs.set('pageSize', String(AUDIT_PAGE_SIZE));
+            qs.set('pageSize', String(reportPageSize()));
             const data = await api('GET', '/api/audit?' + qs.toString());
             auditPage = data.page;
             auditPages = data.pages;
