@@ -742,6 +742,7 @@
                 <thead id="overdueTableHead"><tr><th>書名</th><th>借閱人</th><th>應還日期</th><th>逾期天數</th></tr></thead>
                 <tbody id="overdueTableBody"></tbody>
             </table>
+            <div id="overduePager" class="no-print" style="margin-top:8px;"></div>
         </div>
 
         <div id="inventoryReportSection" style="margin-top:20px;">
@@ -765,6 +766,7 @@
                 <thead id="inventoryPreviewHead"></thead>
                 <tbody id="inventoryPreviewBody"></tbody>
             </table>
+            <div id="inventoryPreviewPager" class="no-print" style="margin-top:8px;"></div>
         </div>
 
 
@@ -808,6 +810,7 @@
                 <thead id="reportGenericHead"></thead>
                 <tbody id="reportGenericBody"></tbody>
             </table>
+            <div id="reportGenericPager" class="no-print" style="margin-top:8px;"></div>
             <div class="no-print" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:12px;">
                 <span id="reportGenericLead" style="color:#555; font-size:0.9rem;"></span>
                 <div id="reportGenericButtons" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
@@ -1850,39 +1853,19 @@
 
     async function loadOverdueReport() {
         const tbody = document.getElementById('overdueTableBody');
-        const head = document.getElementById('overdueTableHead');
-        const returned = activeReportTab === 'overdueReturned';
         const table = document.getElementById('overdueTable');
+        const returned = activeReportTab === 'overdueReturned';
         if (table) table.style.display = 'table';
-        const loadingCols = returned ? 5 : 4;
-        tbody.innerHTML = `<tr><td colspan="${loadingCols}" style="color:#666;">載入中…</td></tr>`;
+        tbody.innerHTML = '<tr><td colspan="6" style="color:#666;">載入中…</td></tr>';
         try {
-            if (returned) {
-                // 逾期已還清冊：與 PDF／xlsx／CSV 相同的查詢範圍，於畫面預覽。
-                const data = await api('GET', jsonPreviewUrl('overdueReturned'));
-                const cols = data.columns || [];
-                if (head) head.innerHTML = '<tr>' + cols.map(c => `<th>${escapeHtml(String(c))}</th>`).join('') + '</tr>';
-                const rows = data.rows || [];
-                const shown = rows.slice(0, PREVIEW_ROW_LIMIT);
-                const colSpan = Math.max(1, cols.length);
-                let html = shown.length
-                    ? shown.map(r => '<tr>' + cols.map((_, i) => `<td>${escapeHtml(r[i] == null ? '' : String(r[i]))}</td>`).join('') + '</tr>').join('')
-                    : `<tr><td colspan="${colSpan}" style="color:#666;">查無資料</td></tr>`;
-                if (rows.length > PREVIEW_ROW_LIMIT) {
-                    html += `<tr><td colspan="${colSpan}" style="color:#8a6d3b; background:#fff8e1;">僅顯示前 ${PREVIEW_ROW_LIMIT} 筆（共 ${rows.length} 筆），完整資料請使用下方 PDF／XLSX／CSV 匯出。</td></tr>`;
-                }
-                tbody.innerHTML = html;
-                return;
-            }
-            if (head) head.innerHTML = '<tr><th>書名</th><th>借閱人</th><th>應還日期</th><th>逾期天數</th></tr>';
-            const qs = overdueFilterParams();
-            const s = qs.toString();
-            const data = await api('GET', '/api/report/overdue' + (s ? '?' + s : ''));
-            const list = data.overdue || [];
-            tbody.innerHTML = list.length
-                ? list.map(b => `<tr><td>${escapeHtml(b.title)}</td><td>${escapeHtml(b.loanedTo || '')}</td><td>${escapeHtml(b.dueAt || '')}</td><td>${escapeHtml(String(b.daysOverdue ?? ''))}</td></tr>`).join('')
-                : '<tr><td colspan="4" style="color:#666;">無逾期清單</td></tr>';
-        } catch (err) { tbody.innerHTML = `<tr><td colspan="${loadingCols}" style="color:#c62828;">載入失敗：${escapeHtml(err.message)}</td></tr>`; }
+            // 逾期未還與逾期已還皆使用與匯出檔相同的查詢範圍，於畫面分頁預覽。
+            const data = await api('GET', jsonPreviewUrl(returned ? 'overdueReturned' : 'overdue'));
+            renderPreviewTable('overdue', data, 1);
+        } catch (err) {
+            const pager = document.getElementById('overduePager');
+            if (pager) { pager.innerHTML = ''; pager.style.display = 'none'; }
+            tbody.innerHTML = `<tr><td colspan="6" style="color:#c62828;">載入失敗：${escapeHtml(err.message)}</td></tr>`;
+        }
     }
 
     const EXPORT_REPORTS = [
@@ -1974,9 +1957,11 @@
         const desc = document.getElementById('reportGenericDesc');
         const lead = document.getElementById('reportGenericLead');
         const buttons = document.getElementById('reportGenericButtons');
+        const hasRows = document.getElementById('reportGenericBody').children.length > 0;
         showReportEl('reportGenericQueryRow', !detailed, 'flex');
         showReportEl('reportGenericSummary', !detailed, 'block');
-        showReportEl('reportGenericTable', !detailed && document.getElementById('reportGenericBody').children.length > 0, 'table');
+        showReportEl('reportGenericTable', !detailed && hasRows, 'table');
+        showReportEl('reportGenericPager', !detailed && hasRows, 'block');
         if (detailed) {
             title.style.display = 'none';
             desc.style.display = 'none';
@@ -2018,64 +2003,107 @@
         return '';
     }
 
-    // 通用預覽表格：prefix 對應 reportGeneric / inventoryPreview 兩組元素。
-    const PREVIEW_ROW_LIMIT = 20; // 螢幕預覽最多顯示 20 筆，完整資料請匯出。
+    // 通用預覽表格：每頁 20 筆，分頁模式比照「借閱歷史紀錄」。
+    const PREVIEW_PAGE_SIZE = 20;
 
-    function renderPreviewTable(prefix, data) {
-        const head = document.getElementById(prefix + 'Head');
-        const body = document.getElementById(prefix + 'Body');
-        const table = document.getElementById(prefix + 'Table');
-        const summary = document.getElementById(prefix + 'Summary');
+    const PREVIEW_TARGETS = {
+        reportGeneric: {
+            head: 'reportGenericHead', body: 'reportGenericBody',
+            table: 'reportGenericTable', summary: 'reportGenericSummary',
+            pager: 'reportGenericPager',
+        },
+        inventoryPreview: {
+            head: 'inventoryPreviewHead', body: 'inventoryPreviewBody',
+            table: 'inventoryPreviewTable', summary: 'inventoryPreviewSummary',
+            pager: 'inventoryPreviewPager',
+        },
+        overdue: {
+            head: 'overdueTableHead', body: 'overdueTableBody',
+            table: 'overdueTable', summary: null, pager: 'overduePager',
+        },
+    };
+
+    const previewState = {};
+
+    function previewFlatRows(data) {
+        const flat = [];
+        if (Array.isArray(data.groups) && data.groups.length) {
+            data.groups.forEach(g => {
+                const rows = g.rows || [];
+                rows.forEach(r => flat.push({ row: r, group: g.title || '', groupTotal: rows.length }));
+            });
+        } else {
+            (data.rows || []).forEach(r => flat.push({ row: r, group: null }));
+        }
+        return flat;
+    }
+
+    function previewPagerHtml(prefix, total, page, pages) {
+        const go = (p, label, disabled) =>
+            `<button onclick="gotoPreviewPage('${prefix}', ${p})" ${disabled ? 'disabled' : ''}>${label}</button>`;
+        return '<div class="pager">'
+            + go(1, '« 首頁', page === 1)
+            + go(page - 1, '‹ 上一頁', page === 1)
+            + `<span>第 ${page} / ${pages} 頁（共 ${total.toLocaleString()} 筆）</span>`
+            + go(page + 1, '下一頁 ›', page === pages)
+            + go(pages, '末頁 »', page === pages)
+            + '</div>';
+    }
+
+    function renderPreviewTable(prefix, data, page) {
+        const target = PREVIEW_TARGETS[prefix];
+        if (!target) return;
+        const head = document.getElementById(target.head);
+        const body = document.getElementById(target.body);
+        const table = document.getElementById(target.table);
+        const summary = target.summary ? document.getElementById(target.summary) : null;
+        const pager = document.getElementById(target.pager);
         if (!head || !body) return;
         const columns = data.columns || [];
         const colSpan = Math.max(1, columns.length);
+        const flat = previewFlatRows(data);
+        const total = flat.length;
+        const pages = Math.max(1, Math.ceil(total / PREVIEW_PAGE_SIZE));
+        const current = Math.min(Math.max(1, page || 1), pages);
+        previewState[prefix] = { data, page: current };
+
         head.innerHTML = '<tr>' + columns.map(c => '<th>' + escapeHtml(String(c)) + '</th>').join('') + '</tr>';
-        const blankRow = (text) => '<tr><td colspan="' + colSpan + '" style="color:#666;">' + text + '</td></tr>';
         const dataRow = (r) => '<tr>' + columns.map((_, i) => '<td>' + escapeHtml(r[i] == null ? '' : String(r[i])) + '</td>').join('') + '</tr>';
-        const allRows = Array.isArray(data.groups) && data.groups.length
-            ? data.groups.reduce((n, g) => n + (g.rows || []).length, 0)
-            : (data.rows || []).length;
-        const total = Number.isFinite(data.total) ? data.total : allRows;
         let html = '';
-        let shown = 0;
-        if (Array.isArray(data.groups) && data.groups.length) {
-            for (const g of data.groups) {
-                if (shown >= PREVIEW_ROW_LIMIT) break;
-                const rows = g.rows || [];
+        let lastGroup = null;
+        const start = (current - 1) * PREVIEW_PAGE_SIZE;
+        flat.slice(start, start + PREVIEW_PAGE_SIZE).forEach(item => {
+            if (item.group !== null && item.group !== lastGroup) {
                 html += '<tr class="preview-group-row"><td colspan="' + colSpan + '" style="font-weight:bold; background:#f3f6f8;">'
-                    + escapeHtml(g.title || '') + '（' + rows.length + ' 筆）</td></tr>';
-                if (!rows.length) {
-                    html += blankRow('（本組無資料）');
-                    continue;
-                }
-                for (const r of rows) {
-                    if (shown >= PREVIEW_ROW_LIMIT) break;
-                    html += dataRow(r);
-                    shown += 1;
-                }
+                    + escapeHtml(item.group) + '（' + item.groupTotal + ' 筆）</td></tr>';
+                lastGroup = item.group;
             }
-        } else {
-            const rows = data.rows || [];
-            if (!rows.length) {
-                html = blankRow('查無資料');
-            } else {
-                for (const r of rows) {
-                    if (shown >= PREVIEW_ROW_LIMIT) break;
-                    html += dataRow(r);
-                    shown += 1;
-                }
-            }
-        }
-        if (total > PREVIEW_ROW_LIMIT) {
-            html += '<tr><td colspan="' + colSpan + '" style="color:#8a6d3b; background:#fff8e1;">'
-                + '僅顯示前 ' + PREVIEW_ROW_LIMIT + ' 筆（共 ' + total + ' 筆），完整資料請使用下方 PDF／XLSX／CSV 匯出。'
-                + '</td></tr>';
+            html += dataRow(item.row);
+        });
+        if (!html) {
+            html = '<tr><td colspan="' + colSpan + '" style="color:#666;">查無資料</td></tr>';
         }
         body.innerHTML = html;
+
         if (summary) {
             summary.textContent = (data.meta || []).join('　') || ('共 ' + total + ' 筆');
         }
         if (table) table.style.display = 'table';
+        if (pager) {
+            pager.innerHTML = total ? previewPagerHtml(prefix, total, current, pages) : '';
+            pager.style.display = total ? 'block' : 'none';
+        }
+    }
+
+    function gotoPreviewPage(prefix, page) {
+        const state = previewState[prefix];
+        if (!state) return;
+        renderPreviewTable(prefix, state.data, page);
+        const target = PREVIEW_TARGETS[prefix];
+        const table = target ? document.getElementById(target.table) : null;
+        if (table && table.getBoundingClientRect().top < 0) {
+            table.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
     }
 
     async function runReportPreview() {
@@ -2084,12 +2112,15 @@
         if (!url) return;
         const summary = document.getElementById('reportGenericSummary');
         const table = document.getElementById('reportGenericTable');
+        const pager = document.getElementById('reportGenericPager');
         if (summary) summary.textContent = '查詢中…';
         if (table) table.style.display = 'none';
+        if (pager) { pager.innerHTML = ''; pager.style.display = 'none'; }
         try {
             const data = await api('GET', url);
-            renderPreviewTable('reportGeneric', data);
+            renderPreviewTable('reportGeneric', data, 1);
         } catch (err) {
+            delete previewState['reportGeneric'];
             if (table) table.style.display = 'none';
             if (summary) summary.innerHTML = '<span style="color:#c62828;">查詢失敗：' + escapeHtml(err.message) + '</span>';
         }
@@ -2101,12 +2132,15 @@
         const url = jsonPreviewUrl(key);
         const summary = document.getElementById('inventoryPreviewSummary');
         const table = document.getElementById('inventoryPreviewTable');
+        const pager = document.getElementById('inventoryPreviewPager');
         if (summary) summary.textContent = '查詢中…';
         if (table) table.style.display = 'none';
+        if (pager) { pager.innerHTML = ''; pager.style.display = 'none'; }
         try {
             const data = await api('GET', url);
-            renderPreviewTable('inventoryPreview', data);
+            renderPreviewTable('inventoryPreview', data, 1);
         } catch (err) {
+            delete previewState['inventoryPreview'];
             if (table) table.style.display = 'none';
             if (summary) summary.innerHTML = '<span style="color:#c62828;">查詢失敗：' + escapeHtml(err.message) + '</span>';
         }
@@ -2155,6 +2189,9 @@
         if (gBody) gBody.innerHTML = '';
         const gSummary = document.getElementById('reportGenericSummary');
         if (gSummary) gSummary.textContent = '';
+        const gPager = document.getElementById('reportGenericPager');
+        if (gPager) { gPager.innerHTML = ''; gPager.style.display = 'none'; }
+        delete previewState['reportGeneric'];
         if (tab.exportLabel && tab.key !== 'log') {
             renderReportGenericExport(tab.exportLabel, !!tab.section);
         }
