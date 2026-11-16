@@ -2105,6 +2105,12 @@ class Handler(SimpleHTTPRequestHandler):
                 # 任何已登入使用者都可修改自己的密碼；共用管理員密碼變更僅限共用管理員 session
                 return self.api_password(conn, token)
 
+            if path == "/api/profile":
+                if method == "GET":
+                    return self.api_profile_get(conn, token)
+                if method == "PUT":
+                    return self.api_profile_put(conn, token)
+
             if method == "GET" and path == "/api/update/check":
                 require_admin(conn, token)
                 return self.api_update_check(conn)
@@ -2619,6 +2625,7 @@ class Handler(SimpleHTTPRequestHandler):
                     "user": {
                         "username": (user["username"] if user else "admin"),
                         "name": (user["name"] if user else "") or "",
+                        "email": (user["email"] if user else "") or "",
                         "role": role,
                         "is_root": is_root,
                         "is_daily_admin": is_daily_admin,
@@ -5103,6 +5110,121 @@ class Handler(SimpleHTTPRequestHandler):
         self._audit(conn, token, "修改班級清單",
                     detail="班級 {} 個：{}".format(len(classes), "、".join(classes[:12]) + ("…" if len(classes) > 12 else "")))
         return self.send_json({"ok": True, **build_state(conn)})
+
+    def api_profile_get(self, conn, token):
+        session = conn.execute(
+            "SELECT user_id FROM sessions WHERE token = ?", (token,)
+        ).fetchone()
+        if not session:
+            raise ApiError(401, "請先登入")
+        if session["user_id"] is None:
+            email = get_setting(conn, "admin_recovery_email", "")
+            return self.send_json({
+                "sharedAdmin": True,
+                "username": "admin",
+                "name": "",
+                "email": email or "",
+                "role": "admin",
+            })
+        row = conn.execute(
+            "SELECT username, name, email, role FROM users WHERE id = ? AND active = 1",
+            (session["user_id"],),
+        ).fetchone()
+        if not row:
+            raise ApiError(404, "找不到帳號")
+        return self.send_json({
+            "sharedAdmin": False,
+            "username": row["username"],
+            "name": row["name"] or "",
+            "email": row["email"] or "",
+            "role": row["role"] or "teacher",
+        })
+
+    def api_profile_put(self, conn, token):
+        data = self.read_json()
+        session = conn.execute(
+            "SELECT user_id FROM sessions WHERE token = ?", (token,)
+        ).fetchone()
+        if not session:
+            raise ApiError(401, "請先登入")
+
+        if session["user_id"] is None:
+            # 共用管理員：僅允許修改密碼（沿用既有邏輯）
+            password = data.get("password")
+            if password is None or (isinstance(password, str) and not password.strip()):
+                raise ApiError(400, "共用管理員僅能修改密碼，請輸入新密碼")
+            if not isinstance(password, str) or len(password) < 4:
+                raise ApiError(400, "密碼至少需 4 個字元")
+            if len(password) > 128:
+                raise ApiError(400, "密碼過長")
+            confirm = data.get("confirm") or data.get("confirmPassword")
+            if confirm is not None and confirm != password:
+                raise ApiError(400, "兩次輸入的密碼不一致")
+            hashed = hash_password(password)
+            conn.execute(
+                "UPDATE settings SET value = ? WHERE key = 'admin_password'",
+                (hashed,),
+            )
+            conn.execute("DELETE FROM sessions WHERE token != ?", (token,))
+            audit_id, audit_name = session_actor(conn, token)
+            log_audit(conn, "修改密碼", audit_id, audit_name,
+                      detail="共用管理員", ip=self.client_address[0])
+            return self.send_json({"ok": True, "passwordChanged": True})
+
+        user_id = session["user_id"]
+        row = conn.execute(
+            "SELECT username, name, email, role FROM users WHERE id = ? AND active = 1",
+            (user_id,),
+        ).fetchone()
+        if not row:
+            raise ApiError(404, "找不到帳號")
+
+        name = data.get("name", row["name"])
+        if name is None:
+            name = row["name"]
+        name = _clean_text(name, "姓名", 50, required=False)
+        email = data.get("email", row["email"])
+        if email is None:
+            email = row["email"]
+        email = (email or "").strip()
+        if email and ("@" not in email or "." not in email.split("@")[-1]):
+            raise ApiError(400, "Email 格式不正確")
+
+        password = data.get("password")
+        password_changed = False
+        if isinstance(password, str) and password.strip():
+            if len(password) < 4:
+                raise ApiError(400, "密碼至少需 4 個字元")
+            if len(password) > 128:
+                raise ApiError(400, "密碼過長")
+            confirm = data.get("confirm") or data.get("confirmPassword")
+            if confirm is not None and confirm != password:
+                raise ApiError(400, "兩次輸入的密碼不一致")
+            hashed = hash_password(password)
+            conn.execute(
+                "UPDATE users SET password = ?, updated_at = datetime('now', 'localtime') WHERE id = ?",
+                (hashed, user_id),
+            )
+            conn.execute(
+                "DELETE FROM sessions WHERE user_id = ? AND token != ?",
+                (user_id, token),
+            )
+            password_changed = True
+
+        conn.execute(
+            "UPDATE users SET name = ?, email = ?, updated_at = datetime('now', 'localtime') WHERE id = ?",
+            (name, email, user_id),
+        )
+        audit_id, audit_name = session_actor(conn, token)
+        log_audit(conn, "修改個人資料", audit_id, audit_name,
+                  detail="姓名／Email" + ("／密碼" if password_changed else ""),
+                  ip=self.client_address[0])
+        return self.send_json({
+            "ok": True,
+            "name": name,
+            "email": email,
+            "passwordChanged": password_changed,
+        })
 
     def api_password(self, conn, token):
         data = self.read_json()

@@ -302,7 +302,7 @@
         </div>
         <div id="dashboardHint" style="color:#666; font-size:0.9rem; margin-top:12px;"></div>
         <div style="margin-top:16px; display:flex; gap:8px; flex-wrap:wrap;">
-            <button onclick="changeOwnPassword()" style="background:#5a7fa8; color:white; padding:8px 14px; border:none; border-radius:5px;">🔑 修改密碼</button>
+            <button onclick="changeOwnPassword()" style="background:#5a7fa8; color:white; padding:8px 14px; border:none; border-radius:5px;">👤 個人資料與密碼</button>
             <button onclick="openSecurityQuestionModal()" style="background:#7b68ae; color:white; padding:8px 14px; border:none; border-radius:5px;">🔒 安全提問</button>
         </div>
     </div>
@@ -2258,6 +2258,8 @@
                 isDailyAdmin: (res.user && res.user.is_daily_admin) || false,
                 isSharedAdmin: (res.user && res.user.is_shared_admin) || false,
                 needSecurityQuestion: (res.user && res.user.needSecurityQuestion) || false,
+                name: (res.user && res.user.name) || '',
+                email: (res.user && res.user.email) || '',
             };
             const state = await api('GET', '/api/state');
             applyState(state);
@@ -3636,22 +3638,59 @@
     }
 
     async function changeOwnPassword() {
+        if (currentUser && currentUser.isSharedAdmin) {
+            const result = await showInputDialog({
+                title: '🔑 修改密碼（共用管理員）',
+                message: '共用管理員僅能修改密碼。',
+                fields: [{ name: 'password', label: '新密碼', type: 'password' },
+                         { name: 'confirm', label: '確認新密碼', type: 'password' }],
+                submitText: '更新',
+                validate: function (v) {
+                    if (!v.password || v.password.length < 4) return '密碼至少需 4 個字元';
+                    if (v.password !== v.confirm) return '兩次輸入的密碼不一致';
+                    return '';
+                }
+            });
+            if (result === null) return;
+            try {
+                await api('PUT', '/api/password', { password: result.password });
+                alert('✅ 密碼已更新，下次登入請使用新密碼');
+            } catch (err) { alert('❌ ' + err.message); }
+            return;
+        }
         const result = await showInputDialog({
-            title: '🔑 修改密碼',
-            message: '請輸入新密碼（至少 4 個字元）。',
-            fields: [{ name: 'password', label: '新密碼', type: 'password' },
-                     { name: 'confirm', label: '確認新密碼', type: 'password' }],
-            submitText: '更新',
+            title: '👤 個人資料與密碼',
+            message: '可更新姓名、Email；新密碼留空代表不變更。',
+            fields: [
+                { name: 'name', label: '姓名', type: 'text', value: (currentUser && currentUser.name) || '' },
+                { name: 'email', label: 'Email', type: 'email', value: (currentUser && currentUser.email) || '' },
+                { name: 'password', label: '新密碼（至少 4 字）', type: 'password', placeholder: '留空＝不變更' },
+                { name: 'confirm', label: '確認新密碼', type: 'password' },
+            ],
+            submitText: '儲存',
             validate: function (v) {
-                if (!v.password || v.password.length < 4) return '密碼至少需 4 個字元';
-                if (v.password !== v.confirm) return '兩次輸入的密碼不一致';
+                const email = (v.email || '').trim();
+                if (email && (email.indexOf('@') < 1 || email.split('@')[1].indexOf('.') < 1)) return 'Email 格式不正確';
+                if (v.password) {
+                    if (v.password.length < 4) return '密碼至少需 4 個字元';
+                    if (v.password !== v.confirm) return '兩次輸入的密碼不一致';
+                }
                 return '';
             }
         });
         if (result === null) return;
         try {
-            await api('PUT', '/api/password', { password: result.password });
-            alert('✅ 密碼已更新，下次登入請使用新密碼');
+            const payload = {
+                name: (result.name || '').trim(),
+                email: (result.email || '').trim(),
+            };
+            if (result.password) payload.password = result.password;
+            const res = await api('PUT', '/api/profile', payload);
+            if (currentUser) {
+                currentUser.name = res.name || payload.name;
+                currentUser.email = res.email || payload.email;
+            }
+            alert('✅ 個人資料已更新' + (res.passwordChanged ? '（密碼已變更）' : ''));
         } catch (err) { alert('❌ ' + err.message); }
     }
 
