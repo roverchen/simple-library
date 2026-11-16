@@ -3203,13 +3203,13 @@ class Handler(SimpleHTTPRequestHandler):
             meta.append("出版社：{}".format(publisher))
         where_sql = (" WHERE " + " AND ".join(conditions)) if conditions else ""
         rows = conn.execute(
-            "SELECT barcode, asset_id, title, call_no, category, isbn, publisher, source, "
+            "SELECT asset_id, title, call_no, category, isbn, publisher, source, "
             "status, purchase_date, keeper, remarks, price "
             "FROM books" + where_sql + " ORDER BY source, barcode",
             params,
         ).fetchall()
         table = [[
-            r["barcode"], r["asset_id"], r["title"], r["call_no"], r["category"] or "",
+            r["asset_id"], r["title"], r["call_no"], r["category"] or "",
             r["isbn"] or "", r["publisher"] or "", r["source"] or "", r["status"],
             r["purchase_date"] or "", r["keeper"] or "", r["remarks"] or "",
             r["price"] if r["price"] is not None else "",
@@ -3223,10 +3223,10 @@ class Handler(SimpleHTTPRequestHandler):
         meta.append("共 {} 筆".format(len(rows)))
         self._send_table_export(
             self._export_format(query), "館藏清單", meta,
-            ["條碼", "財產編號", "書名", "索書號", "主題分類", "ISBN", "出版社", "來源",
+            ["財產編號", "書名", "索書號", "主題分類", "ISBN", "出版社", "來源",
              "狀態", "購入日期", "保管人", "備註", "單價"],
             table,
-            widths=[0.07, 0.07, 0.22, 0.09, 0.07, 0.10, 0.10, 0.06, 0.06, 0.07, 0.07, 0.08, 0.04],
+            widths=[0.08, 0.24, 0.10, 0.08, 0.10, 0.11, 0.07, 0.06, 0.07, 0.07, 0.09, 0.05],
             landscape=True, base="館藏清單", groups=groups,
         )
 
