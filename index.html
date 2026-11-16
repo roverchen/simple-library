@@ -2331,18 +2331,22 @@
         const genBtn = document.getElementById('reportGenericQueryBtn');
         const isQr = ['inventoryQr','membersQr','teachersQr'].includes(key);
         if (qrBox) qrBox.style.display = isQr ? 'flex' : 'none';
-        if (genBtn) genBtn.style.display = isQr ? 'none' : '';
+        if (genBtn && isQr) genBtn.style.display = 'none';
         if (isQr) ensureQrDateFilter();
         const membersBox = document.getElementById('membersFiltersBox');
         const genBtnMem = document.getElementById('reportGenericQueryBtn');
         if (membersBox) membersBox.style.display = (key === 'membersExport') ? 'flex' : 'none';
-        if (genBtnMem) genBtnMem.style.display = (key === 'membersExport') ? 'none' : '';
+        if (genBtnMem && key === 'membersExport') genBtnMem.style.display = 'none';
         if (key === 'membersExport') ensureMembersFilters();
         const reservationsBox = document.getElementById('reservationsFilterBox');
         if (reservationsBox) reservationsBox.style.display = (key === 'reservations') ? 'flex' : 'none';
         if (key === 'reservations') ensureReservationsFilter();
         const genBtn2 = document.getElementById('reportGenericQueryBtn');
-        if (genBtn2 && !['inventoryQr','membersQr','teachersQr','membersExport','fullCatalog'].includes(key)) genBtn2.style.display = '';
+        if (genBtn2) {
+            const special = ['inventoryQr','membersQr','teachersQr','membersExport','fullCatalog'];
+            if (special.includes(key)) genBtn2.style.display = 'none';
+            else genBtn2.style.display = '';
+        }
         if (['inventoryAll', 'inventoryScrap', 'checkedOut', 'issues'].includes(key)) {
             const dated = key === 'inventoryAll' || key === 'inventoryScrap';
             const titles = {
