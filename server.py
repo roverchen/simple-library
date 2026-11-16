@@ -3239,7 +3239,7 @@ class Handler(SimpleHTTPRequestHandler):
             params.append(class_name)
             meta.append("班級：{}".format(class_name))
         rows = conn.execute(
-            "SELECT u.username, u.barcode, u.name, u.role, u.school_year, u.email, "
+            "SELECT u.username, u.name, u.role, u.school_year, u.email, "
             "c.name AS class_name, u.can_loan, u.can_member, u.can_book, u.can_config, u.can_report "
             "FROM users u LEFT JOIN classes c ON c.id = u.class_id "
             "WHERE " + " AND ".join(conditions) + " "
@@ -3248,7 +3248,7 @@ class Handler(SimpleHTTPRequestHandler):
         ).fetchall()
         flag = lambda v: "✓" if v else ""
         table = [[
-            r["class_name"] or "", r["username"], r["barcode"], r["name"],
+            r["class_name"] or "", r["username"], r["name"],
             r["role"], r["school_year"] or "", r["email"] or "",
             flag(r["can_loan"]), flag(r["can_member"]), flag(r["can_book"]),
             flag(r["can_config"]), flag(r["can_report"]),
@@ -3257,10 +3257,10 @@ class Handler(SimpleHTTPRequestHandler):
         meta.append("共 {} 位".format(len(rows)))
         self._send_table_export(
             self._export_format(query), "成員清單", meta,
-            ["班級", "帳號", "條碼", "姓名", "角色", "學年", "Email",
+            ["班級", "帳號", "姓名", "角色", "學年", "Email",
              "可借書", "可管成員", "可圖書管理", "可系統設定", "可報表"],
             table,
-            widths=[0.1, 0.08, 0.08, 0.1, 0.08, 0.06, 0.18, 0.06, 0.08, 0.09, 0.09, 0.07],
+            widths=[0.10, 0.09, 0.11, 0.09, 0.07, 0.20, 0.07, 0.09, 0.10, 0.10, 0.08],
             landscape=True, base="成員清單",
         )
 
