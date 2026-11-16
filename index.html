@@ -489,6 +489,17 @@
         </div>
         <hr>
         <div class="input-group">
+            <label>📄 報表每頁筆數</label>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <span>每頁顯示 <input type="number" id="reportPageSizeInput" min="5" max="200" value="20" style="width:90px; padding:8px; border:1px solid #ccc; border-radius:5px;"> 筆</span>
+                <button onclick="saveReportDisplaySettings()" style="background:var(--primary); color:white; padding:10px 16px; border:none; border-radius:5px;">💾 儲存顯示設定</button>
+            </div>
+            <small style="color:#666; line-height:1.7;">
+                套用於「報表／列印」所有查詢結果與借閱歷史紀錄。系統初始值為 20 筆，可設定 5～200 筆。
+            </small>
+        </div>
+        <hr>
+        <div class="input-group">
             <label>🏷️ 主題分類與索書號（4.5）</label>
             <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
                 <select id="categorySelect" style="min-width:170px; padding:8px; border:1px solid #ccc; border-radius:5px;" onchange="fillCategoryForm(this.value)"></select>
@@ -973,7 +984,7 @@
 
 <script>
     // 資料以伺服器端的 SQLite 為準；前端只保留本次操作所需的快取。
-    let config = { classes: [] };
+    let config = { classes: [], reportPageSize: 20 };
     // 園所全稱：報表／清冊列印表頭使用（拆成兩行，與 server.py 的 SCHOOL_NAME_LINES 一致）
     const SCHOOL_NAME_LINES = [
         '國防部海軍司令部海育員工子女非營利幼兒園',
@@ -1014,7 +1025,10 @@
     }
 
     function applyState(state) {
-        config = { classes: (state.libConfig && state.libConfig.classes) || [] };
+        config = {
+            classes: (state.libConfig && state.libConfig.classes) || [],
+            reportPageSize: Math.max(1, Math.min(500, parseInt((state.libConfig && state.libConfig.reportPageSize) || 20, 10) || 20)),
+        };
         members = state.memberDB || {};
         bookDatabase = state.bookDB || {};
         logCount = state.logCount || 0;
@@ -1491,8 +1505,10 @@
         else if (d.act === 'viewMember') openMemberModal(Number(d.id));
     });
 
-    // 報表分頁：改由後端分頁，避免紀錄累積後一次傳輸／渲染上萬列
-    const REPORT_PAGE_SIZE = 100;
+    // 報表分頁：每頁筆數由系統設定決定（預設 20）。
+    function reportPageSize() {
+        return Math.max(1, Math.min(500, parseInt(config.reportPageSize || 20, 10) || 20));
+    }
     let reportPage = 1, reportPages = 1, reportTotal = 0;
 
     async function renderReportTable() {
@@ -1510,7 +1526,7 @@
             if (schoolYear) qs.set('schoolYear', schoolYear);
             if (dateFrom) qs.set('dateFrom', dateFrom);
             if (dateTo) qs.set('dateTo', dateTo);
-            const data = await api('GET', `/api/logs?page=${reportPage}&pageSize=${REPORT_PAGE_SIZE}${qs.toString() ? '&' + qs.toString() : ''}`);
+            const data = await api('GET', `/api/logs?page=${reportPage}&pageSize=${reportPageSize()}${qs.toString() ? '&' + qs.toString() : ''}`);
             reportPage = data.page;
             reportPages = data.pages;
             reportTotal = data.total;
@@ -2003,9 +2019,7 @@
         return '';
     }
 
-    // 通用預覽表格：每頁 20 筆，分頁模式比照「借閱歷史紀錄」。
-    const PREVIEW_PAGE_SIZE = 20;
-
+    // 通用預覽表格：每頁筆數由系統設定決定（預設 20），分頁模式比照「借閱歷史紀錄」。
     const PREVIEW_TARGETS = {
         reportGeneric: {
             head: 'reportGenericHead', body: 'reportGenericBody',
@@ -2063,7 +2077,8 @@
         const colSpan = Math.max(1, columns.length);
         const flat = previewFlatRows(data);
         const total = flat.length;
-        const pages = Math.max(1, Math.ceil(total / PREVIEW_PAGE_SIZE));
+        const pageSize = reportPageSize();
+        const pages = Math.max(1, Math.ceil(total / pageSize));
         const current = Math.min(Math.max(1, page || 1), pages);
         previewState[prefix] = { data, page: current };
 
@@ -2071,8 +2086,8 @@
         const dataRow = (r) => '<tr>' + columns.map((_, i) => '<td>' + escapeHtml(r[i] == null ? '' : String(r[i])) + '</td>').join('') + '</tr>';
         let html = '';
         let lastGroup = null;
-        const start = (current - 1) * PREVIEW_PAGE_SIZE;
-        flat.slice(start, start + PREVIEW_PAGE_SIZE).forEach(item => {
+        const start = (current - 1) * pageSize;
+        flat.slice(start, start + pageSize).forEach(item => {
             if (item.group !== null && item.group !== lastGroup) {
                 html += '<tr class="preview-group-row"><td colspan="' + colSpan + '" style="font-weight:bold; background:#f3f6f8;">'
                     + escapeHtml(item.group) + '（' + item.groupTotal + ' 筆）</td></tr>';
@@ -2841,7 +2856,7 @@
         if(pageId === 'classPage') { loadMemberAccounts(); populateMemberQRClass(); }
         if(pageId === 'managePage') { refreshManageBooks(); return; }
         if(pageId === 'loanPage') focusGunInput();
-        if(pageId === 'configPage') { loadRecoverySettings(); renderAuditTable(); loadBackupSettings(); loadCategories(); loadSecurityQuestion(); }
+        if(pageId === 'configPage') { loadRecoverySettings(); loadReportDisplaySettings(); renderAuditTable(); loadBackupSettings(); loadCategories(); loadSecurityQuestion(); }
         if(pageId === 'reportPage') {
             reportPage = 1;
             showLogReportMode();
@@ -3661,6 +3676,34 @@
             await api('PUT', '/api/password', { password: result.password });
             alert('✅ 密碼已更新，下次登入請使用新密碼');
         } catch (err) { alert('❌ ' + err.message); }
+    }
+
+    async function loadReportDisplaySettings() {
+        const input = document.getElementById('reportPageSizeInput');
+        if (!input) return;
+        input.value = reportPageSize();
+        try {
+            const data = await api('GET', '/api/settings/report-display');
+            config.reportPageSize = data.pageSize || reportPageSize();
+            input.value = config.reportPageSize;
+        } catch (err) { /* 讀取失敗時沿用目前設定值 */ }
+    }
+
+    async function saveReportDisplaySettings() {
+        const input = document.getElementById('reportPageSizeInput');
+        const size = parseInt((input || {}).value, 10);
+        if (!Number.isInteger(size) || size < 5 || size > 200) {
+            alert('❌ 每頁筆數需介於 5 到 200 之間');
+            return;
+        }
+        try {
+            const data = await api('PUT', '/api/settings/report-display', { pageSize: size });
+            config.reportPageSize = data.pageSize || size;
+            if (input) input.value = config.reportPageSize;
+            alert('✅ 已儲存：報表每頁 ' + config.reportPageSize + ' 筆');
+        } catch (err) {
+            alert('❌ ' + err.message);
+        }
     }
 
     async function loadRecoverySettings() {

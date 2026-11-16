@@ -924,8 +924,14 @@ def build_state(conn):
         books[r["barcode"]] = book
 
     log_count = conn.execute("SELECT COUNT(*) FROM loan_logs").fetchone()[0]
+    try:
+        report_page_size = int(get_setting(conn, "report_page_size", "20"))
+    except (TypeError, ValueError):
+        report_page_size = 20
+    if report_page_size < 1 or report_page_size > 500:
+        report_page_size = 20
     return {
-        "libConfig": {"classes": classes},
+        "libConfig": {"classes": classes, "reportPageSize": report_page_size},
         "memberDB": member_db,
         "bookDB": books,
         "logCount": log_count,
@@ -2056,6 +2062,13 @@ class Handler(SimpleHTTPRequestHandler):
                     return self.api_recovery_settings_get(conn)
                 if method == "PUT":
                     return self.api_recovery_settings_put(conn)
+
+            if path == "/api/settings/report-display":
+                require_permission(conn, token, "config")
+                if method == "GET":
+                    return self.api_report_display_get(conn)
+                if method == "PUT":
+                    return self.api_report_display_put(conn, token)
 
             if path == "/api/settings/backup":
                 require_admin(conn, token)
@@ -5464,6 +5477,32 @@ class Handler(SimpleHTTPRequestHandler):
         log_audit(conn, "本機復原碼重設", None, "共用管理員",
                   detail="以復原碼重設共用管理員密碼", ip=ip)
         return self.send_json({"ok": True})
+
+    def api_report_display_get(self, conn):
+        try:
+            size = int(get_setting(conn, "report_page_size", "20"))
+        except (TypeError, ValueError):
+            size = 20
+        if size < 1 or size > 500:
+            size = 20
+        return self.send_json({"pageSize": size})
+
+    def api_report_display_put(self, conn, token):
+        data = self.read_json()
+        try:
+            size = int(data.get("pageSize"))
+        except (TypeError, ValueError):
+            raise ApiError(400, "每頁筆數請輸入數字")
+        if size < 5 or size > 200:
+            raise ApiError(400, "每頁筆數需介於 5 到 200 之間")
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            ("report_page_size", str(size)),
+        )
+        audit_id, audit_name = session_actor(conn, token)
+        log_audit(conn, "修改報表顯示設定", audit_id, audit_name,
+                  detail="每頁 {} 筆".format(size), ip=self.client_address[0])
+        return self.send_json({"ok": True, "pageSize": size})
 
     def api_recovery_settings_get(self, conn):
         cfg = smtp_config(conn)
