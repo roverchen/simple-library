@@ -3347,13 +3347,18 @@ class Handler(SimpleHTTPRequestHandler):
         )
 
     def api_export_members(self, conn, query):
-        """成員清單匯出（pdf／xlsx／csv）：支援 class 篩選。"""
+        """成員清單匯出（pdf／xlsx／csv）：支援 class、schoolYear 篩選。"""
         class_name = (query.get("class") or [""])[0].strip()
+        school_year = (query.get("schoolYear") or query.get("school_year") or [""])[0].strip()
         conditions, params, meta = ["u.active = 1"], [], []
         if class_name:
             conditions.append("c.name = ?")
             params.append(class_name)
             meta.append("班級：{}".format(class_name))
+        if school_year:
+            conditions.append("u.school_year = ?")
+            params.append(school_year)
+            meta.append("學年：{}".format(school_year))
         rows = conn.execute(
             "SELECT u.username, u.name, u.role, u.school_year, u.email, "
             "c.name AS class_name, u.can_loan, u.can_member, u.can_book, u.can_config, u.can_report "
@@ -3362,10 +3367,12 @@ class Handler(SimpleHTTPRequestHandler):
             "ORDER BY CASE WHEN u.class_id IS NULL THEN 1 ELSE 0 END, c.sort_order, c.id, u.id",
             params,
         ).fetchall()
+        role_text = {"admin": "管理員", "root": "Root", "teacher": "老師", "student": "學生"}
         flag = lambda v: "✓" if v else ""
         table = [[
-            r["class_name"] or "", r["username"], r["name"],
-            r["role"], r["school_year"] or "", r["email"] or "",
+            r["username"], r["name"],
+            role_text.get((r["role"] or "").strip(), r["role"] or ""),
+            r["school_year"] or "", r["class_name"] or "", r["email"] or "",
             flag(r["can_loan"]), flag(r["can_member"]), flag(r["can_book"]),
             flag(r["can_config"]), flag(r["can_report"]),
         ] for r in rows]
@@ -3373,10 +3380,10 @@ class Handler(SimpleHTTPRequestHandler):
         meta.append("共 {} 位".format(len(rows)))
         self._send_table_export(
             self._export_format(query), "成員清單", meta,
-            ["班級", "帳號", "姓名", "角色", "學年", "Email",
+            ["帳號", "姓名", "角色", "學年", "班級", "Email",
              "可借書", "可管成員", "可圖書管理", "可系統設定", "可報表"],
             table,
-            widths=[0.10, 0.09, 0.11, 0.09, 0.07, 0.20, 0.07, 0.09, 0.10, 0.10, 0.08],
+            widths=[0.09, 0.11, 0.09, 0.07, 0.10, 0.20, 0.07, 0.09, 0.10, 0.10, 0.08],
             landscape=True, base="成員清單",
         )
 

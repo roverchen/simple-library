@@ -1892,7 +1892,7 @@
         { label: '👶 全園學生條碼名冊 (QR)', url: () => '/api/report/members-qr.pdf' + qrDateQS() },
         { label: '👩‍🏫 全園老師條碼名冊 (QR)', url: () => '/api/report/teachers-qr.pdf' + qrDateQS() },
         { label: '📚 館藏清單', url: () => booksExportQS('/api/export/books') },
-        { label: '👥 成員清單', url: () => '/api/export/members' },
+        { label: '👥 成員清單', url: () => '/api/export/members' + membersExportQS() },
         { label: '🔖 預約清單', url: () => '/api/export/reservations' },
     ];
 
@@ -2003,7 +2003,7 @@
             case 'membersQr': return withJson('/api/report/members-qr.pdf' + qrDateQS());
             case 'teachersQr': return withJson('/api/report/teachers-qr.pdf' + qrDateQS());
             case 'booksExport': return withJson(booksExportQS('/api/export/books'));
-            case 'membersExport': return withJson('/api/export/members');
+            case 'membersExport': return withJson('/api/export/members' + membersExportQS());
             case 'reservations': return withJson('/api/export/reservations');
         }
         return '';
@@ -2249,6 +2249,36 @@
         }
     }
 
+    function membersExportQS() {
+        const cls = (document.getElementById('membersClassFilter') || {}).value || '';
+        const yr = ((document.getElementById('membersYearFilter') || {}).value || '').trim();
+        const qs = new URLSearchParams();
+        if (cls) qs.set('class', cls);
+        if (yr) qs.set('schoolYear', yr);
+        const str = qs.toString();
+        return str ? ('?' + str) : '';
+    }
+
+    function ensureMembersFilters() {
+        const row = document.getElementById('reportGenericQueryRow');
+        if (!row) return;
+        let box = document.getElementById('membersFiltersBox');
+        if (!box) {
+            box = document.createElement('div');
+            box.id = 'membersFiltersBox';
+            box.style.cssText = 'display:flex; gap:8px; flex-wrap:wrap; align-items:center;';
+            box.innerHTML =
+                '<select id="membersClassFilter" style="padding:8px; border:1px solid #ccc; border-radius:5px; min-width:140px;"><option value="">（全部班級）</option></select>' +
+                '<input id="membersYearFilter" type="text" placeholder="學年 (如: 115)" style="padding:8px; border:1px solid #ccc; border-radius:5px; width:120px;">';
+            const btn = document.getElementById('reportGenericQueryBtn');
+            if (btn) row.insertBefore(box, btn); else row.appendChild(box);
+            const sel = document.getElementById('membersClassFilter');
+            if (sel && config.classes && config.classes.length) {
+                sel.innerHTML = '<option value="">（全部班級）</option>' + config.classes.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+            }
+        }
+    }
+
     function applyReportTabVariant(tab) {
         const key = tab.key;
         if (key === 'overdue' || key === 'overdueReturned') {
@@ -2270,6 +2300,9 @@
         const qrBox = document.getElementById('qrDateFilterBox');
         if (qrBox) qrBox.style.display = (['inventoryQr','membersQr','teachersQr'].includes(key)) ? 'flex' : 'none';
         if (['inventoryQr','membersQr','teachersQr'].includes(key)) ensureQrDateFilter();
+        const membersBox = document.getElementById('membersFiltersBox');
+        if (membersBox) membersBox.style.display = (key === 'membersExport') ? 'flex' : 'none';
+        if (key === 'membersExport') ensureMembersFilters();
         if (['inventoryAll', 'inventoryScrap', 'checkedOut', 'issues'].includes(key)) {
             const dated = key === 'inventoryAll' || key === 'inventoryScrap';
             const titles = {
