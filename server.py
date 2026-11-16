@@ -2973,9 +2973,16 @@ class Handler(SimpleHTTPRequestHandler):
 
     def api_report_callno_catalog_pdf(self, conn, query):
         """索書號清冊：以索書號排序的書籍清冊（僅含有索書號之書籍）。"""
+        call_no_filter = (query.get("callNo") or query.get("call_no") or [""])[0].strip()
+        conditions = ["call_no != ''"]
+        params = []
+        if call_no_filter:
+            conditions.append("call_no LIKE ?")
+            params.append("%" + call_no_filter + "%")
         rows = conn.execute(
             "SELECT asset_id, title, call_no, category, status, loaned_to, loan_class, due_at "
-            "FROM books WHERE call_no != '' ORDER BY call_no, asset_id"
+            "FROM books WHERE " + " AND ".join(conditions) + " ORDER BY call_no, asset_id",
+            params,
         ).fetchall()
         table = []
         for r in rows:
@@ -2989,6 +2996,8 @@ class Handler(SimpleHTTPRequestHandler):
             "列印時間：{}".format(datetime.now().strftime("%Y/%m/%d %H:%M")),
             "共 {} 筆".format(len(rows)),
         ]
+        if call_no_filter:
+            meta.insert(1, "索書號：{}".format(call_no_filter))
         self._send_table_export(
             self._export_format(query), "索書號清冊", meta,
             ["索書號", "財產編號", "書名", "主題分類", "狀態", "班級", "借閱人", "應還日期"], table,

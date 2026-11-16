@@ -1879,7 +1879,7 @@
         { label: '⚠️ 爭議／遺失／修繕清冊', url: () => '/api/report/issues.pdf' },
         { label: '📊 出版社統計', url: () => '/api/report/publisher-stats.pdf' },
         { label: '📚 全圖名冊', url: () => '/api/report/full-catalog.pdf' + fullCatalogQS() },
-        { label: '🔤 索書號清冊', url: () => '/api/report/callno-catalog.pdf' },
+        { label: '🔤 索書號清冊', url: () => '/api/report/callno-catalog.pdf' + callnoQS() },
         { label: '📈 全園閱讀歷程統計', url: () => yearStatsExportQS() || '/api/report/stats.pdf' },
         { label: '📖 個人閱讀歷程', url: () => '/api/report/member-history.pdf?' + memberHistoryParams().toString() },
         { label: '📱 指令條碼名冊', url: () => '/api/report/command-codes.pdf' },
@@ -1992,7 +1992,7 @@
             case 'issues': return withJson('/api/report/issues.pdf');
             case 'publisher': return withJson('/api/report/publisher-stats.pdf');
             case 'fullCatalog': return withJson('/api/report/full-catalog.pdf' + fullCatalogQS());
-            case 'callno': return withJson('/api/report/callno-catalog.pdf');
+            case 'callno': return withJson('/api/report/callno-catalog.pdf' + callnoQS());
             case 'commands': return withJson('/api/report/command-codes.pdf');
             case 'inventoryQr': return withJson('/api/report/inventory-qr.pdf');
             case 'membersQr': return withJson('/api/report/members-qr.pdf');
@@ -2187,6 +2187,28 @@
         }
     }
 
+    function callnoQS() {
+        const v = (document.getElementById('callnoFilterInput') || {}).value || '';
+        const qs = new URLSearchParams();
+        if (v.trim()) qs.set('callNo', v.trim());
+        const str = qs.toString();
+        return str ? ('?' + str) : '';
+    }
+
+    function ensureCallnoFilter() {
+        const row = document.getElementById('reportGenericQueryRow');
+        if (!row) return;
+        let box = document.getElementById('callnoFilterBox');
+        if (!box) {
+            box = document.createElement('div');
+            box.id = 'callnoFilterBox';
+            box.style.cssText = 'display:flex; gap:8px; flex-wrap:wrap; align-items:center;';
+            box.innerHTML = '<input id="callnoFilterInput" type="text" placeholder="索書號（留空為全部）" style="padding:8px; border:1px solid #ccc; border-radius:5px; min-width:180px;">';
+            const btn = document.getElementById('reportGenericQueryBtn');
+            if (btn) row.insertBefore(box, btn); else row.appendChild(box);
+        }
+    }
+
     function applyReportTabVariant(tab) {
         const key = tab.key;
         if (key === 'overdue' || key === 'overdueReturned') {
@@ -2202,6 +2224,9 @@
         const fcBox = document.getElementById('fullCatalogFilters');
         if (fcBox) fcBox.style.display = (key === 'fullCatalog') ? 'flex' : 'none';
         if (key === 'fullCatalog') { ensureFullCatalogFilters(); populateFullCatalogFilters(); }
+        const callnoBox = document.getElementById('callnoFilterBox');
+        if (callnoBox) callnoBox.style.display = (key === 'callno') ? 'flex' : 'none';
+        if (key === 'callno') ensureCallnoFilter();
         if (['inventoryAll', 'inventoryScrap', 'checkedOut', 'issues'].includes(key)) {
             const dated = key === 'inventoryAll' || key === 'inventoryScrap';
             const titles = {
