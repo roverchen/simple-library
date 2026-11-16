@@ -3320,7 +3320,7 @@ class Handler(SimpleHTTPRequestHandler):
         where_sql = (" WHERE " + " AND ".join(conditions)) if conditions else ""
         rows = conn.execute(
             "SELECT asset_id, title, category, isbn, publisher, source, "
-            "status, purchase_date, keeper, remarks, price "
+            "status, purchase_date, keeper, remarks "
             "FROM books" + where_sql + " ORDER BY source, barcode",
             params,
         ).fetchall()
@@ -3328,7 +3328,6 @@ class Handler(SimpleHTTPRequestHandler):
             r["asset_id"], r["title"], r["category"] or "",
             r["isbn"] or "", r["publisher"] or "", r["source"] or "", r["status"],
             r["purchase_date"] or "", r["keeper"] or "", r["remarks"] or "",
-            r["price"] if r["price"] is not None else "",
         ] for r in rows]
         # 依來源分組：PDF 依來源分段、xlsx 每來源一個工作表、CSV 以來源標題分隔
         grouped = {}
@@ -3340,9 +3339,9 @@ class Handler(SimpleHTTPRequestHandler):
         self._send_table_export(
             self._export_format(query), "館藏清單", meta,
             ["財產編號", "書名", "主題分類", "ISBN", "出版社", "來源",
-             "狀態", "購入日期", "保管人", "備註", "單價"],
+             "狀態", "購入日期", "保管人", "備註"],
             table,
-            widths=[0.09, 0.22, 0.09, 0.11, 0.11, 0.07, 0.06, 0.08, 0.08, 0.09, 0.05],
+            widths=[0.10, 0.24, 0.10, 0.12, 0.12, 0.08, 0.07, 0.09, 0.09, 0.10],
             landscape=True, base="館藏清單", groups=groups,
         )
 
