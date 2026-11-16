@@ -1878,7 +1878,7 @@
         { label: '📤 已借出清單', url: () => '/api/report/checked-out.pdf' },
         { label: '⚠️ 爭議／遺失／修繕清冊', url: () => '/api/report/issues.pdf' },
         { label: '📊 出版社統計', url: () => '/api/report/publisher-stats.pdf' },
-        { label: '📚 全圖名冊', url: () => '/api/report/full-catalog.pdf' },
+        { label: '📚 全圖名冊', url: () => '/api/report/full-catalog.pdf' + fullCatalogQS() },
         { label: '🔤 索書號清冊', url: () => '/api/report/callno-catalog.pdf' },
         { label: '📈 全園閱讀歷程統計', url: () => yearStatsExportQS() || '/api/report/stats.pdf' },
         { label: '📖 個人閱讀歷程', url: () => '/api/report/member-history.pdf?' + memberHistoryParams().toString() },
@@ -1991,7 +1991,7 @@
             case 'checkedOut': return withJson('/api/report/checked-out.pdf');
             case 'issues': return withJson('/api/report/issues.pdf');
             case 'publisher': return withJson('/api/report/publisher-stats.pdf');
-            case 'fullCatalog': return withJson('/api/report/full-catalog.pdf');
+            case 'fullCatalog': return withJson('/api/report/full-catalog.pdf' + fullCatalogQS());
             case 'callno': return withJson('/api/report/callno-catalog.pdf');
             case 'commands': return withJson('/api/report/command-codes.pdf');
             case 'inventoryQr': return withJson('/api/report/inventory-qr.pdf');
@@ -2146,6 +2146,47 @@
         }
     }
 
+    function fullCatalogQS() {
+        const cat = (document.getElementById('fullCatalogCategoryFilter') || {}).value || '';
+        const src = (document.getElementById('fullCatalogSourceFilter') || {}).value || '';
+        const qs = new URLSearchParams();
+        if (cat) qs.set('category', cat);
+        if (src) qs.set('source', src);
+        const str = qs.toString();
+        return str ? ('?' + str) : '';
+    }
+
+    function populateFullCatalogFilters() {
+        const catSel = document.getElementById('fullCatalogCategoryFilter');
+        const srcSel = document.getElementById('fullCatalogSourceFilter');
+        if (!catSel || !srcSel) return;
+        const cats = Array.from(new Set(Object.values(bookDatabase || {}).map(b => (b.category || '').trim()).filter(Boolean))).sort();
+        const srcs = Array.from(new Set(Object.values(bookDatabase || {}).map(b => (b.source || '').trim()).filter(Boolean))).sort();
+        const keepCat = catSel.value;
+        const keepSrc = srcSel.value;
+        catSel.innerHTML = '<option value="">（全部主題分類）</option>' + cats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+        srcSel.innerHTML = '<option value="">（全部來源）</option>' + srcs.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+        catSel.value = keepCat;
+        srcSel.value = keepSrc;
+    }
+
+    function ensureFullCatalogFilters() {
+        const row = document.getElementById('reportGenericQueryRow');
+        if (!row) return;
+        let box = document.getElementById('fullCatalogFilters');
+        if (!box) {
+            box = document.createElement('div');
+            box.id = 'fullCatalogFilters';
+            box.style.cssText = 'display:flex; gap:8px; flex-wrap:wrap; align-items:center;';
+            box.innerHTML =
+                '<select id="fullCatalogCategoryFilter" style="padding:8px; border:1px solid #ccc; border-radius:5px; min-width:150px;"></select>' +
+                '<select id="fullCatalogSourceFilter" style="padding:8px; border:1px solid #ccc; border-radius:5px; min-width:150px;"></select>';
+            const btn = document.getElementById('reportGenericQueryBtn');
+            if (btn) row.insertBefore(box, btn); else row.appendChild(box);
+            populateFullCatalogFilters();
+        }
+    }
+
     function applyReportTabVariant(tab) {
         const key = tab.key;
         if (key === 'overdue' || key === 'overdueReturned') {
@@ -2158,6 +2199,9 @@
             if (qBtn) qBtn.textContent = returned ? '🔍 查詢逾期已還清冊' : '🔍 查詢逾期清單';
             showReportEl('overdueQueryBtn', true, 'inline-block');
         }
+        const fcBox = document.getElementById('fullCatalogFilters');
+        if (fcBox) fcBox.style.display = (key === 'fullCatalog') ? 'flex' : 'none';
+        if (key === 'fullCatalog') { ensureFullCatalogFilters(); populateFullCatalogFilters(); }
         if (['inventoryAll', 'inventoryScrap', 'checkedOut', 'issues'].includes(key)) {
             const dated = key === 'inventoryAll' || key === 'inventoryScrap';
             const titles = {

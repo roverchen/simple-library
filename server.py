@@ -2929,18 +2929,29 @@ class Handler(SimpleHTTPRequestHandler):
 
     def api_report_full_catalog_pdf(self, conn, query):
         """全圖名冊：所有書籍（不含管理者相關，即所有館藏書籍），依來源分類。"""
+        category = (query.get("category") or [""])[0].strip()
+        source = (query.get("source") or [""])[0].strip()
+        conditions = []
+        params = []
+        if category:
+            conditions.append("category = ?")
+            params.append(category)
+        if source:
+            conditions.append("source = ?")
+            params.append(source)
+        where_sql = (" WHERE " + " AND ".join(conditions)) if conditions else ""
         rows = conn.execute(
             "SELECT asset_id, title, call_no, category, status, loaned_to, loan_class, due_at, source "
-            "FROM books ORDER BY source, asset_id"
+            "FROM books" + where_sql + " ORDER BY source, asset_id",
+            params,
         ).fetchall()
         table = []
         grouped = {}
         for r in rows:
-            display = display_status(r)
             t = [
-                r["asset_id"] or "", r["title"], r["call_no"] or "",
-                r["category"] or "", display,
-                r["loan_class"] or "", r["loaned_to"] or "", r["due_at"] or "",
+                r["asset_id"] or "", r["title"], r["category"] or "",
+                r["source"] or "未設定", r["loan_class"] or "",
+                r["loaned_to"] or "", r["due_at"] or "",
             ]
             table.append(t)
             grouped.setdefault(r["source"] or "未設定", []).append(t)
@@ -2949,10 +2960,14 @@ class Handler(SimpleHTTPRequestHandler):
             "列印時間：{}".format(datetime.now().strftime("%Y/%m/%d %H:%M")),
             "共 {} 筆".format(len(rows)),
         ]
+        if category:
+            meta.insert(1, "主題分類：{}".format(category))
+        if source:
+            meta.insert(1, "來源：{}".format(source))
         self._send_table_export(
             self._export_format(query), "全圖名冊", meta,
-            ["財產編號", "書名", "索書號", "主題分類", "狀態", "班級", "借閱人", "應還日期"], table,
-            widths=[0.13, 0.22, 0.12, 0.1, 0.08, 0.1, 0.12, 0.13],
+            ["財產編號", "書名", "主題分類", "來源", "班級", "借閱人", "應還日期"], table,
+            widths=[0.14, 0.26, 0.12, 0.1, 0.1, 0.14, 0.14],
             landscape=True, base="全圖名冊", groups=groups,
         )
 
