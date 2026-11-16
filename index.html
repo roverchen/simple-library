@@ -1884,9 +1884,9 @@
         { label: '📈 全園閱讀歷程統計', url: () => yearStatsExportQS() || '/api/report/stats.pdf' },
         { label: '📖 個人閱讀歷程', url: () => '/api/report/member-history.pdf?' + memberHistoryParams().toString() },
         { label: '📱 指令條碼名冊', url: () => '/api/report/command-codes.pdf' },
-        { label: '🏷️ 書籍財產條碼名冊 (QR)', url: () => '/api/report/inventory-qr.pdf' },
-        { label: '👶 全園學生條碼名冊 (QR)', url: () => '/api/report/members-qr.pdf' },
-        { label: '👩‍🏫 全園老師條碼名冊 (QR)', url: () => '/api/report/teachers-qr.pdf' },
+        { label: '🏷️ 書籍財產條碼名冊 (QR)', url: () => '/api/report/inventory-qr.pdf' + qrDateQS() },
+        { label: '👶 全園學生條碼名冊 (QR)', url: () => '/api/report/members-qr.pdf' + qrDateQS() },
+        { label: '👩‍🏫 全園老師條碼名冊 (QR)', url: () => '/api/report/teachers-qr.pdf' + qrDateQS() },
         { label: '📚 館藏清單', url: () => booksExportQS('/api/export/books') },
         { label: '👥 成員清單', url: () => '/api/export/members' },
         { label: '🔖 預約清單', url: () => '/api/export/reservations' },
@@ -1995,9 +1995,9 @@
             case 'fullCatalog': return withJson('/api/report/full-catalog.pdf' + fullCatalogQS());
             case 'callno': return withJson('/api/report/callno-catalog.pdf' + callnoQS());
             case 'commands': return withJson('/api/report/command-codes.pdf');
-            case 'inventoryQr': return withJson('/api/report/inventory-qr.pdf');
-            case 'membersQr': return withJson('/api/report/members-qr.pdf');
-            case 'teachersQr': return withJson('/api/report/teachers-qr.pdf');
+            case 'inventoryQr': return withJson('/api/report/inventory-qr.pdf' + qrDateQS());
+            case 'membersQr': return withJson('/api/report/members-qr.pdf' + qrDateQS());
+            case 'teachersQr': return withJson('/api/report/teachers-qr.pdf' + qrDateQS());
             case 'booksExport': return withJson(booksExportQS('/api/export/books'));
             case 'membersExport': return withJson('/api/export/members');
             case 'reservations': return withJson('/api/export/reservations');
@@ -2210,6 +2210,33 @@
         }
     }
 
+    function qrDateQS() {
+        const from = (document.getElementById('qrDateFrom') || {}).value || '';
+        const to = (document.getElementById('qrDateTo') || {}).value || '';
+        const qs = new URLSearchParams();
+        if (from) qs.set('dateFrom', from);
+        if (to) qs.set('dateTo', to);
+        const str = qs.toString();
+        return str ? ('?' + str) : '';
+    }
+
+    function ensureQrDateFilter() {
+        const row = document.getElementById('reportGenericQueryRow');
+        if (!row) return;
+        let box = document.getElementById('qrDateFilterBox');
+        if (!box) {
+            box = document.createElement('div');
+            box.id = 'qrDateFilterBox';
+            box.style.cssText = 'display:flex; gap:8px; flex-wrap:wrap; align-items:center;';
+            box.innerHTML =
+                '<input id="qrDateFrom" type="date" title="起始日期" style="padding:8px; border:1px solid #ccc; border-radius:5px;">' +
+                '<span style="color:#555;">～</span>' +
+                '<input id="qrDateTo" type="date" title="結束日期" style="padding:8px; border:1px solid #ccc; border-radius:5px;">';
+            const btn = document.getElementById('reportGenericQueryBtn');
+            if (btn) row.insertBefore(box, btn); else row.appendChild(box);
+        }
+    }
+
     function applyReportTabVariant(tab) {
         const key = tab.key;
         if (key === 'overdue' || key === 'overdueReturned') {
@@ -2228,6 +2255,9 @@
         const callnoBox = document.getElementById('callnoFilterBox');
         if (callnoBox) callnoBox.style.display = (key === 'callno') ? 'flex' : 'none';
         if (key === 'callno') ensureCallnoFilter();
+        const qrBox = document.getElementById('qrDateFilterBox');
+        if (qrBox) qrBox.style.display = (['inventoryQr','membersQr','teachersQr'].includes(key)) ? 'flex' : 'none';
+        if (['inventoryQr','membersQr','teachersQr'].includes(key)) ensureQrDateFilter();
         if (['inventoryAll', 'inventoryScrap', 'checkedOut', 'issues'].includes(key)) {
             const dated = key === 'inventoryAll' || key === 'inventoryScrap';
             const titles = {

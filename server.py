@@ -1945,29 +1945,71 @@ class Handler(SimpleHTTPRequestHandler):
                 require_permission(conn, token, "report")
                 fmt = self._export_format(query)
                 if fmt != "pdf":
+                    conditions = ["status <> '報廢'"]
+                    params = []
+                    date_from = (query.get("dateFrom") or [""])[0].strip().replace("-", "/")
+                    date_to = (query.get("dateTo") or [""])[0].strip().replace("-", "/")
+                    if date_from:
+                        m = re.fullmatch(r"(\d{4})/(\d{2})/(\d{2})", date_from)
+                        if not m:
+                            raise ApiError(400, "起始日期格式錯誤（請用 西元/月/日）")
+                        y, mo, d = (int(g) for g in m.groups())
+                        conditions.append("created_at >= ?")
+                        params.append("{:04d}-{:02d}-{:02d} 00:00:00".format(y, mo, d))
+                    if date_to:
+                        m = re.fullmatch(r"(\d{4})/(\d{2})/(\d{2})", date_to)
+                        if not m:
+                            raise ApiError(400, "結束日期格式錯誤（請用 西元/月/日）")
+                        y, mo, d = (int(g) for g in m.groups())
+                        nxt = datetime(y, mo, d) + timedelta(days=1)
+                        conditions.append("created_at < ?")
+                        params.append(nxt.strftime("%Y-%m-%d %H:%M:%S"))
                     rows = [
                         (r["barcode"], r["title"])
                         for r in conn.execute(
-                            "SELECT barcode, title FROM books WHERE status <> '報廢' ORDER BY barcode"
+                            "SELECT barcode, title FROM books WHERE " + " AND ".join(conditions) +
+                            " ORDER BY barcode", params
                         ).fetchall()
                     ]
                     return self._send_table_export(
                         fmt, "書籍財產條碼名冊", [],
                         ["條碼", "書名"], rows, base="書籍財產條碼名冊",
                     )
-                return self.api_report_inventory_qr_pdf(conn)
+                return self.api_report_inventory_qr_pdf(conn, query)
 
             if method == "GET" and path == "/api/report/members-qr.pdf":
                 require_permission(conn, token, "report")
                 fmt = self._export_format(query)
                 if fmt != "pdf":
+                    class_filter = (query.get("class") or [""])[0].strip()
+                    where = "WHERE u.active = 1 AND u.role = 'student'"
+                    params = []
+                    if class_filter:
+                        where += " AND c.name = ?"
+                        params.append(class_filter)
+                    date_from = (query.get("dateFrom") or [""])[0].strip().replace("-", "/")
+                    date_to = (query.get("dateTo") or [""])[0].strip().replace("-", "/")
+                    if date_from:
+                        m = re.fullmatch(r"(\d{4})/(\d{2})/(\d{2})", date_from)
+                        if not m:
+                            raise ApiError(400, "起始日期格式錯誤（請用 西元/月/日）")
+                        y, mo, d = (int(g) for g in m.groups())
+                        where += " AND u.created_at >= ?"
+                        params.append("{:04d}-{:02d}-{:02d} 00:00:00".format(y, mo, d))
+                    if date_to:
+                        m = re.fullmatch(r"(\d{4})/(\d{2})/(\d{2})", date_to)
+                        if not m:
+                            raise ApiError(400, "結束日期格式錯誤（請用 西元/月/日）")
+                        y, mo, d = (int(g) for g in m.groups())
+                        nxt = datetime(y, mo, d) + timedelta(days=1)
+                        where += " AND u.created_at < ?"
+                        params.append(nxt.strftime("%Y-%m-%d %H:%M:%S"))
                     rows = [
                         (r["barcode"], r["name"], r["class_name"] or "")
                         for r in conn.execute(
                             "SELECT u.barcode, u.name, c.name AS class_name "
                             "FROM users u LEFT JOIN classes c ON c.id = u.class_id "
-                            "WHERE u.active = 1 AND u.role = 'student' "
-                            "ORDER BY c.sort_order, c.id, u.name"
+                            + where + " ORDER BY c.sort_order, c.id, u.name", params
                         ).fetchall()
                     ]
                     return self._send_table_export(
@@ -1980,19 +2022,37 @@ class Handler(SimpleHTTPRequestHandler):
                 require_permission(conn, token, "report")
                 fmt = self._export_format(query)
                 if fmt != "pdf":
+                    conditions = ["active = 1", "role = 'teacher'", "barcode <> ''"]
+                    params = []
+                    date_from = (query.get("dateFrom") or [""])[0].strip().replace("-", "/")
+                    date_to = (query.get("dateTo") or [""])[0].strip().replace("-", "/")
+                    if date_from:
+                        m = re.fullmatch(r"(\d{4})/(\d{2})/(\d{2})", date_from)
+                        if not m:
+                            raise ApiError(400, "起始日期格式錯誤（請用 西元/月/日）")
+                        y, mo, d = (int(g) for g in m.groups())
+                        conditions.append("created_at >= ?")
+                        params.append("{:04d}-{:02d}-{:02d} 00:00:00".format(y, mo, d))
+                    if date_to:
+                        m = re.fullmatch(r"(\d{4})/(\d{2})/(\d{2})", date_to)
+                        if not m:
+                            raise ApiError(400, "結束日期格式錯誤（請用 西元/月/日）")
+                        y, mo, d = (int(g) for g in m.groups())
+                        nxt = datetime(y, mo, d) + timedelta(days=1)
+                        conditions.append("created_at < ?")
+                        params.append(nxt.strftime("%Y-%m-%d %H:%M:%S"))
                     rows = [
                         (r["barcode"], r["name"])
                         for r in conn.execute(
-                            "SELECT barcode, name FROM users "
-                            "WHERE active = 1 AND role = 'teacher' AND barcode <> '' "
-                            "ORDER BY barcode"
+                            "SELECT barcode, name FROM users WHERE " + " AND ".join(conditions) +
+                            " ORDER BY barcode", params
                         ).fetchall()
                     ]
                     return self._send_table_export(
                         fmt, "全園老師條碼名冊", [],
                         ["條碼", "姓名"], rows, base="全園老師條碼名冊",
                     )
-                return self.api_report_teachers_qr_pdf(conn)
+                return self.api_report_teachers_qr_pdf(conn, query)
 
             if method == "GET" and path == "/api/audit":
                 require_permission(conn, token, "config")
@@ -3532,32 +3592,42 @@ class Handler(SimpleHTTPRequestHandler):
         # 這裡簡化：只回傳第一頁，實際可擴展
         return pages[0]
 
-    def api_report_inventory_qr_pdf(self, conn):
-        """書籍財產清單條碼名冊（QR）：從 docs/海育 圖書財產(總).xlsx 讀取財產編號。"""
+    def api_report_inventory_qr_pdf(self, conn, query):
+        """書籍財產清單條碼名冊（QR）：從資料庫 books 讀取，依加入系統日期篩選。"""
         import io
-        from openpyxl import load_workbook
         from PIL import Image, ImageDraw, ImageFont
 
-        xlsx_path = "docs/海育 圖書財產(總).xlsx"
-        try:
-            wb = load_workbook(xlsx_path, read_only=True)
-        except FileNotFoundError:
-            raise ApiError(404, "找不到圖書財產名單檔：{}".format(xlsx_path))
-
-        barcodes = []
-        for ws in wb.worksheets:
-            for row in ws.iter_rows(values_only=True):
-                for cell in row:
-                    if isinstance(cell, str) and ("-軍" in cell or "-自" in cell or "-捐" in cell):
-                        barcodes.append(cell.strip())
-
-        if not barcodes:
-            raise ApiError(404, "財產名單中未找到條碼編號")
-
-        # 去重並排序
-        barcodes = sorted(set(barcodes))
-        items = [(b, b) for b in barcodes]
-
+        date_from = (query.get("dateFrom") or [""])[0].strip().replace("-", "/")
+        date_to = (query.get("dateTo") or [""])[0].strip().replace("-", "/")
+        conditions = []
+        params = []
+        if date_from:
+            m = re.fullmatch(r"(\d{4})/(\d{2})/(\d{2})", date_from)
+            if not m:
+                raise ApiError(400, "起始日期格式錯誤（請用 西元/月/日）")
+            y, mo, d = (int(g) for g in m.groups())
+            conditions.append("created_at >= ?")
+            params.append("{:04d}-{:02d}-{:02d} 00:00:00".format(y, mo, d))
+        if date_to:
+            m = re.fullmatch(r"(\d{4})/(\d{2})/(\d{2})", date_to)
+            if not m:
+                raise ApiError(400, "結束日期格式錯誤（請用 西元/月/日）")
+            y, mo, d = (int(g) for g in m.groups())
+            nxt = datetime(y, mo, d) + timedelta(days=1)
+            conditions.append("created_at < ?")
+            params.append(nxt.strftime("%Y-%m-%d %H:%M:%S"))
+        where_sql = (" WHERE " + " AND ".join(conditions)) if conditions else ""
+        rows = conn.execute(
+            "SELECT barcode, asset_id, created_at FROM books" + where_sql +
+            " ORDER BY asset_id, barcode", params,
+        ).fetchall()
+        items = []
+        for r in rows:
+            code = (r["asset_id"] or r["barcode"] or "").strip()
+            if code:
+                items.append((code, code))
+        if not items:
+            raise ApiError(404, "期間內沒有可列印的財產條碼")
         body = self._make_qr_label_pdf(items, "書籍財產清單條碼名冊", "inventory-qr.pdf")
         self.send_pdf(body, "書籍財產清單條碼名冊-{}.pdf".format(
             datetime.now().strftime("%Y%m%d-%H%M")))
@@ -3573,6 +3643,23 @@ class Handler(SimpleHTTPRequestHandler):
         if class_filter:
             where += " AND c.name = ?"
             params.append(class_filter)
+        date_from = (query.get("dateFrom") or [""])[0].strip().replace("-", "/")
+        date_to = (query.get("dateTo") or [""])[0].strip().replace("-", "/")
+        if date_from:
+            m = re.fullmatch(r"(\d{4})/(\d{2})/(\d{2})", date_from)
+            if not m:
+                raise ApiError(400, "起始日期格式錯誤（請用 西元/月/日）")
+            y, mo, d = (int(g) for g in m.groups())
+            where += " AND u.created_at >= ?"
+            params.append("{:04d}-{:02d}-{:02d} 00:00:00".format(y, mo, d))
+        if date_to:
+            m = re.fullmatch(r"(\d{4})/(\d{2})/(\d{2})", date_to)
+            if not m:
+                raise ApiError(400, "結束日期格式錯誤（請用 西元/月/日）")
+            y, mo, d = (int(g) for g in m.groups())
+            nxt = datetime(y, mo, d) + timedelta(days=1)
+            where += " AND u.created_at < ?"
+            params.append(nxt.strftime("%Y-%m-%d %H:%M:%S"))
         rows = conn.execute(
             "SELECT u.username, u.barcode, u.name, c.name AS class_name, c.sort_order, c.id "
             "FROM users u LEFT JOIN classes c ON c.id = u.class_id "
@@ -3661,15 +3748,33 @@ class Handler(SimpleHTTPRequestHandler):
         body = buf.getvalue()
         self.send_pdf(body, "全園學生條碼名冊-{}.pdf".format(datetime.now().strftime("%Y%m%d-%H%M")))
 
-    def api_report_teachers_qr_pdf(self, conn):
+    def api_report_teachers_qr_pdf(self, conn, query):
         """全園老師條碼名冊（QR, 不含系統管理者）：從 users 表讀取教職員條碼。"""
         import io
         from PIL import Image, ImageDraw, ImageFont
 
+        conditions = ["active = 1", "role = 'teacher'", "barcode <> ''"]
+        params = []
+        date_from = (query.get("dateFrom") or [""])[0].strip().replace("-", "/")
+        date_to = (query.get("dateTo") or [""])[0].strip().replace("-", "/")
+        if date_from:
+            m = re.fullmatch(r"(\d{4})/(\d{2})/(\d{2})", date_from)
+            if not m:
+                raise ApiError(400, "起始日期格式錯誤（請用 西元/月/日）")
+            y, mo, d = (int(g) for g in m.groups())
+            conditions.append("created_at >= ?")
+            params.append("{:04d}-{:02d}-{:02d} 00:00:00".format(y, mo, d))
+        if date_to:
+            m = re.fullmatch(r"(\d{4})/(\d{2})/(\d{2})", date_to)
+            if not m:
+                raise ApiError(400, "結束日期格式錯誤（請用 西元/月/日）")
+            y, mo, d = (int(g) for g in m.groups())
+            nxt = datetime(y, mo, d) + timedelta(days=1)
+            conditions.append("created_at < ?")
+            params.append(nxt.strftime("%Y-%m-%d %H:%M:%S"))
         rows = conn.execute(
-            "SELECT barcode, name FROM users "
-            "WHERE active = 1 AND role = 'teacher' AND barcode <> '' "
-            "ORDER BY barcode"
+            "SELECT barcode, name FROM users WHERE " + " AND ".join(conditions) +
+            " ORDER BY barcode", params,
         ).fetchall()
         teachers = [(r["barcode"], r["name"]) for r in rows]
 
