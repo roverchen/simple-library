@@ -2354,8 +2354,10 @@ class Handler(SimpleHTTPRequestHandler):
             )
             params.extend([like, like, like, like, like])
         if isbn:
-            conds.append("isbn LIKE ?")
-            params.append("%" + isbn + "%")
+            norm = "".join(ch for ch in isbn if ch.isdigit())
+            if norm:
+                conds.append("REPLACE(isbn, '-', '') LIKE ?")
+                params.append("%" + norm + "%")
         if publisher:
             conds.append("publisher = ?")
             params.append(publisher)
@@ -3306,9 +3308,11 @@ class Handler(SimpleHTTPRequestHandler):
             params.extend([like] * 5)
             meta.append("關鍵字：{}".format(keyword))
         if isbn:
-            conditions.append("isbn LIKE ?")
-            params.append("%" + isbn + "%")
-            meta.append("ISBN：{}".format(isbn))
+            norm = "".join(ch for ch in isbn if ch.isdigit())
+            if norm:
+                conditions.append("REPLACE(isbn, '-', '') LIKE ?")
+                params.append("%" + norm + "%")
+                meta.append("ISBN：{}".format(isbn))
         if status:
             conditions.append("status = ?")
             params.append(status)
