@@ -328,26 +328,6 @@
         <div id="queryStats" class="query-stats" style="display:none;"></div>
         <div id="queryResults" style="color:#666; margin-top:10px;">請輸入關鍵字或選擇出版社，或留空列出全部館藏。</div>
 
-        <div id="queryHistorySection">
-        <hr style="margin:22px 0; border:none; border-top:1px solid #e0e0e0;">
-        <h3>📖 借還紀錄明細（已歸還歷史紀錄）</h3>
-        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
-            <select id="queryHistoryClass" onchange="populateQueryHistoryMembers()" style="padding:8px; border-radius:5px; border:1px solid #ccc; min-width:130px;"></select>
-            <select id="queryHistoryMember" style="padding:8px; border-radius:5px; border:1px solid #ccc; min-width:130px;"></select>
-            <input type="text" id="queryHistoryYear" placeholder="學年 (如: 115)" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:130px;">
-            <input type="date" id="queryHistoryDateFrom" style="padding:8px; border-radius:5px; border:1px solid #ccc;" title="起始日期">
-            <input type="date" id="queryHistoryDateTo" style="padding:8px; border-radius:5px; border:1px solid #ccc;" title="結束日期">
-            <button onclick="runHistoryQuery()" style="padding:10px; background:var(--primary); color:white; border:none; border-radius:5px;">📖 查詢紀錄</button>
-            <button onclick="downloadQueryHistoryReport('pdf')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 明細 PDF</button>
-            <button onclick="downloadQueryHistoryReport('xlsx')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ xlsx</button>
-            <button onclick="downloadQueryHistoryReport('csv')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ CSV</button>
-        </div>
-        <div id="queryHistorySummary" style="color:#666; margin-bottom:6px;"></div>
-        <table>
-            <thead><tr><th>時間</th><th>書名</th><th>財產編號</th><th>動作</th></tr></thead>
-            <tbody id="queryHistoryBody"><tr><td colspan="4" style="color:#666;">請選擇班級與姓名後查詢</td></tr></tbody>
-        </table>
-        </div>
     </div>
 
     <div id="loanPage" class="page">
@@ -652,6 +632,27 @@
     <div id="reportPage" class="page">
 
         <div id="reportTabs" class="no-print"></div>
+
+        <div id="queryHistorySection" style="margin-top:20px;">
+        <hr style="margin:22px 0; border:none; border-top:1px solid #e0e0e0;">
+        <h3>📖 借還紀錄明細（已歸還歷史紀錄）</h3>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
+            <select id="queryHistoryClass" onchange="populateQueryHistoryMembers()" style="padding:8px; border-radius:5px; border:1px solid #ccc; min-width:130px;"></select>
+            <select id="queryHistoryMember" style="padding:8px; border-radius:5px; border:1px solid #ccc; min-width:130px;"></select>
+            <input type="text" id="queryHistoryYear" placeholder="學年 (如: 115)" style="padding:8px; border-radius:5px; border:1px solid #ccc; width:130px;">
+            <input type="date" id="queryHistoryDateFrom" style="padding:8px; border-radius:5px; border:1px solid #ccc;" title="起始日期">
+            <input type="date" id="queryHistoryDateTo" style="padding:8px; border-radius:5px; border:1px solid #ccc;" title="結束日期">
+            <button onclick="runHistoryQuery()" style="padding:10px; background:var(--primary); color:white; border:none; border-radius:5px;">📖 查詢紀錄</button>
+            <button onclick="downloadQueryHistoryReport('pdf')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ 明細 PDF</button>
+            <button onclick="downloadQueryHistoryReport('xlsx')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ xlsx</button>
+            <button onclick="downloadQueryHistoryReport('csv')" style="padding:10px; background:#607d8b; color:white; border:none; border-radius:5px;">⬇️ CSV</button>
+        </div>
+        <div id="queryHistorySummary" style="color:#666; margin-bottom:6px;"></div>
+        <table>
+            <thead><tr><th>時間</th><th>書名</th><th>財產編號</th><th>動作</th></tr></thead>
+            <tbody id="queryHistoryBody"><tr><td colspan="4" style="color:#666;">請選擇班級與姓名後查詢</td></tr></tbody>
+        </table>
+        </div>
 
         <div id="logReportSection">
             <h3>📊 借閱歷史紀錄</h3>
@@ -1931,6 +1932,7 @@
         { key: 'callno', label: '🔤 存放櫃位清冊', exportLabel: '🔤 存放櫃位清冊' },
         { key: 'yearStats', label: '📈 全園閱讀歷程統計', section: 'yearStatsSection', exportLabel: '📈 全園閱讀歷程統計' },
         { key: 'memberHistory', label: '📖 個人閱讀歷程', section: 'memberHistorySection', exportLabel: '📖 個人閱讀歷程' },
+        { key: 'queryHistory', label: '📖 借還紀錄明細', section: 'queryHistorySection' },
         { key: 'commands', label: '📱 指令條碼名冊', exportLabel: '📱 指令條碼名冊' },
         { key: 'inventoryQr', label: '🏷️ 書籍財產條碼名冊 (QR)', exportLabel: '🏷️ 書籍財產條碼名冊 (QR)' },
         { key: 'membersQr', label: '👶 全園學生條碼名冊 (QR)', exportLabel: '👶 全園學生條碼名冊 (QR)' },
@@ -2398,7 +2400,7 @@
         const tab = reportTabDef(key);
         activeReportTab = tab.key;
         ['logReportSection', 'yearStatsSection', 'memberHistorySection', 'overdueReportSection',
-         'inventoryReportSection', 'tagReportSection', 'exportCenterSection'].forEach(id => showReportEl(id, false));
+         'inventoryReportSection', 'tagReportSection', 'exportCenterSection', 'queryHistorySection'].forEach(id => showReportEl(id, false));
         showReportEl('reportGenericPanel', false);
         if (tab.section) showReportEl(tab.section, true, 'block');
         isLabelMode = tab.key === 'labels';
@@ -2415,6 +2417,7 @@
         }
         if (tab.key === 'labels') renderQRLabels();
         if (tab.key === 'log') renderReportTable();
+        if (tab.key === 'queryHistory') populateQueryHistoryClasses();
         if (tab.key === 'exportCenter') renderExportCenter();
         if (tab.key === 'overdue' || tab.key === 'overdueReturned') loadOverdueReport();
         if (['inventoryAll', 'inventoryScrap', 'checkedOut', 'issues'].includes(tab.key)) runInventoryPreview();
