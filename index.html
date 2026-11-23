@@ -311,10 +311,8 @@
         <h3 style="margin-top:0;">🔍 館藏查詢</h3>
         <div class="input-group">
             <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                <input type="text" id="queryKeyword" placeholder="輸入書名／財產編號／存放櫃位" autocomplete="off"
+                <input type="text" id="queryKeyword" placeholder="輸入書名／ISBN／財產編號／存放櫃位" autocomplete="off"
                        style="flex:1; min-width:220px;" oninput="scheduleBookQuery()">
-                <input type="text" id="queryIsbn" placeholder="ISBN" autocomplete="off"
-                       style="min-width:160px;" oninput="scheduleBookQuery()">
                 <select id="queryPublisher" style="min-width:140px;" onchange="scheduleBookQuery()"><option value="">全部出版社</option></select>
             </div>
             <small style="color:#666;">輸入關鍵字或選擇出版社即自動查詢；支援直接掃描 ISBN 條碼；相同 ISBN（或書名）的多本實體書會自動彙整。</small>
@@ -1123,8 +1121,7 @@
     async function runBookQuery() {
         const box = document.getElementById('queryResults');
         const kw = ((document.getElementById('queryKeyword') || {}).value || '').trim();
-        const isbn = ((document.getElementById('queryIsbn') || {}).value || '').trim() ||
-            ((document.getElementById('booksExportIsbnFilter') || {}).value || '').trim();
+        const isbn = ((document.getElementById('booksExportIsbnFilter') || {}).value || '').trim();
         const pub = ((document.getElementById('queryPublisher') || {}).value || '').trim();
         box.dataset.loaded = '1';
         box.innerHTML = '<div style="color:#666;">查詢中…</div>';
@@ -1222,7 +1219,6 @@
 
     function clearBookQuery() {
         document.getElementById('queryKeyword').value = '';
-        const qi = document.getElementById('queryIsbn'); if (qi) qi.value = '';
         document.getElementById('queryPublisher').value = '';
         runBookQuery();
     }
