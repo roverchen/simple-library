@@ -367,8 +367,7 @@
             <small style="color:#666;">條碼槍可連續掃描，掃完自動清空並準備下一本。選「📌 預約」時掃描只會建立預約；否則掃描會直接借書／還書。不使用條碼槍時請改用下方相機按鈕。</small>
         </div>
         <div id="loanActionGrid" class="action-grid">
-            <button onclick="setMode('borrow')" class="btn-main btn-borrow">📤 借書／預約</button>
-            <button onclick="setMode('return')" class="btn-main btn-return">📥 還書</button>
+            <button onclick="startLoanScan()" class="btn-main btn-borrow" style="grid-column: span 2;">📷 開始掃描</button>
         </div>
         <div id="reservationSection" style="margin-top:16px;">
             <h3 style="margin:0;">📌 進行中預約</h3>
@@ -3208,6 +3207,22 @@
         if (classes.length) sel.value = classes[0];
     }
 
+    function startLoanScan() {
+        const mode = (document.getElementById('gunMode') || {}).value || 'borrow';
+        if (mode === 'borrow' && !currentLoanMember) {
+            alert("⚠️ 請先選擇借閱人！");
+            return;
+        }
+        if (mode === 'reserve' && !currentLoanMember) {
+            alert("⚠️ 請先選擇成員！");
+            return;
+        }
+        if (mode === 'return') {
+            // 還書不需選成員，直接進入掃描
+        }
+        setMode(mode);
+    }
+
     function setMode(mode) {
         if (mode === 'borrow') {
             if (!currentLoanMember) { alert("⚠️ 請先選擇借閱人！"); return; }
@@ -3223,6 +3238,7 @@
         const title = document.getElementById('scanModeTitle');
         if (mode === 'borrow') title.innerHTML = `<span style="color:var(--primary)">📤 正在借書／預約掃描...</span>`;
         else if (mode === 'return') title.innerHTML = `<span style="color:var(--secondary)">📥 正在還書掃描（無需選成員）...</span>`;
+        else if (mode === 'reserve') title.innerHTML = `<span style="color:var(--primary)">📌 正在預約掃描...</span>`;
 
         document.getElementById('mainContainer').classList.add('scanning-active');
         const wrapper = document.getElementById('reader-wrapper');
