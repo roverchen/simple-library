@@ -2342,7 +2342,7 @@ class Handler(SimpleHTTPRequestHandler):
     # ------------------------------------------------------------------
 
     def api_query_books(self, conn, query):
-        """館藏查詢：關鍵字（書名／ISBN／條碼／財編／索書號）＋出版社篩選，複本彙整。"""
+        """館藏查詢：關鍵字（書名／ISBN／條碼／財編／存放櫃位）＋出版社篩選，複本彙整。"""
         keyword = (query.get("q") or [""])[0].strip()
         publisher = (query.get("publisher") or [""])[0].strip()
         isbn = (query.get("isbn") or [""])[0].strip()
@@ -2995,7 +2995,7 @@ class Handler(SimpleHTTPRequestHandler):
         ]
         self._send_table_export(
             self._export_format(query), "圖書已借出清單", meta,
-            ["財產編號", "書名", "索書號", "班級", "借閱人", "應還日期"], table,
+            ["財產編號", "書名", "存放櫃位", "班級", "借閱人", "應還日期"], table,
             widths=[0.14, 0.3, 0.16, 0.12, 0.12, 0.16],
             base="已借出清單",
         )
@@ -3045,7 +3045,7 @@ class Handler(SimpleHTTPRequestHandler):
         )
 
     def api_report_callno_catalog_pdf(self, conn, query):
-        """索書號清冊：以索書號排序的書籍清冊（僅含有索書號之書籍）。"""
+        """存放櫃位清冊：以存放櫃位排序的書籍清冊（僅有存放櫃位之書籍）。"""
         call_no_filter = (query.get("callNo") or query.get("call_no") or [""])[0].strip()
         conditions = ["call_no != ''"]
         params = []
@@ -3070,12 +3070,12 @@ class Handler(SimpleHTTPRequestHandler):
             "共 {} 筆".format(len(rows)),
         ]
         if call_no_filter:
-            meta.insert(1, "索書號：{}".format(call_no_filter))
+            meta.insert(1, "存放櫃位：{}".format(call_no_filter))
         self._send_table_export(
-            self._export_format(query), "索書號清冊", meta,
-            ["索書號", "財產編號", "書名", "主題分類", "狀態", "班級", "借閱人", "應還日期"], table,
+            self._export_format(query), "存放櫃位清冊", meta,
+            ["存放櫃位", "財產編號", "書名", "主題分類", "狀態", "班級", "借閱人", "應還日期"], table,
             widths=[0.12, 0.13, 0.22, 0.1, 0.08, 0.1, 0.12, 0.13],
-            landscape=True, base="索書號清冊",
+            landscape=True, base="存放櫃位清冊",
         )
 
     def api_report_command_codes_pdf(self, conn):
@@ -3190,7 +3190,7 @@ class Handler(SimpleHTTPRequestHandler):
         ]
         self._send_table_export(
             self._export_format(query), "爭議／遺失／修繕狀態清冊", meta,
-            ["財產編號", "書名", "索書號", "狀態", "班級", "借閱人", "備註", "更新時間"],
+            ["財產編號", "書名", "存放櫃位", "狀態", "班級", "借閱人", "備註", "更新時間"],
             table, widths=[0.12, 0.24, 0.13, 0.08, 0.1, 0.1, 0.13, 0.1], landscape=True,
             base="爭議遺失修繕清冊",
         )
@@ -4527,7 +4527,7 @@ class Handler(SimpleHTTPRequestHandler):
         title = _clean_text(data.get("title"), "書名", 200, required=True)
         asset = _clean_text(data.get("assetId", ""), "財產編號", 64)
         remarks = _clean_text(data.get("remarks") or "", "備註", 500)
-        call_no = _clean_text(data.get("callNo") or data.get("call_no") or "", "索書號", 50)
+        call_no = _clean_text(data.get("callNo") or data.get("call_no") or "", "存放櫃位", 50)
         category = _clean_text(data.get("category") or "", "主題分類", 10)
         valid_codes = {r["code"] for r in conn.execute("SELECT code FROM categories WHERE active = 1")}
         if category and category not in valid_codes:
@@ -4954,7 +4954,7 @@ class Handler(SimpleHTTPRequestHandler):
         wb = Workbook()
         ws = wb.active
         ws.title = "圖書匯入"
-        headers = ["條碼", "書名", "財產編號", "出版社", "單價", "ISBN", "索書號",
+        headers = ["條碼", "書名", "財產編號", "出版社", "單價", "ISBN", "存放櫃位",
                    "來源", "書籍購入日期", "保管人", "確認", "盤點日期", "備註"]
         ws.append(headers)
         ws.append(["B0001", "（範例）好餓的毛毛蟲", "圖0001", "上誼", "280",

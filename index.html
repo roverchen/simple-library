@@ -311,7 +311,7 @@
         <h3 style="margin-top:0;">🔍 館藏查詢</h3>
         <div class="input-group">
             <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                <input type="text" id="queryKeyword" placeholder="輸入書名／財產編號／索書號" autocomplete="off"
+                <input type="text" id="queryKeyword" placeholder="輸入書名／財產編號／存放櫃位" autocomplete="off"
                        style="flex:1; min-width:220px;" oninput="scheduleBookQuery()">
                 <input type="text" id="queryIsbn" placeholder="ISBN" autocomplete="off"
                        style="min-width:160px;" oninput="scheduleBookQuery()">
@@ -406,7 +406,7 @@
 
     <div id="managePage" class="page">
         <div class="input-group">
-            <input type="text" id="bookManageSearchInput" placeholder="🔍 搜尋書名／財產編號／索書號／ISBN 關鍵字" oninput="searchBooks();" style="padding:10px; border:1px solid #ccc; border-radius:8px; font-size:1rem; width:100%;">
+            <input type="text" id="bookManageSearchInput" placeholder="🔍 搜尋書名／財產編號／存放櫃位／ISBN 關鍵字" oninput="searchBooks();" style="padding:10px; border:1px solid #ccc; border-radius:8px; font-size:1rem; width:100%;">
             <label style="display:flex; align-items:center; gap:8px; margin-top:8px; font-size:0.95rem; color:#555; cursor:pointer;">
                 <input type="checkbox" id="bookOnlyReserved" style="width:auto; margin:0;" onchange="searchBooks();"> 只看有預約的書
             </label>
@@ -470,7 +470,7 @@
         </div>
         <hr>
         <div class="input-group">
-            <label>🏷️ 主題分類與索書號（4.5）</label>
+            <label>🏷️ 主題分類（4.5）</label>
             <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
                 <select id="categorySelect" style="min-width:170px; padding:8px; border:1px solid #ccc; border-radius:5px;" onchange="fillCategoryForm(this.value)"></select>
                 <input type="text" id="categoryCode" placeholder="代碼（如 D）" style="padding:8px; border:1px solid #ccc; border-radius:5px; width:110px;">
@@ -481,8 +481,8 @@
             </div>
             <div id="categoryList" style="margin-top:6px; font-size:0.92rem; color:#333;"></div>
             <small style="color:#666; line-height:1.7;">
-                主題分類用於索書號自動產生：[主分類代碼]-[書名首字注音]，例如「自然與科學（D）」＋《好餓的毛毛蟲》＝「D-ㄏ」。
-                建立分類後，於「圖書管理」新增/編輯圖書時選擇分類即可自動產生索書號（可手動更正）。
+                主題分類用於書籍分類；存放櫃位可於圖書管理手動填寫（例如 A-1、B-3）。
+                建立分類後，於「圖書管理」新增/編輯圖書時選擇分類即可。
             </small>
         </div>
         <hr>
@@ -771,7 +771,7 @@
                 <label for="labelPrintMode" style="font-size:0.95rem;">標籤內容：</label>
                 <select id="labelPrintMode" onchange="renderQRLabels()" style="padding:8px; border-radius:5px; border:1px solid #ccc;">
                     <option value="qr">書名 QR Code＋財產編號</option>
-                    <option value="callno">索書號 QR Code</option>
+                    <option value="callno">存放櫃位 QR Code</option>
                 </select>
                 <label for="labelFormat" style="font-size:0.95rem; margin-left:10px;">貼紙格式：</label>
                 <select id="labelFormat" onchange="renderQRLabels()" style="padding:8px; border-radius:5px; border:1px solid #ccc;">
@@ -1435,13 +1435,13 @@
                 });
             });
             if (summary) {
-                let msg = `索書號 QR 標籤：${printable.length} 張`;
+                let msg = `存放櫃位 QR 標籤：${printable.length} 張`;
                 const missing = entries.length - printable.length;
-                if (missing > 0) msg += `；未填索書號 ${missing} 本已略過`;
+                if (missing > 0) msg += `；未填存放櫃位 ${missing} 本已略過`;
                 summary.textContent = msg;
             }
             if (!printable.length) {
-                container.innerHTML = '<div style="color:#666;">目前沒有可列印的索書號，請先於圖書管理填寫索書號。</div>';
+                container.innerHTML = '<div style="color:#666;">目前沒有可列印的存放櫃位，請先於圖書管理填寫存放櫃位。</div>';
             }
             return;
         }
@@ -1717,7 +1717,7 @@
             checkedout: {
                 title: '圖書已借出清單',
                 filter: book => book.status === '借出',
-                columns: ['財產編號', '書名', '索書號', '班級', '借閱人', '應還日期'],
+                columns: ['財產編號', '書名', '存放櫃位', '班級', '借閱人', '應還日期'],
                 widths: [0.14, 0.3, 0.16, 0.12, 0.12, 0.16],
                 cell: book => [book.assetId || book.barcode, book.title, book.callNo || '', book.loanClass || '', book.loanedTo || '', book.dueAt || ''],
                 empty: '目前沒有已借出的書籍。',
@@ -1725,7 +1725,7 @@
             issues: {
                 title: '爭議／遺失／修繕狀態清冊',
                 filter: book => ['遺失', '修繕中', '爭議中'].includes(book.status),
-                columns: ['財產編號', '書名', '索書號', '狀態', '班級', '借閱人', '備註'],
+                columns: ['財產編號', '書名', '存放櫃位', '狀態', '班級', '借閱人', '備註'],
                 widths: [0.13, 0.27, 0.15, 0.09, 0.1, 0.1, 0.16],
                 cell: book => [book.assetId || book.barcode, book.title, book.callNo || '', book.status || '', book.loanClass || '', book.loanedTo || '', book.remarks || ''],
                 empty: '目前沒有遺失、修繕中或爭議中的書籍。',
@@ -1905,7 +1905,7 @@
         { label: '⚠️ 爭議／遺失／修繕清冊', url: () => '/api/report/issues.pdf' },
         { label: '📊 出版社統計', url: () => '/api/report/publisher-stats.pdf' },
         { label: '📚 全圖名冊', url: () => '/api/report/full-catalog.pdf' + fullCatalogQS() },
-        { label: '🔤 索書號清冊', url: () => '/api/report/callno-catalog.pdf' + callnoQS() },
+        { label: '🔤 存放櫃位清冊', url: () => '/api/report/callno-catalog.pdf' + callnoQS() },
         { label: '📈 全園閱讀歷程統計', url: () => yearStatsExportQS() || '/api/report/stats.pdf' },
         { label: '📖 個人閱讀歷程', url: () => '/api/report/member-history.pdf?' + memberHistoryParams().toString() },
         { label: '📱 指令條碼名冊', url: () => '/api/report/command-codes.pdf' },
@@ -1928,7 +1928,7 @@
         { key: 'issues', label: '⚠️ 爭議／遺失／修繕清冊', section: 'inventoryReportSection', exportLabel: '⚠️ 爭議／遺失／修繕清冊' },
         { key: 'publisher', label: '📊 出版社統計', exportLabel: '📊 出版社統計' },
         { key: 'fullCatalog', label: '📚 全圖名冊', exportLabel: '📚 全圖名冊' },
-        { key: 'callno', label: '🔤 索書號清冊', exportLabel: '🔤 索書號清冊' },
+        { key: 'callno', label: '🔤 存放櫃位清冊', exportLabel: '🔤 存放櫃位清冊' },
         { key: 'yearStats', label: '📈 全園閱讀歷程統計', section: 'yearStatsSection', exportLabel: '📈 全園閱讀歷程統計' },
         { key: 'memberHistory', label: '📖 個人閱讀歷程', section: 'memberHistorySection', exportLabel: '📖 個人閱讀歷程' },
         { key: 'commands', label: '📱 指令條碼名冊', exportLabel: '📱 指令條碼名冊' },
@@ -1945,7 +1945,7 @@
     const REPORT_TAB_DESCRIPTIONS = {
         '📊 出版社統計': '依出版社統計館藏數量，支援 PDF／xlsx／CSV 匯出。',
         '📚 全圖名冊': '全館圖書完整名冊，PDF 依來源分段列印。',
-        '🔤 索書號清冊': '依索書號排序的館藏清冊。',
+        '🔤 存放櫃位清冊': '依存放櫃位排序的館藏清冊。',
         '📱 指令條碼名冊': '借書、還書、清除重來等系統指令條碼名冊。',
         '🏷️ 書籍財產條碼名冊 (QR)': '每本書的財產編號 QR 條碼名冊。',
         '👶 全園學生條碼名冊 (QR)': '全園學生帳號 QR 條碼名冊。',
@@ -2239,7 +2239,7 @@
             box = document.createElement('div');
             box.id = 'callnoFilterBox';
             box.style.cssText = 'display:flex; gap:8px; flex-wrap:wrap; align-items:center;';
-            box.innerHTML = '<input id="callnoFilterInput" type="text" placeholder="索書號（留空為全部）" style="padding:8px; border:1px solid #ccc; border-radius:5px; min-width:180px;">';
+            box.innerHTML = '<input id="callnoFilterInput" type="text" placeholder="存放櫃位（留空為全部）" style="padding:8px; border:1px solid #ccc; border-radius:5px; min-width:180px;">';
             const btn = document.getElementById('reportGenericQueryBtn');
             if (btn) row.insertBefore(box, btn); else row.appendChild(box);
         }
@@ -2776,12 +2776,12 @@
                     `<option value="${s}"${book.status === s ? ' selected' : ''}>${s}</option>`).join('')}
                 ${book.status === '借出' ? '<option value="借出" selected>借出（目前借閱中）</option>' : ''}
             </select>`}
-            <label for="bfCategory">主題分類（4.5 索書號自動產生）</label>
-            <select id="bfCategory" data-name="category" onchange="previewCallNo()">
+            <label for="bfCategory">主題分類</label>
+            <select id="bfCategory" data-name="category">
                 <option value="">（未設定分類）</option>
             </select>
-            <label for="bfCallNo">索書號（call_no）</label>
-            <input type="text" id="bfCallNo" data-name="callNo" value="${escapeHtml(book.callNo || '')}" onblur="previewCallNo()">
+            <label for="bfCallNo">存放櫃位</label>
+            <input type="text" id="bfCallNo" data-name="callNo" value="${escapeHtml(book.callNo || '')}" >
             <label for="bfIsbn">ISBN</label>
             <input type="text" id="bfIsbn" data-name="isbn" value="${escapeHtml(book.isbn || '')}">
             <label for="bfPublisher">出版社</label>
@@ -4807,7 +4807,7 @@
             ['publisher', ['出版社']],
             ['price', ['單價']],
             ['isbn', ['ISBN', 'isbn', '國際書號']],
-            ['callNo', ['索書號']],
+            ['callNo', ['存放櫃位']],
             ['source', ['來源']],
             ['purchaseDate', ['書籍購入日期', '購入日期']],
             ['keeper', ['保管人']],
