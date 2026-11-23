@@ -2786,12 +2786,8 @@
             <input type="text" id="bfIsbn" data-name="isbn" value="${escapeHtml(book.isbn || '')}">
             <label for="bfPublisher">出版社</label>
             <input type="text" id="bfPublisher" data-name="publisher" value="${escapeHtml(book.publisher || '')}">
-            <label for="bfPrice">單價（元）</label>
-            <input type="number" id="bfPrice" data-name="price" min="0" step="1" value="${escapeHtml(String(book.price != null ? book.price : 0))}">
-            <label for="bfQuantity">數量（固定 1）</label>
-            <input type="text" id="bfQuantity" data-name="quantity" value="1" readonly>
-            <label for="bfTotalAmount">總金額（元）</label>
-            <input type="number" id="bfTotalAmount" data-name="totalAmount" min="0" step="1" value="${escapeHtml(String(book.totalAmount != null ? book.totalAmount : (book.price != null ? book.price : 0)))}" readonly>
+            <label for="bfPrice">總金額（元）</label>
+            <input type="number" id="bfPrice" data-name="price" min="0" step="1" value="${escapeHtml(String(book.totalAmount != null ? book.totalAmount : (book.price != null ? book.price : 0)))}">
             <label for="bfPurchaseDate">書籍購入日期（民國年，如 115/05/16）</label>
             <input type="text" id="bfPurchaseDate" data-name="purchaseDate" value="${escapeHtml(book.purchaseDate || '')}">
             <label for="bfKeeper">保管人</label>
