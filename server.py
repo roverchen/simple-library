@@ -4872,21 +4872,9 @@ class Handler(SimpleHTTPRequestHandler):
                 "isbn": g["isbn"],
                 "publisher": g.get("publisher", ""),
                 "copyCount": len(copies),
-                "available": sum(1 for c in copies if c["status"] == "在館" and not c["reservationReady"]),
+                "available": sum(1 for c in copies if c["status"] == "在館"),
                 "reservationCount": sum(c["reservationCount"] for c in copies),
                 "reservationReady": any(c["reservationReady"] for c in copies),
-                "copies": copies,
-            })
-        books = []
-        for g in groups.values():
-            copies = g["copies"]
-            books.append({
-                "title": g["title"],
-                "assetId": g["assetId"],
-                "callNo": g["callNo"],
-                "isbn": g["isbn"],
-                "copyCount": len(copies),
-                "available": sum(1 for c in copies if c["status"] == "在館"),
                 "copies": copies,
             })
         return self.send_json({"books": books, "total": len(books)})
