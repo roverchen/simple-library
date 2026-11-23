@@ -2394,7 +2394,7 @@ class Handler(SimpleHTTPRequestHandler):
             g["total"] += 1
             if display == "在館":
                 g["inLibrary"] += 1
-                location = "圖書室"
+                location = (r["call_no"] or "").strip() or "圖書室"
             elif display == "借出":
                 g["loaned"] += 1
                 location = "班級代管（{}）".format(r["loan_class"] or "未指定")
