@@ -4688,8 +4688,8 @@
                     else statusHtml = bookStatusBadge('在館');
                     statusHtml += reservationBadge({ reservationCount: resvCount, reservationReady: resvReady });
                     return `<tr data-act="viewBook" data-id="${escapeHtml(barcode)}" style="cursor:pointer;">
-                    <td>${escapeHtml(b.title)}</td>
                     <td>${escapeHtml(b.assetId)}</td>
+                    <td>${escapeHtml(b.title)}</td>
                     <td>${escapeHtml(b.isbn || '')}</td>
                     <td>${statusHtml}</td></tr>`;
                 }).join('')
