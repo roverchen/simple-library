@@ -416,7 +416,7 @@
         </div>
         <div class="table-container">
             <table id="bookTable">
-                <thead><tr><th>書名</th><th>財產編號</th><th>ISBN</th><th>狀態</th></tr></thead>
+                <thead><tr><th>財產編號</th><th>書名</th><th>ISBN</th><th>狀態</th></tr></thead>
                 <tbody id="bookManageResults"></tbody>
             </table>
         </div>
@@ -3510,8 +3510,8 @@
         tbody.innerHTML = barcodes.map(barcode => {
             const b = bookDatabase[barcode];
             return `<tr data-act="viewBook" data-id="${barcode}" style="cursor:pointer;">
-            <td>${escapeHtml(b.title)}</td>
             <td>${escapeHtml(b.assetId)}</td>
+            <td>${escapeHtml(b.title)}</td>
             <td>${escapeHtml(b.isbn || '')}</td>
             <td>${bookStatusCell(b)}</td>
         </tr>`;
