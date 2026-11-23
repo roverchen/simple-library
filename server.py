@@ -4850,7 +4850,7 @@ class Handler(SimpleHTTPRequestHandler):
         for r in rows:
             key = (r["title"], r["asset_id"])
             if key not in groups:
-                groups[key] = {"title": r["title"], "assetId": r["asset_id"], "callNo": r["call_no"] or "", "isbn": r["isbn"] or "", "copies": []}
+                groups[key] = {"title": r["title"], "assetId": r["asset_id"], "callNo": r["call_no"] or "", "isbn": r["isbn"] or "", "publisher": r["publisher"] or "", "copies": []}
             copy = {
                 "barcode": r["barcode"],
                 "status": r["status"],
@@ -4870,6 +4870,7 @@ class Handler(SimpleHTTPRequestHandler):
                 "assetId": g["assetId"],
                 "callNo": g["callNo"],
                 "isbn": g["isbn"],
+                "publisher": g.get("publisher", ""),
                 "copyCount": len(copies),
                 "available": sum(1 for c in copies if c["status"] == "在館" and not c["reservationReady"]),
                 "reservationCount": sum(c["reservationCount"] for c in copies),
