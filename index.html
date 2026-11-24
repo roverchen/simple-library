@@ -780,11 +780,11 @@
                 </select>
                 <label for="labelFormat" style="font-size:0.95rem; margin-left:10px;">貼紙格式：</label>
                 <select id="labelFormat" onchange="renderQRLabels()" style="padding:8px; border-radius:5px; border:1px solid #ccc;">
-                    <option value="ak308">AK308：3×8 張/A4（預設）</option>
+                    <option value="ak308">AK308：3×8 張/A4</option>
                     <option value="ak307">AK307：3×7 張/A4</option>
                     <option value="ak306">AK306：3×6 張/A4</option>
                     <option value="af414">AF414：4×14 張/A4</option>
-                    <option value="af410">AF410：4×10 張/A4</option>
+                    <option value="af410" selected>AF410：4×10 張/A4（預設）</option>
                 </select>
                 <button onclick="renderQRLabels()" style="padding:8px 12px; background:var(--secondary); color:white; border:none; border-radius:5px;">🔄 重新產生</button>
                 <button onclick="window.print()" style="padding:8px 12px; background:var(--primary); color:white; border:none; border-radius:5px;">🖨️ 套印標籤</button>
@@ -1408,7 +1408,7 @@
         const modeEl = document.getElementById('labelPrintMode');
         const mode = modeEl ? modeEl.value : 'qr';
         const fmtEl = document.getElementById('labelFormat');
-        const fmt = fmtEl ? fmtEl.value : 'ak308';
+        const fmt = fmtEl ? fmtEl.value : 'af410';
         container.innerHTML = '';
         container.setAttribute('data-format', fmt);
 
