@@ -2937,7 +2937,7 @@ class Handler(SimpleHTTPRequestHandler):
                 params.append(roc(date_to, "結束日期"))
         where = " WHERE " + " AND ".join(conds)
         return conn.execute(
-            "SELECT asset_id, title, publisher, price, quantity, purchase_date, keeper, "
+            "SELECT asset_id, title, publisher, price, quantity, total_amount, purchase_date, keeper, "
             "confirm_note, inventory_date, scrap_date, remarks, call_no, loaned_to, status "
             "FROM books" + where + " ORDER BY asset_id, barcode",
             params,
