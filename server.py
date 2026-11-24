@@ -2953,10 +2953,10 @@ class Handler(SimpleHTTPRequestHandler):
         for r in rows:
             price = r["price"] or 0
             qty = r["quantity"] or 1
-            total_amount = price * qty
+            total_amount = (r["total_amount"] if r["total_amount"] is not None else price * qty) or 0
             base = [
-                r["asset_id"], r["title"], r["publisher"] or "", str(price), str(qty),
-                str(total_amount), r["purchase_date"] or "", r["keeper"] or "",
+                r["asset_id"], r["title"], r["publisher"] or "", str(total_amount),
+                r["purchase_date"] or "", r["keeper"] or "",
                 r["confirm_note"] or "", r["inventory_date"] or "",
             ]
             if kind == "scrap":
@@ -2967,13 +2967,13 @@ class Handler(SimpleHTTPRequestHandler):
             "共 {} 筆".format(len(rows)),
         ]
         if kind == "scrap":
-            columns = ["財產編號", "書名", "出版社", "單價", "數量", "總金額",
+            columns = ["財產編號", "書名", "出版社", "總金額",
                        "書籍購入日期", "保管人", "確認", "盤點日期", "報廢日期"]
-            widths = [0.12, 0.2, 0.1, 0.07, 0.05, 0.09, 0.11, 0.08, 0.07, 0.08, 0.08]
+            widths = [0.13, 0.22, 0.11, 0.09, 0.11, 0.09, 0.08, 0.09, 0.09]
         else:
-            columns = ["財產編號", "書名", "出版社", "單價", "數量", "總金額",
+            columns = ["財產編號", "書名", "出版社", "總金額",
                        "書籍購入日期", "保管人", "確認", "盤點日期"]
-            widths = [0.13, 0.22, 0.11, 0.07, 0.05, 0.1, 0.11, 0.09, 0.07, 0.09]
+            widths = [0.14, 0.24, 0.12, 0.1, 0.12, 0.1, 0.09, 0.1]
         self._send_table_export(
             self._export_format(query), title, meta,
             columns, table,
