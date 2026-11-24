@@ -1686,13 +1686,12 @@
             all: {
                 title: '財產清冊',
                 filter: book => book.status !== '報廢' && rocDateInRange(book.purchaseDate, invFrom, invTo),
-                columns: ['財產編號', '書名', '出版社', '單價', '數量', '總金額', '書籍購入日期', '保管人', '確認', '盤點日期'],
+                columns: ['財產編號', '書名', '出版社', '金額', '書籍購入日期', '保管人', '確認', '盤點日期'],
                 widths: [0.12, 0.2, 0.1, 0.07, 0.05, 0.09, 0.11, 0.08, 0.07, 0.11],
                 cell: book => {
-                    const price = Number(book.price || 0);
-                    const qty = Number(book.quantity || 1);
-                    return [book.assetId || book.barcode, book.title, book.publisher || '', String(price),
-                        String(qty), String(price * qty), book.purchaseDate || '', book.keeper || '',
+                    const total = Number(book.totalAmount != null ? book.totalAmount : (book.price || 0));
+                    return [book.assetId || book.barcode, book.title, book.publisher || '', String(total),
+                        book.purchaseDate || '', book.keeper || '',
                         book.confirmNote || '', book.inventoryDate || ''];
                 },
                 empty: '目前沒有可列入財產清冊的書籍。',
@@ -1700,13 +1699,12 @@
             scrap: {
                 title: '報廢清冊',
                 filter: book => book.status === '報廢' && rocDateInRange(book.scrapDate, invFrom, invTo),
-                columns: ['財產編號', '書名', '出版社', '單價', '數量', '總金額', '書籍購入日期', '保管人', '確認', '盤點日期', '報廢日期'],
+                columns: ['財產編號', '書名', '出版社', '金額', '書籍購入日期', '保管人', '確認', '盤點日期', '報廢日期'],
                 widths: [0.12, 0.19, 0.1, 0.06, 0.05, 0.08, 0.1, 0.07, 0.07, 0.08, 0.08],
                 cell: book => {
-                    const price = Number(book.price || 0);
-                    const qty = Number(book.quantity || 1);
-                    return [book.assetId || book.barcode, book.title, book.publisher || '', String(price),
-                        String(qty), String(price * qty), book.purchaseDate || '', book.keeper || '',
+                    const total = Number(book.totalAmount != null ? book.totalAmount : (book.price || 0));
+                    return [book.assetId || book.barcode, book.title, book.publisher || '', String(total),
+                        book.purchaseDate || '', book.keeper || '',
                         book.confirmNote || '', book.inventoryDate || '', book.scrapDate || ''];
                 },
                 empty: '目前沒有報廢書籍，無法列印報廢清冊。',
