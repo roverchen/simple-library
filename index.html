@@ -127,6 +127,12 @@
 
         /* QR 標籤排版樣式 */
         .qr-label-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-top: 20px; }
+        /* 螢幕預覽也反映貼紙格式的欄數 */
+        .qr-label-grid[data-format="ak308"] { grid-template-columns: repeat(3, 1fr); gap: 12px; }
+        .qr-label-grid[data-format="ak307"] { grid-template-columns: repeat(3, 1fr); gap: 12px; }
+        .qr-label-grid[data-format="ak306"] { grid-template-columns: repeat(3, 1fr); gap: 12px; }
+        .qr-label-grid[data-format="af414"] { grid-template-columns: repeat(4, 1fr); gap: 12px; }
+        .qr-label-grid[data-format="af410"] { grid-template-columns: repeat(4, 1fr); gap: 12px; }
         .qr-card { border: 1px solid #ccc; padding: 6px; text-align: center; background: #fff; page-break-inside: avoid; border-radius: 5px; width: 52mm; margin: 0 auto; }
         .qr-code-img { display: flex; justify-content: center; margin: 4px 0; }
         .qr-code-img canvas, .qr-code-img img { max-width: 110px; height: auto; }
