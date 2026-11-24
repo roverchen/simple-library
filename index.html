@@ -2479,6 +2479,7 @@
                 isDailyAdmin: (res.user && res.user.is_daily_admin) || false,
                 isSharedAdmin: (res.user && res.user.is_shared_admin) || false,
                 needSecurityQuestion: (res.user && res.user.needSecurityQuestion) || false,
+                mustChangePassword: (res.user && res.user.mustChangePassword) || false,
                 name: (res.user && res.user.name) || '',
                 email: (res.user && res.user.email) || '',
             };
@@ -2488,6 +2489,10 @@
             showApp();
             await maybeMigrateLegacy();
             await loadLoanRules();
+            if (currentUser.mustChangePassword) {
+                alert('這是預設密碼，為保護帳號安全，請立即修改。');
+                await changeOwnPassword();
+            }
             // 若需強制設定安全提問，先彈出設定視窗
             if (currentUser.needSecurityQuestion) {
                 openSecurityQuestionModal();
@@ -3896,6 +3901,7 @@
             if (result === null) return;
             try {
                 await api('PUT', '/api/password', { password: result.password });
+                if (currentUser) currentUser.mustChangePassword = false;
                 alert('✅ 密碼已更新，下次登入請使用新密碼');
             } catch (err) { alert('❌ ' + err.message); }
             return;
@@ -3945,6 +3951,7 @@
             };
             if (result.password) payload.password = result.password;
             const res = await api('PUT', '/api/profile', payload);
+            if (res.passwordChanged && currentUser) currentUser.mustChangePassword = false;
             if (currentUser) {
                 currentUser.name = res.name || payload.name;
                 currentUser.email = res.email || payload.email;

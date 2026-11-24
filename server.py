@@ -46,7 +46,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_DB = os.path.join(BASE_DIR, "data", "library.db")
 
 APP_ID = "幼兒園圖書資訊管理系統"
-BACKUP_VERSION = 2
+BACKUP_VERSION = 3
 BACKUP_DIR = os.path.join(BASE_DIR, "data", "backups")
 BACKUP_RETENTION = 10
 DEFAULT_CLASSES = ["太陽班", "月亮班", "星星班", "彩虹班", "白雲班", "小草班"]
@@ -66,9 +66,10 @@ RESET_MAX_ATTEMPTS = 5              # 同一組驗證碼最多嘗試 5 次
 RECOVERY_RATE_WINDOW = 15 * 60      # 限流視窗（秒）
 RECOVERY_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
-# 靜態檔案不允許存取的目錄／檔案
-DENY_PREFIXES = ("data",)
-DENY_FILES = {"server.py", "schema.sql", "pdf_report.py"}
+# 靜態檔案採白名單；同一個目錄內有名冊、照片、備份與後端原始碼，
+# 不應因為檔案剛好存在就被區網使用者下載。
+STATIC_ALLOWED_FILES = {"index.html"}
+STATIC_ALLOWED_PREFIXES = ("vendor",)
 
 _lock = threading.Lock()
 _login_attempts = {}                # ip -> [count, window_start]
@@ -744,7 +745,7 @@ def init_db(db_path):
             ("backup_time", "02:00"),
         ):
             conn.execute(
-                "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
                 (key, val),
             )
 
@@ -947,10 +948,31 @@ def build_state(conn):
 
 def build_backup(conn):
     state = build_state(conn)
-    logs = [
-        log_json(r)
-        for r in conn.execute("SELECT * FROM loan_logs ORDER BY id DESC")
-    ]
+    logs = [dict(r) for r in conn.execute("SELECT * FROM loan_logs ORDER BY id DESC")]
+    reservations = [dict(r) for r in conn.execute("SELECT * FROM reservations ORDER BY id DESC")]
+    accounts = []
+    for r in conn.execute(
+        "SELECT u.*, c.name AS class_name FROM users u LEFT JOIN classes c ON c.id = u.class_id "
+        "ORDER BY u.id"
+    ):
+        accounts.append({
+            "username": r["username"], "name": r["name"], "role": r["role"],
+            "className": r["class_name"] or "", "email": r["email"],
+            "barcode": r["barcode"], "active": bool(r["active"]),
+            "schoolYear": r["school_year"],
+            "canLoan": bool(r["can_loan"]), "canMember": bool(r["can_member"]),
+            "canBook": bool(r["can_book"]), "canConfig": bool(r["can_config"]),
+            "canReport": bool(r["can_report"]),
+        })
+    safe_setting_keys = {
+        "loan_limit_student", "loan_limit_teacher", "loan_days_student",
+        "loan_days_teacher", "term_teacher_start", "term_teacher_end",
+        "report_page_size", "backup_time",
+    }
+    settings = {
+        r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM settings")
+        if r["key"] in safe_setting_keys
+    }
     return {
         "app": APP_ID,
         "version": BACKUP_VERSION,
@@ -959,18 +981,10 @@ def build_backup(conn):
             "libConfig": state["libConfig"],
             "memberDB": state["memberDB"],
             "bookDB": state["bookDB"],
-            "loanLogs": [
-                {
-                    "date": log["date"],
-                    "barcode": log["barcode"],
-                    "className": log["className"],
-                    "userName": log["userName"],
-                    "title": log["title"],
-                    "assetId": log["assetId"],
-                    "action": log["action"],
-                }
-                for log in logs
-            ],
+            "loanLogs": logs,
+            "reservations": reservations,
+            "accounts": accounts,
+            "settings": settings,
         },
     }
 
@@ -1148,6 +1162,16 @@ def validate_import(payload):
     if len(classes) > 100:
         raise ApiError(400, "班級數量過多")
 
+    categories = []
+    for item in (lib.get("categories") or []):
+        if not isinstance(item, dict):
+            continue
+        code = _clean_text(item.get("code", ""), "分類代碼", 20)
+        name = _clean_text(item.get("name", ""), "分類名稱", 50)
+        if code and name:
+            categories.append({"code": code, "name": name,
+                               "color": _clean_text(item.get("color", ""), "分類顏色", 30)})
+
     raw_members = payload.get("memberDB") or {}
     if not isinstance(raw_members, dict):
         raise ApiError(400, "memberDB 格式錯誤")
@@ -1222,16 +1246,43 @@ def validate_import(payload):
         if action not in ("借書", "還書"):
             continue
         logs.append({
-            "date": _clean_text(item.get("date", now_display()), "時間", 64, required=True),
+            "date": _clean_text(item.get("date", item.get("occurred_at", now_display())), "時間", 64, required=True),
             "barcode": _clean_text(item.get("barcode", ""), "條碼", 128),
             "title": _clean_text(item.get("title", ""), "書名", 200),
-            "assetId": _clean_text(item.get("assetId", ""), "財產編號", 64),
-            "className": _clean_text(item.get("className", ""), "班級", 50),
-            "userName": _clean_text(item.get("userName", ""), "姓名", 50),
+            "assetId": _clean_text(item.get("assetId", item.get("asset_id", "")), "財產編號", 64),
+            "className": _clean_text(item.get("className", item.get("class_name", "")), "班級", 50),
+            "userName": _clean_text(item.get("userName", item.get("user_name", "")), "姓名", 50),
             "action": action,
+            "wasOverdue": item.get("wasOverdue", item.get("was_overdue")),
+            "dueAt": item.get("dueAt", item.get("due_at")),
+            "archived": 1 if item.get("archived") else 0,
         })
 
-    return classes, member_db, books, logs
+    reservations = []
+    for item in (payload.get("reservations") or []):
+        if not isinstance(item, dict) or item.get("status") not in (
+            "pending", "cancelled", "fulfilled", "ready", "expired"
+        ):
+            continue
+        reservations.append({
+            "created_at": _clean_text(item.get("created_at", now_display()), "預約時間", 64),
+            "expires_at": _clean_text(item.get("expires_at", ""), "預約期限", 64),
+            "barcode": _clean_text(item.get("barcode", ""), "條碼", 128),
+            "title": _clean_text(item.get("title", ""), "書名", 200),
+            "asset_id": _clean_text(item.get("asset_id", ""), "財產編號", 64),
+            "class_name": _clean_text(item.get("class_name", ""), "班級", 50),
+            "user_name": _clean_text(item.get("user_name", ""), "姓名", 50),
+            "member_type": _clean_text(item.get("member_type", "student"), "成員類型", 20),
+            "status": item["status"],
+        })
+
+    accounts = payload.get("accounts") or []
+    if not isinstance(accounts, list) or len(accounts) > MAX_MEMBERS_PER_CLASS * 10:
+        raise ApiError(400, "帳號資料格式錯誤")
+    safe_settings = payload.get("settings") or {}
+    if not isinstance(safe_settings, dict):
+        safe_settings = {}
+    return classes, member_db, books, logs, categories, reservations, accounts, safe_settings
 
 
 # --------------------------------------------------------------------------
@@ -1554,12 +1605,12 @@ class Handler(SimpleHTTPRequestHandler):
             rel = "index.html"
 
         parts = [p for p in rel.split("/") if p not in ("", ".")]
-        if (
-            not parts
-            or any(p == ".." for p in parts)
-            or any(p.startswith(".") for p in parts)
-            or parts[0] in DENY_PREFIXES
-            or parts[-1] in DENY_FILES
+        if not parts or any(p == ".." for p in parts) or any(p.startswith(".") for p in parts):
+            return None
+        relative = "/".join(parts)
+        if relative not in STATIC_ALLOWED_FILES and not any(
+            relative == prefix or relative.startswith(prefix + "/")
+            for prefix in STATIC_ALLOWED_PREFIXES
         ):
             return None
 
@@ -1779,19 +1830,22 @@ class Handler(SimpleHTTPRequestHandler):
                     raise ApiError(400, "請提供學年（例如 115）")
                 if not re.match(r'^\d{2,3}$', school_year):
                     raise ApiError(400, "學年格式錯誤（例如 115）")
-                # 歸檔：將該學年的借閱紀錄標記為已歸檔，並將逾期未還的書標記為歸檔
+                start_year = int(school_year) + 1911
+                period_start = "{}/08/01 00:00:00".format(start_year)
+                period_end = "{}/08/01 00:00:00".format(start_year + 1)
+                # 只歸檔指定學年，避免新學年的紀錄與借閱被一併清除。
                 conn.execute("BEGIN IMMEDIATE")
                 try:
-                    # 歸檔該學年的借閱紀錄
                     conn.execute(
                         "UPDATE loan_logs SET archived = 1 "
-                        "WHERE archived = 0"
+                        "WHERE archived = 0 AND occurred_at >= ? AND occurred_at < ?",
+                        (period_start, period_end),
                     )
-                    # 將該學年逾期未還的書標記為歸檔（不再顯示在逾期清單）
+                    # 只釋放該學年到期且目前仍逾期的借閱。
                     conn.execute(
                         "UPDATE books SET status = '在館', loaned_to = NULL, loan_class = NULL, due_at = NULL, "
-                        "updated_at = ? WHERE status = '借出' AND due_at < ?",
-                        (now_display(), now_display())
+                        "updated_at = ? WHERE status = '借出' AND due_at >= ? AND due_at < ? AND due_at < ?",
+                        (now_display(), period_start, period_end, now_display())
                     )
                     conn.execute("COMMIT")
                 except Exception:
@@ -2599,6 +2653,7 @@ class Handler(SimpleHTTPRequestHandler):
         try:
             user = None
             role = "admin"
+            must_change_password = False
             if username:
                 # 登入識別碼依序比對：帳號（完全相符）→ Email（不分大小寫）→ 姓名（完全相符）
                 user = find_login_user(conn, username)
@@ -2607,6 +2662,7 @@ class Handler(SimpleHTTPRequestHandler):
                               detail="帳號或密碼錯誤", ip=ip)
                     raise ApiError(401, "帳號或密碼錯誤")
                 role = user["role"] or "teacher"
+                must_change_password = verify_password(DEFAULT_PASSWORD, user["password"])
             else:
                 row = conn.execute(
                     "SELECT value FROM settings WHERE key = 'admin_password'"
@@ -2615,6 +2671,7 @@ class Handler(SimpleHTTPRequestHandler):
                     log_audit(conn, "登入失敗", None, "共用管理員",
                               detail="密碼錯誤", ip=ip)
                     raise ApiError(401, "密碼錯誤")
+                must_change_password = verify_password(DEFAULT_PASSWORD, row["value"])
 
             with _lock:
                 _login_attempts.pop(ip, None)
@@ -2705,6 +2762,7 @@ class Handler(SimpleHTTPRequestHandler):
                         "is_shared_admin": user is None,
                         "permissions": perms,
                         "needSecurityQuestion": need_security_question,
+                        "mustChangePassword": must_change_password,
                     },
                 },
                 headers={
@@ -6149,12 +6207,14 @@ class Handler(SimpleHTTPRequestHandler):
     def api_import(self, conn, token):
         data = self.read_json(limit=MAX_BODY)
         payload = data.get("data") if isinstance(data.get("data"), dict) else data
-        classes, member_db, books, logs = validate_import(payload)
+        (classes, member_db, books, logs, categories, reservations,
+         accounts, safe_settings) = validate_import(payload)
 
         conn.execute("BEGIN IMMEDIATE")
         try:
             conn.execute("DELETE FROM books")
             conn.execute("DELETE FROM loan_logs")
+            conn.execute("DELETE FROM reservations")
 
             # 不刪除 users / classes，避免遺失帳號密碼與 Email。
             # 先全部停用，再依匯入資料恢復；未出現在匯入資料的成員會保持停用。
@@ -6198,6 +6258,62 @@ class Handler(SimpleHTTPRequestHandler):
                 for name in names:
                     ensure_member_user(conn, class_id, name)
 
+            if categories:
+                conn.execute("UPDATE categories SET active = 0")
+                for order, category in enumerate(categories):
+                    row = conn.execute(
+                        "SELECT id FROM categories WHERE code = ?", (category["code"],)
+                    ).fetchone()
+                    if row:
+                        conn.execute(
+                            "UPDATE categories SET name = ?, color = ?, sort_order = ?, active = 1, "
+                            "updated_at = datetime('now', 'localtime') WHERE id = ?",
+                            (category["name"], category["color"], order, row["id"]),
+                        )
+                    else:
+                        conn.execute(
+                            "INSERT INTO categories (name, code, color, sort_order, active) VALUES (?, ?, ?, ?, 1)",
+                            (category["name"], category["code"], category["color"], order),
+                        )
+
+            # 還原帳號的識別資料與權限，但絕不覆蓋密碼；舊版備份沒有 accounts 時維持原行為。
+            for account in accounts:
+                username = _clean_text(account.get("username", ""), "帳號", 50)
+                if not username:
+                    continue
+                role = account.get("role") if account.get("role") in ("admin", "root", "teacher", "student") else "teacher"
+                class_id = class_ids.get(_clean_text(account.get("className", ""), "班級", 50))
+                row = conn.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
+                values = (
+                    _clean_text(account.get("name", ""), "姓名", 50), role, class_id,
+                    _clean_text(account.get("email", ""), "Email", 254),
+                    _clean_text(account.get("barcode", ""), "條碼", 128),
+                    1 if account.get("active", True) else 0,
+                    _clean_text(str(account.get("schoolYear", "115")), "學年", 10),
+                    1 if account.get("canLoan") else 0, 1 if account.get("canMember") else 0,
+                    1 if account.get("canBook") else 0, 1 if account.get("canConfig") else 0,
+                    1 if account.get("canReport") else 0,
+                )
+                if row:
+                    conn.execute(
+                        "UPDATE users SET name=?, role=?, class_id=?, email=?, barcode=?, active=?, school_year=?, "
+                        "can_loan=?, can_member=?, can_book=?, can_config=?, can_report=?, "
+                        "updated_at=datetime('now', 'localtime') WHERE id=?",
+                        values + (row["id"],),
+                    )
+                else:
+                    conn.execute(
+                        "INSERT INTO users (username, name, password, role, class_id, email, barcode, active, school_year, "
+                        "can_loan, can_member, can_book, can_config, can_report) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (username, values[0], hash_password(DEFAULT_PASSWORD), *values[1:]),
+                    )
+
+            for key, value in safe_settings.items():
+                if key in {"loan_limit_student", "loan_limit_teacher", "loan_days_student", "loan_days_teacher",
+                           "term_teacher_start", "term_teacher_end", "report_page_size", "backup_time"}:
+                    conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                                 (key, str(value)))
+
             for barcode, book in books.items():
                 conn.execute(
                     "INSERT INTO books (barcode, title, asset_id, isbn, status, loaned_to, "
@@ -6211,12 +6327,22 @@ class Handler(SimpleHTTPRequestHandler):
 
             for log in logs:
                 conn.execute(
-                    "INSERT INTO loan_logs (occurred_at, barcode, title, asset_id, "
-                    "class_name, user_name, action) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO loan_logs (occurred_at, barcode, title, asset_id, class_name, user_name, action, "
+                    "was_overdue, due_at, archived) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         log["date"], log["barcode"], log["title"], log["assetId"],
-                        log["className"], log["userName"], log["action"],
+                        log["className"], log["userName"], log["action"], log["wasOverdue"],
+                        log["dueAt"], log["archived"],
                     ),
+                )
+            for reservation in reservations:
+                conn.execute(
+                    "INSERT INTO reservations (created_at, expires_at, barcode, title, asset_id, class_name, "
+                    "user_name, member_type, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    tuple(reservation[key] for key in (
+                        "created_at", "expires_at", "barcode", "title", "asset_id", "class_name",
+                        "user_name", "member_type", "status"
+                    )),
                 )
             conn.execute("COMMIT")
         except Exception:
