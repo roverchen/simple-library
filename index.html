@@ -1380,11 +1380,16 @@
             await loadLoanRules();
             // 借還書頁預設帶入操作者本人為借閱人（僅個別帳號）
             try {
-                if (currentUser && !currentUser.isSharedAdmin && currentUser.name) {
-                    const inp = document.getElementById('loanMemberInput');
-                    if (inp && !inp.value) {
-                        inp.value = currentUser.name;
-                        if (typeof onLoanMemberInput === 'function') onLoanMemberInput(currentUser.name);
+                if (currentUser && !currentUser.isSharedAdmin) {
+                    const defaultName = (currentUser.name || currentUser.username || '').trim();
+                    if (defaultName) {
+                        const inp = document.getElementById('loanMemberInput');
+                        if (inp && !inp.value) {
+                            inp.value = defaultName;
+                            if (typeof onLoanMemberInput === 'function') {
+                                setTimeout(() => onLoanMemberInput(defaultName), 300);
+                            }
+                        }
                     }
                 }
             } catch (e) { /* 不阻斷登入 */ }
