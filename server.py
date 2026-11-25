@@ -582,6 +582,10 @@ def init_db(db_path):
             conn.execute("ALTER TABLE loan_logs ADD COLUMN archived INTEGER DEFAULT 0")
         except Exception:
             pass
+        try:
+            conn.execute("ALTER TABLE loan_logs ADD COLUMN operator TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass
         # 舊庫若在欄位新增前已存在，索引須在 ALTER 之後建立
         try:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_loan_logs_overdue ON loan_logs (was_overdue)")
@@ -4330,6 +4334,7 @@ class Handler(SimpleHTTPRequestHandler):
         data = self.read_json()
         barcode = _clean_text(data.get("barcode"), "條碼", 128, required=True)
         action = data.get("action")
+        _op_id, operator_name = session_actor(conn, token) if token else (None, "系統")
         class_name = _clean_text(data.get("className", ""), "班級", 50)
         user_name = _clean_text(data.get("userName", ""), "姓名", 50)
         if action not in ("借書", "還書"):
@@ -4479,16 +4484,19 @@ class Handler(SimpleHTTPRequestHandler):
 
             cursor = conn.execute(
                 "INSERT INTO loan_logs (occurred_at, barcode, title, asset_id, "
-                "class_name, user_name, action, was_overdue, due_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "class_name, user_name, action, was_overdue, due_at, operator) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     now_display(), barcode, row["title"], row["asset_id"],
                     class_name, user_name, action_text,
                     (1 if action_text == "還書" and overdue_at_return else
                      (0 if action_text == "還書" else None)),
                     (due_at_snapshot if action_text == "還書" else None),
+                    operator_name or "",
                 ),
             )
             log_id = cursor.lastrowid
+            self._audit(conn, token, action_text, target=barcode,
+                        detail="{}（{}）".format(row["title"] or "", user_name or "")) if token else None
             promoted = []
             if action == "借書":
                 # 借書成功：優先履約「可取書(ready)」狀態的自己預約，其次履約自己最早的 pending 預約
@@ -4794,11 +4802,12 @@ class Handler(SimpleHTTPRequestHandler):
                     "updated_at = ? WHERE barcode = ?",
                     (now_display(), barcode),
                 )
+                _bid, operator_name_batch = session_actor(conn, token) if token else (None, "系統")
                 conn.execute(
-                    "INSERT INTO loan_logs (occurred_at, barcode, title, asset_id, class_name, user_name, action, was_overdue, due_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, '還書', ?, ?)",
+                    "INSERT INTO loan_logs (occurred_at, barcode, title, asset_id, class_name, user_name, action, was_overdue, due_at, operator) "
+                    "VALUES (?, ?, ?, ?, ?, ?, '還書', ?, ?, ?)",
                     (now_display(), barcode, row["title"], row["asset_id"], row["loan_class"] or "", row["loaned_to"] or "",
-                     1 if overdue_at_return else 0, due_at_snapshot),
+                     1 if overdue_at_return else 0, due_at_snapshot, operator_name_batch or ""),
                 )
                 returned.append(barcode)
             promoted = self._promote_ready(conn, returned)
