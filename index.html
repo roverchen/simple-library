@@ -353,9 +353,12 @@
         <div id="loanActionGrid" class="action-grid">
             <button onclick="startLoanScan()" class="btn-main btn-borrow" style="grid-column: span 2;">📷 開啟相機</button>
         </div>
-        <div id="reservationSection" style="margin-top:16px;">
-            <h3 style="margin:0;">📌 進行中預約</h3>
-            <div id="reservationList" style="color:#666;">載入中…</div>
+        <div id="scanResultSection" style="margin-top:16px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px;">
+                <h3 style="margin:0;">當前掃描結果列表</h3>
+                <button type="button" onclick="clearScanResults()" style="padding:4px 10px; font-size:0.85rem; border:1px solid #ccc; background:#fff; border-radius:4px; cursor:pointer;">清空</button>
+            </div>
+            <div id="scanResultList" style="color:#666;">尚未掃描，結果會顯示在這裡。</div>
         </div>
         <div id="reader-wrapper">
             <h3 id="scanModeTitle">準備掃描...</h3>
@@ -1282,7 +1285,7 @@
             showApp();
             await maybeMigrateLegacy();
             await loadLoanRules();
-            await loadReservations();
+            renderScanResults();
         } catch (err) {
             if (err.status !== 401) showBackendError(err);
         }
@@ -3261,6 +3264,44 @@
         return false;
     }
 
+    // 當前掃描結果列表：只保留本次開啟頁面期間的結果，最新一筆在最上方
+    const scanResults = [];
+    const MAX_SCAN_RESULTS = 50;
+    function recordScanResult(action, barcode, title, message, ok) {
+        scanResults.unshift({
+            time: new Date().toLocaleTimeString('zh-TW', { hour12: false }),
+            action: action || '掃描',
+            barcode: barcode || '',
+            title: title || '',
+            message: message || '',
+            ok: !!ok
+        });
+        if (scanResults.length > MAX_SCAN_RESULTS) scanResults.length = MAX_SCAN_RESULTS;
+        renderScanResults();
+    }
+    function renderScanResults() {
+        const box = document.getElementById('scanResultList');
+        if (!box) return;
+        if (!scanResults.length) {
+            box.innerHTML = '<div style="color:#666;">尚未掃描，結果會顯示在這裡。</div>';
+            return;
+        }
+        box.innerHTML = scanResults.map(r => `
+            <div style="border:1px solid #ddd; border-left:4px solid ${r.ok ? '#2e7d32' : '#c62828'}; background:${r.ok ? '#f6fff7' : '#fff7f7'}; border-radius:6px; padding:8px; margin-bottom:6px;">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                    <strong style="color:${r.ok ? '#2e7d32' : '#c62828'};">${r.ok ? '✅' : '❌'} ${escapeHtml(r.action)}</strong>
+                    <small style="color:#888;">${escapeHtml(r.time)}</small>
+                </div>
+                <div style="margin-top:4px;">${escapeHtml(r.message)}</div>
+                ${r.title ? `<div style="margin-top:2px;">《${escapeHtml(r.title)}》</div>` : ''}
+                ${r.barcode ? `<small style="color:#888;">條碼：${escapeHtml(r.barcode)}</small>` : ''}
+            </div>`).join('');
+    }
+    function clearScanResults() {
+        scanResults.length = 0;
+        renderScanResults();
+    }
+
     function showScanStatus(message, type) {
         const el = document.getElementById('scanStatus');
         el.textContent = message;
@@ -3342,22 +3383,32 @@
         // 借書/還書指令條碼（v2.1 5.2）：支援 "borrow:<條碼>" 與 "return:<條碼>" 開頭的指令 QR
         if (code.startsWith('borrow:')) { mode = 'borrow'; barcode = code.slice('borrow:'.length).trim(); currentMode = 'borrow'; const gm = document.getElementById('gunMode'); if (gm) gm.value = 'borrow'; }
         else if (code.startsWith('return:')) { mode = 'return'; barcode = code.slice('return:'.length).trim(); currentMode = 'return'; const gm = document.getElementById('gunMode'); if (gm) gm.value = 'return'; }
-        if (!barcode) { showScanStatus('❌ 指令條碼缺少條碼', 'err'); return; }
+        if (!barcode) {
+            showScanStatus('❌ 指令條碼缺少條碼', 'err');
+            recordScanResult('指令', code, '', '指令條碼缺少條碼', false);
+            return;
+        }
         if (!(code.startsWith('borrow:') || code.startsWith('return:') || code.startsWith('member:')) && isDuplicateScan(barcode)) return;
         
         // 借書模式：必須先選會員，再掃書籍條碼
         if (mode === 'borrow') {
             if (!currentLoanMember) {
                 showScanStatus('⚠️ 請先選擇借閱人！', 'err');
+                recordScanResult('借書', barcode, '', '請先選擇借閱人', false);
                 return;
             }
             if (!bookDatabase[barcode]) {
                 showScanStatus('❌ 無此圖書條碼', 'err');
+                recordScanResult('借書', barcode, '', '無此圖書條碼', false);
                 return;
             }
             scanQueue = scanQueue
                 .then(() => processScan(barcode, 'borrow'))
-                .catch(err => showScanStatus(`❌ ${err.message || '處理失敗'}`, 'err'));
+                .catch(err => {
+                    const msg = err.message || '處理失敗';
+                    showScanStatus(`❌ ${msg}`, 'err');
+                    recordScanResult(mode === 'borrow' ? '借書' : mode === 'return' ? '還書' : mode, barcode, '', msg, false);
+                });
             return;
         }
         
@@ -3365,11 +3416,16 @@
         if (mode === 'return') {
             if (!bookDatabase[barcode]) {
                 showScanStatus('❌ 無此圖書條碼', 'err');
+                recordScanResult('還書', barcode, '', '無此圖書條碼', false);
                 return;
             }
             scanQueue = scanQueue
                 .then(() => processScan(barcode, 'return'))
-                .catch(err => showScanStatus(`❌ ${err.message || '處理失敗'}`, 'err'));
+                .catch(err => {
+                    const msg = err.message || '處理失敗';
+                    showScanStatus(`❌ ${msg}`, 'err');
+                    recordScanResult(mode === 'borrow' ? '借書' : mode === 'return' ? '還書' : mode, barcode, '', msg, false);
+                });
             return;
         }
         
@@ -3391,10 +3447,12 @@
                         `，${m.memberType === 'teacher' ? '老師' : '學生'}`;
                 }
                 showScanStatus(`✅ 已選擇成員：${m.userName}`, 'ok');
+                recordScanResult('成員', barcode, m.userName, `已選擇：${m.userName}${m.className ? `（${m.className}）` : ''}`, true);
                 return;
             } catch (e) {
                 if (e.status === 404) {
                     showScanStatus('❌ 無此圖書或成員條碼，請先至「圖書管理」建檔', 'err');
+                    recordScanResult('成員', barcode, '', '無此圖書或成員條碼', false);
                     return;
                 }
                 throw e;
@@ -3413,16 +3471,25 @@
             const inputEl = document.getElementById('loanMemberInput');
             if (inputEl) inputEl.value = code;
             showScanStatus(`✅ 已選擇成員：${name}`, 'ok');
+            recordScanResult('成員', code, name, `已選擇：${name}（${cls || '未分班'}，學生）`, true);
             return;
         }
         // 借書／還書指令條碼（如未在此分支處理）
         if (code.startsWith('borrow:')) { mode = 'borrow'; barcode = code.slice('borrow:'.length).trim(); currentMode = 'borrow'; const gm = document.getElementById('gunMode'); if (gm) gm.value = 'borrow'; }
         else if (code.startsWith('return:')) { mode = 'return'; barcode = code.slice('return:'.length).trim(); currentMode = 'return'; const gm = document.getElementById('gunMode'); if (gm) gm.value = 'return'; }
-        if (!barcode) { showScanStatus('❌ 指令條碼缺少條碼', 'err'); return; }
+        if (!barcode) {
+            showScanStatus('❌ 指令條碼缺少條碼', 'err');
+            recordScanResult('指令', code, '', '指令條碼缺少條碼', false);
+            return;
+        }
         if (!(code.startsWith('borrow:') || code.startsWith('return:') || code.startsWith('member:')) && isDuplicateScan(barcode)) return;
         scanQueue = scanQueue
             .then(() => processScan(barcode, mode))
-            .catch(err => showScanStatus(`❌ ${err.message || '處理失敗'}`, 'err'));
+            .catch(err => {
+                const msg = err.message || '處理失敗';
+                showScanStatus(`❌ ${msg}`, 'err');
+                recordScanResult(mode === 'borrow' ? '借書' : mode === 'return' ? '還書' : mode, barcode, '', msg, false);
+            });
     }
 
     async function refreshPermissions() {
@@ -3455,14 +3522,24 @@
             return;
         }
 
+        const action = mode === 'borrow' ? '借書' : '還書';
         const book = bookDatabase[barcode];
-        if (!book) { showScanStatus("❌ 無此圖書，請先至「圖書管理」建檔", 'err'); return; }
-        if (book.status === "報廢") { showScanStatus(`⚠️ 《${book.title}》已報廢，不可借還`, 'warn'); return; }
+        if (!book) {
+            const msg = '無此圖書，請先至「圖書管理」建檔';
+            showScanStatus(`❌ ${msg}`, 'err');
+            recordScanResult(action, barcode, '', msg, false);
+            return;
+        }
+        if (book.status === "報廢") {
+            const msg = `《${book.title}》已報廢，不可借還`;
+            showScanStatus(`⚠️ ${msg}`, 'warn');
+            recordScanResult(action, barcode, book.title, msg, false);
+            return;
+        }
 
         const userName = currentLoanMember ? currentLoanMember.userName : '';
         const className = currentLoanMember ? currentLoanMember.className : '';
         const memberType = currentLoanMember ? currentLoanMember.memberType : 'student';
-        const action = mode === 'borrow' ? '借書' : '還書';
 
         // 由伺服器端權威檢查借還狀態（避免前端快取過期導致誤判）；
         // 若狀態不符，伺服器會回 409 並由下方 catch 顯示訊息。
@@ -3473,12 +3550,19 @@
             const res = await api('POST', '/api/loan', { barcode, className, userName, action, memberType });
             bookDatabase[barcode] = res.book;
             logCount++;
-            await loadReservations();
-            if (action === '借書') showScanStatus(`✅ 已借出《${res.book.title}》→ ${userName}`, 'ok');
-            else {
-                showScanStatus(`✅ 已歸還《${res.book.title}》`, 'ok');
-                (res.promoted || []).forEach(p =>
-                    showScanStatus(`🔔 《${escapeHtml(p.title || res.book.title)}》已歸還，第一位預約者「${p.userName}（${p.className || ''}）」可來取書`, 'warn'));
+            if (action === '借書') {
+                const msg = `已借出《${res.book.title}》→ ${userName}`;
+                showScanStatus(`✅ ${msg}`, 'ok');
+                recordScanResult(action, barcode, res.book.title, msg, true);
+            } else {
+                const msg = `已歸還《${res.book.title}》`;
+                showScanStatus(`✅ ${msg}`, 'ok');
+                recordScanResult(action, barcode, res.book.title, msg, true);
+                (res.promoted || []).forEach(p => {
+                    const notice = `《${p.title || res.book.title}》已歸還，第一位預約者「${p.userName}（${p.className || ''}）」可來取書`;
+                    showScanStatus(`🔔 ${notice}`, 'warn');
+                    recordScanResult('預約通知', barcode, p.title || res.book.title, notice, true);
+                });
             }
             // 伺服器首次借書會自動開啟報表權限，同步更新導覽列
             if (!currentUser.permissions || !currentUser.permissions.canReport) await refreshPermissions();
@@ -3487,6 +3571,7 @@
         } catch (err) {
             if (err.data && err.data.book) bookDatabase[barcode] = err.data.book;
             showScanStatus(`❌ ${err.message}`, 'warn');
+            recordScanResult(action, barcode, book.title, err.message, false);
         }
         if (navigator.vibrate) navigator.vibrate(80);
     }
@@ -4271,50 +4356,31 @@
     function downloadMemberTemplate() { window.open('/api/template/members.xlsx', '_blank'); }
     function downloadBookTemplate() { window.open('/api/template/books.xlsx', '_blank'); }
 
-    async function loadReservations() {
-        const box = document.getElementById('reservationList');
-        if (!box) return;
-        try {
-            const data = await api('GET', '/api/reservations?status=active');
-            const list = data.reservations || [];
-            if (!list.length) { box.innerHTML = '<div style="color:#666;">目前沒有進行中的預約。</div>'; return; }
-            box.innerHTML = list.map(r => {
-                const isReady = r.status === 'ready';
-                const tag = isReady
-                    ? '<span style="color:#fff; background:#2e7d32; padding:1px 8px; border-radius:10px; font-size:0.8rem;">可來取書</span>'
-                    : `<span style="color:#666; background:#eee; padding:1px 8px; border-radius:10px; font-size:0.8rem;">第 ${r.queuePos || '?'} 位．排隊中</span>`;
-                const headIcon = isReady ? '🔔' : '📌';
-                return `
-                <div style="display:flex; align-items:center; gap:8px; padding:8px; border:1px solid ${isReady ? '#81c784' : '#ddd'}; background:${isReady ? '#e8f5e9' : '#fff'}; border-radius:6px; margin-bottom:6px;">
-                    <span>${headIcon} <strong>${escapeHtml(r.userName)}</strong> → 《${escapeHtml(r.title)}》（${escapeHtml(r.className || '')}） ${tag}${(r.expiresAt && !isReady) ? `<br><small style="color:#888;">等候期限 ${escapeHtml(r.expiresAt)}</small>` : ''}${isReady ? `<br><small style="color:#2e7d32;">請於 ${escapeHtml(r.expiresAt || '')} 前來取書</small>` : ''}</span>
-                    <button onclick="cancelReservation(${r.id})" style="margin-left:auto; padding:6px; background:#c62828; color:white; border:none; border-radius:4px;">${isReady ? '放棄候取' : '取消預約'}</button>
-                </div>`;
-            }).join('');
-        } catch (err) { box.innerHTML = `<div style="color:#c62828;">載入預約失敗：${escapeHtml(err.message)}</div>`; }
-    }
-
-    async function cancelReservation(id) {
-        try {
-            await api('POST', '/api/reservations/' + id + '/cancel');
-            await loadReservations();
-        } catch (err) { alert("❌ 取消預約失敗：" + err.message); }
-    }
-
     async function reserveBook(barcode) {
         barcode = (barcode || '').trim();
-        if (!barcode) { alert('❌ 請先輸入或掃描欲預約的條碼'); return false; }
-        if (!currentLoanMember) { alert('❌ 請先選擇成員'); return false; }
+        if (!barcode) {
+            alert('❌ 請先輸入或掃描欲預約的條碼');
+            recordScanResult('預約', '', '', '請先輸入或掃描欲預約的條碼', false);
+            return false;
+        }
+        if (!currentLoanMember) {
+            alert('❌ 請先選擇成員');
+            recordScanResult('預約', barcode, '', '請先選擇成員', false);
+            return false;
+        }
         const className = currentLoanMember.className;
         const memberType = currentLoanMember.memberType;
         const userName = currentLoanMember.userName;
         try {
             const res = await api('POST', '/api/reservations', { barcode, className, userName, memberType });
-            showScanStatus(`✅ 已為 ${userName} 預約《${res.reservation.title}》`, 'ok');
-            await loadReservations();
+            const msg = `已為 ${userName} 預約《${res.reservation.title}》`;
+            showScanStatus(`✅ ${msg}`, 'ok');
+            recordScanResult('預約', barcode, res.reservation.title, msg, true);
             if (navigator.vibrate) navigator.vibrate(60);
             return true;
         } catch (err) {
             showScanStatus(`❌ 預約失敗：${err.message}`, 'warn');
+            recordScanResult('預約', barcode, '', err.message, false);
             return false;
         }
     }
@@ -4343,10 +4409,19 @@
         if (!confirm(`確定要批次還書 ${barcodes.length} 筆嗎？`)) return;
         try {
             const res = await api('POST', '/api/loan/batch-return', { barcodes });
-            showScanStatus(`✅ 批次還書完成：${res.returned ? res.returned.length : 0} 筆`, 'ok');
-            (res.promoted || []).forEach(p =>
-                showScanStatus(`🔔 《${p.title}》已歸還，第一位預約者「${p.userName}（${p.className || ''}）」可來取書`, 'warn'));
-        } catch (err) { showScanStatus(`❌ 批次還書失敗：${err.message}`, 'warn'); }
+            const count = res.returned ? res.returned.length : 0;
+            const msg = `批次還書完成：${count} 筆`;
+            showScanStatus(`✅ ${msg}`, 'ok');
+            recordScanResult('批次還書', barcodes.join(', '), '', msg, true);
+            (res.promoted || []).forEach(p => {
+                const notice = `《${p.title}》已歸還，第一位預約者「${p.userName}（${p.className || ''}）」可來取書`;
+                showScanStatus(`🔔 ${notice}`, 'warn');
+                recordScanResult('預約通知', '', p.title, notice, true);
+            });
+        } catch (err) {
+            showScanStatus(`❌ 批次還書失敗：${err.message}`, 'warn');
+            recordScanResult('批次還書', barcodes.join(', '), '', err.message, false);
+        }
     }
 
     function generateCommandQR() {
