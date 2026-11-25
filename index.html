@@ -920,11 +920,7 @@
         <div style="margin:16px 0;">
             <label for="sqQuestion">安全提問</label>
             <select id="sqQuestion" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:5px;">
-                <option value="你國小就讀的學校名稱是什麼？">你國小就讀的學校名稱是什麼？</option>
-                <option value="你寵物的名字是什麼？">你寵物的名字是什麼？</option>
-                <option value="你母親的娘家姓氏是什麼？">你母親的娘家姓氏是什麼？</option>
-                <option value="你出生的城市是哪裡？">你出生的城市是哪裡？</option>
-                <option value="你最好的朋友的名字是什麼？">你最好的朋友的名字是什麼？</option>
+                <option value="開園日期是哪一天？">開園日期是哪一天？</option>
             </select>
         </div>
         <div style="margin:16px 0;">
@@ -935,11 +931,7 @@
         <div style="margin:16px 0;">
             <label for="sqQuestion2">第二個安全提問</label>
             <select id="sqQuestion2" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:5px;">
-                <option value="開園日期是哪一天？">開園日期是哪一天？</option>
                 <option value="園長姓名是什麼？">園長姓名是什麼？</option>
-                <option value="你出生的城市是哪裡？">你出生的城市是哪裡？</option>
-                <option value="你最好的朋友的名字是什麼？">你最好的朋友的名字是什麼？</option>
-                <option value="你寵物的名字是什麼？">你寵物的名字是什麼？</option>
             </select>
             <label for="sqAnswer2">第二個安全提問答案</label>
             <input type="text" id="sqAnswer2" autocomplete="off" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:5px;">
@@ -4199,17 +4191,14 @@
             } catch (err) { alert('❌ ' + err.message); }
             return;
         }
-        const sqQuestions = [
-            '你國小就讀的學校名稱是什麼？',
-            '你寵物的名字是什麼？',
-            '你母親的娘家姓氏是什麼？',
-            '你出生的城市是哪裡？',
-            '你最好的朋友的名字是什麼？'
-        ];
+        const sqQuestions = ['開園日期是哪一天？'];
+        const sqQuestions2 = ['園長姓名是什麼？'];
         let currentSq = '';
+        let currentSq2 = '';
         try {
             const sq = await api('GET', '/api/security-question');
             currentSq = sq.question || '';
+            currentSq2 = sq.question2 || '';
         } catch (err) { /* 讀取失敗時仍可設定 */ }
 
         const result = await showInputDialog({
@@ -4218,8 +4207,10 @@
             fields: [
                 { name: 'name', label: '姓名', type: 'text', value: (currentUser && currentUser.name) || '' },
                 { name: 'email', label: 'Email', type: 'email', value: (currentUser && currentUser.email) || '' },
-                { name: 'securityQuestion', label: '安全提問（離線救援）', type: 'select', value: currentSq || sqQuestions[0], options: sqQuestions.map(function (q) { return { value: q, label: q }; }) },
-                { name: 'securityAnswer', label: '安全提問答案（留空＝不變更）', type: 'text', placeholder: '輸入新答案才會更新' },
+                { name: 'securityQuestion', label: '第一個安全提問', type: 'select', value: '開園日期是哪一天？', options: sqQuestions.map(function (q) { return { value: q, label: q }; }) },
+                { name: 'securityAnswer', label: '第一個安全提問答案（留空＝不變更）', type: 'text', placeholder: '輸入新答案才會更新' },
+                { name: 'securityQuestion2', label: '第二個安全提問', type: 'select', value: '園長姓名是什麼？', options: sqQuestions2.map(function (q) { return { value: q, label: q }; }) },
+                { name: 'securityAnswer2', label: '第二個安全提問答案（留空＝不變更）', type: 'text', placeholder: '輸入新答案才會更新' },
                 { name: 'password', label: '新密碼（至少 4 字）', type: 'password', placeholder: '留空＝不變更' },
                 { name: 'confirm', label: '確認新密碼', type: 'password' },
             ],
@@ -4232,7 +4223,9 @@
                     if (v.password !== v.confirm) return '兩次輸入的密碼不一致';
                 }
                 if ((v.securityAnswer || '').trim() && !(v.securityQuestion || '').trim()) return '請選擇安全提問';
+                if ((v.securityAnswer2 || '').trim() && !(v.securityQuestion2 || '').trim()) return '請選擇第二個安全提問';
                 if ((v.securityQuestion || '').trim() !== currentSq && !(v.securityAnswer || '').trim()) return '變更安全提問時請一併輸入答案';
+                if ((v.securityQuestion2 || '').trim() !== currentSq2 && !(v.securityAnswer2 || '').trim()) return '變更第二個安全提問時請一併輸入答案';
                 return '';
             }
         });
@@ -4252,10 +4245,21 @@
             // 安全提問：只有輸入答案時才更新
             const newAnswer = (result.securityAnswer || '').trim();
             const newQuestion = (result.securityQuestion || '').trim();
-            if (newAnswer) {
-                await api('PUT', '/api/security-question', { securityQuestion: newQuestion, securityAnswer: newAnswer });
+            const newAnswer2 = (result.securityAnswer2 || '').trim();
+            const newQuestion2 = (result.securityQuestion2 || '').trim();
+            if (newAnswer || newAnswer2) {
+                if (!newAnswer || !newAnswer2) {
+                    alert('❌ 請同時輸入兩個安全提問的答案');
+                    return;
+                }
+                await api('PUT', '/api/security-question', {
+                    securityQuestion: newQuestion,
+                    securityAnswer: newAnswer,
+                    securityQuestion2: newQuestion2,
+                    securityAnswer2: newAnswer2,
+                });
             }
-            alert('✅ 個人資料已更新' + (res.passwordChanged ? '（密碼已變更）' : '') + (newAnswer ? '（安全提問已更新）' : ''));
+            alert('✅ 個人資料已更新' + (res.passwordChanged ? '（密碼已變更）' : '') + ((newAnswer || newAnswer2) ? '（安全提問已更新）' : ''));
         } catch (err) { alert('❌ ' + err.message); }
     }
 

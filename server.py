@@ -5989,11 +5989,6 @@ class Handler(SimpleHTTPRequestHandler):
     DEFAULT_SECURITY_QUESTIONS = [
         "開園日期是哪一天？",
         "園長姓名是什麼？",
-        "你國小就讀的學校名稱是什麼？",
-        "你寵物的名字是什麼？",
-        "你母親的娘家姓氏是什麼？",
-        "你出生的城市是哪裡？",
-        "你最好的朋友的名字是什麼？",
     ]
 
     def api_security_question_get(self, conn, query):
