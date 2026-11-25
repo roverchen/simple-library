@@ -64,6 +64,32 @@ class ServerDataTests(unittest.TestCase):
             conn.close()
             self.conn = server.connect(self.db_path)
 
+    def test_default_root_and_admin_accounts_and_two_questions(self):
+        rows = self.conn.execute(
+            "SELECT username, role, can_config, security_question_2 FROM users "
+            "WHERE username IN ('root', 'admin') ORDER BY username"
+        ).fetchall()
+        self.assertEqual([(r["username"], r["role"]) for r in rows],
+                         [("admin", "admin"), ("root", "root")])
+        self.assertTrue(all(r["can_config"] for r in rows))
+        self.assertTrue(all(r["security_question_2"] == "" for r in rows))
+
+    def test_archived_logs_are_separate_and_included_in_backup(self):
+        self.conn.execute(
+            "INSERT INTO loan_logs (occurred_at, barcode, title, class_name, user_name, action) "
+            "VALUES ('2025/09/01 10:00:00', 'B1', '書', 'A班', '小明', '借書')"
+        )
+        row_id = self.conn.execute("SELECT id FROM loan_logs").fetchone()[0]
+        self.conn.execute(
+            "INSERT INTO loan_logs_archive (id, occurred_at, created_at, barcode, title, class_name, user_name, action) "
+            "VALUES (?, '2024/09/01 10:00:00', '2024/09/01 10:00:00', 'B0', '舊書', 'A班', '小華', '還書')",
+            (row_id + 1000,)
+        )
+        self.conn.commit()
+        payload = server.build_backup(self.conn)["data"]["loanLogs"]
+        self.assertEqual(len(payload), 2)
+        self.assertTrue(any(item["archived"] for item in payload))
+
 
 if __name__ == "__main__":
     unittest.main()

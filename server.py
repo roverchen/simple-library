@@ -51,6 +51,8 @@ BACKUP_DIR = os.path.join(BASE_DIR, "data", "backups")
 BACKUP_RETENTION = 10
 DEFAULT_CLASSES = ["太陽班", "月亮班", "星星班", "彩虹班", "白雲班", "小草班"]
 DEFAULT_PASSWORD = "1234"
+DEFAULT_ROOT_USERNAME = "root"
+DEFAULT_ADMIN_USERNAME = "admin"
 
 SESSION_TTL = 12 * 60 * 60          # 12 小時
 PBKDF2_ITERATIONS = 200_000
@@ -69,7 +71,7 @@ RECOVERY_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 # 靜態檔案採白名單；同一個目錄內有名冊、照片、備份與後端原始碼，
 # 不應因為檔案剛好存在就被區網使用者下載。
 STATIC_ALLOWED_FILES = {"index.html"}
-STATIC_ALLOWED_PREFIXES = ("vendor", "docs")
+STATIC_ALLOWED_PREFIXES = ("vendor",)
 
 _lock = threading.Lock()
 _login_attempts = {}                # ip -> [count, window_start]
@@ -589,6 +591,34 @@ def init_db(db_path):
             conn.execute("CREATE INDEX IF NOT EXISTS idx_loan_logs_archived ON loan_logs (archived)")
         except Exception:
             pass
+        # 封存表讓目前借閱紀錄不會無限成長；舊版已標記 archived 的資料啟動時搬移。
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS loan_logs_archive (
+                id INTEGER PRIMARY KEY,
+                occurred_at TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                barcode TEXT NOT NULL,
+                title TEXT NOT NULL,
+                asset_id TEXT NOT NULL DEFAULT '',
+                class_name TEXT NOT NULL,
+                user_name TEXT NOT NULL,
+                action TEXT NOT NULL CHECK (action IN ('借書', '還書')),
+                was_overdue INTEGER,
+                due_at TEXT,
+                archived INTEGER NOT NULL DEFAULT 1
+            );
+            CREATE INDEX IF NOT EXISTS idx_loan_logs_archive_occurred
+                ON loan_logs_archive (occurred_at);
+            INSERT OR IGNORE INTO loan_logs_archive
+                (id, occurred_at, created_at, barcode, title, asset_id, class_name, user_name,
+                 action, was_overdue, due_at, archived)
+            SELECT id, occurred_at, created_at, barcode, title, asset_id, class_name, user_name,
+                   action, was_overdue, due_at, 1
+            FROM loan_logs WHERE archived = 1;
+            DELETE FROM loan_logs WHERE archived = 1;
+            """
+        )
 
         try:
             conn.execute("ALTER TABLE books ADD COLUMN isbn TEXT NOT NULL DEFAULT ''")
@@ -629,6 +659,14 @@ def init_db(db_path):
 
         try:
             conn.execute("ALTER TABLE users ADD COLUMN security_answer_hash TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN security_question_2 TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN security_answer_hash_2 TEXT NOT NULL DEFAULT ''")
         except Exception:
             pass
 
@@ -773,6 +811,22 @@ def init_db(db_path):
                     "INSERT INTO categories (name, code, color, sort_order, active) VALUES (?, ?, ?, ?, 1)",
                     (name, code, color, order),
                 )
+
+        # 規格要求兩組最高權限帳號。只在尚未有對應角色時建立，既有資料與密碼不覆蓋。
+        for username, name, role in (
+            (DEFAULT_ROOT_USERNAME, "系統 Root", "root"),
+            (DEFAULT_ADMIN_USERNAME, "系統管理員", "admin"),
+        ):
+            if conn.execute("SELECT 1 FROM users WHERE role = ? AND active = 1 LIMIT 1", (role,)).fetchone():
+                continue
+            if conn.execute("SELECT 1 FROM users WHERE username = ?", (username,)).fetchone():
+                continue
+            conn.execute(
+                "INSERT INTO users (username, name, password, role, class_id, email, barcode, active, "
+                "school_year, can_loan, can_member, can_book, can_config, can_report) "
+                "VALUES (?, ?, ?, ?, NULL, '', '', 1, '115', 1, 1, 1, 1, 1)",
+                (username, name, hash_password(DEFAULT_PASSWORD), role),
+            )
     finally:
         conn.close()
 
@@ -952,6 +1006,8 @@ def build_state(conn):
 def build_backup(conn):
     state = build_state(conn)
     logs = [dict(r) for r in conn.execute("SELECT * FROM loan_logs ORDER BY id DESC")]
+    logs.extend(dict(r) for r in conn.execute("SELECT * FROM loan_logs_archive ORDER BY id DESC"))
+    logs.sort(key=lambda item: item.get("id", 0), reverse=True)
     reservations = [dict(r) for r in conn.execute("SELECT * FROM reservations ORDER BY id DESC")]
     accounts = []
     for r in conn.execute(
@@ -1887,10 +1943,18 @@ class Handler(SimpleHTTPRequestHandler):
                 conn.execute("BEGIN IMMEDIATE")
                 try:
                     conn.execute(
-                        "UPDATE loan_logs SET archived = 1 "
-                        "WHERE archived = 0 AND occurred_at >= ? AND occurred_at < ?",
+                        "INSERT OR IGNORE INTO loan_logs_archive "
+                        "(id, occurred_at, created_at, barcode, title, asset_id, class_name, user_name, "
+                        "action, was_overdue, due_at, archived) "
+                        "SELECT id, occurred_at, created_at, barcode, title, asset_id, class_name, user_name, "
+                        "action, was_overdue, due_at, 1 FROM loan_logs "
+                        "WHERE occurred_at >= ? AND occurred_at < ?",
                         (period_start, period_end),
                     )
+                    archived_count = conn.execute(
+                        "DELETE FROM loan_logs WHERE occurred_at >= ? AND occurred_at < ?",
+                        (period_start, period_end),
+                    ).rowcount
                     # 只釋放該學年到期且目前仍逾期的借閱。
                     conn.execute(
                         "UPDATE books SET status = '在館', loaned_to = NULL, loan_class = NULL, due_at = NULL, "
@@ -1903,9 +1967,9 @@ class Handler(SimpleHTTPRequestHandler):
                     raise
                 _audit_id, _audit_name = session_actor(conn, token)
                 log_audit(conn, "學年歸檔", _audit_id, _audit_name,
-                          detail="學年 {} 歸檔".format(school_year),
+                          detail="學年 {} 歸檔 {} 筆".format(school_year, archived_count),
                           ip=self.client_address[0])
-                return self.send_json({"ok": True, "schoolYear": school_year})
+                return self.send_json({"ok": True, "schoolYear": school_year, "archived": archived_count})
             if method == "GET" and path == "/api/state":
                 return self.send_json(build_state(conn))
 
@@ -1929,6 +1993,14 @@ class Handler(SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(body)
                 return
+
+            if method == "GET" and path == "/api/backup/manual":
+                require_admin(conn, token)
+                return self.api_manual_backup_export(conn, query)
+
+            if method == "POST" and path == "/api/backup/manual/import":
+                require_admin(conn, token)
+                return self.api_manual_backup_import(conn, token)
 
             if method == "POST" and path == "/api/backup/run":
                 require_admin(conn, token)
@@ -2335,7 +2407,7 @@ class Handler(SimpleHTTPRequestHandler):
 
             if path == "/api/loan" and method == "POST":
                 require_permission(conn, token, "loan")
-                return self.api_loan(conn)
+                return self.api_loan(conn, token)
 
             if path == "/api/loan/batch-return" and method == "POST":
                 require_permission(conn, token, "loan")
@@ -2742,7 +2814,7 @@ class Handler(SimpleHTTPRequestHandler):
                 is_daily_admin = False
             else:
                 prow = conn.execute(
-                    "SELECT can_loan, can_member, can_book, can_config, can_report, role, security_question, security_answer_hash FROM users WHERE id = ?",
+                    "SELECT can_loan, can_member, can_book, can_config, can_report, role, security_question, security_answer_hash, security_question_2, security_answer_hash_2 FROM users WHERE id = ?",
                     (user["id"],),
                 ).fetchone()
                 if prow and (prow["role"] or "") in ("admin", "root"):
@@ -2793,10 +2865,10 @@ class Handler(SimpleHTTPRequestHandler):
             need_security_question = False
             if user is not None and user_id is not None:
                 sq_row = conn.execute(
-                    "SELECT security_question FROM users WHERE id = ?",
+                    "SELECT security_question, security_question_2 FROM users WHERE id = ?",
                     (user_id,),
                 ).fetchone()
-                if sq_row and not sq_row["security_question"]:
+                if sq_row and (not sq_row["security_question"] or not sq_row["security_question_2"]):
                     need_security_question = True
 
             return self.send_json(
@@ -2836,6 +2908,142 @@ class Handler(SimpleHTTPRequestHandler):
             {"ok": True},
             headers={"Set-Cookie": "sid=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"},
         )
+
+    def api_manual_backup_export(self, conn, query):
+        """輸出規格書要求的三份可人工還原 CSV。"""
+        kind = (query.get("kind") or [""])[0].strip()
+        if kind == "members":
+            rows = []
+            for r in conn.execute(
+                "SELECT u.username, u.name, u.role, u.school_year, u.email, u.barcode, c.name AS class_name "
+                "FROM users u LEFT JOIN classes c ON c.id = u.class_id WHERE u.active = 1 ORDER BY u.id"
+            ):
+                rows.append([r["username"], r["name"], r["role"], r["school_year"] or "",
+                             r["email"] or "", r["barcode"] or "", r["class_name"] or ""])
+            return self._send_table_export("csv", "使用者清單", [],
+                ["帳號", "姓名", "角色", "學年", "Email", "條碼", "班級"], rows,
+                base="使用者清單")
+        if kind == "books":
+            rows = []
+            for r in conn.execute(
+                "SELECT barcode, title, asset_id, status, isbn, publisher, source, price, purchase_date, keeper, "
+                "confirm_note, inventory_date, scrap_date, remarks FROM books ORDER BY barcode"
+            ):
+                rows.append([r[k] or "" for k in (
+                    "barcode", "title", "asset_id", "status", "isbn", "publisher", "source", "price",
+                    "purchase_date", "keeper", "confirm_note", "inventory_date", "scrap_date", "remarks")])
+            return self._send_table_export("csv", "圖書清單", [],
+                ["條碼", "書名", "財產編號", "狀態", "ISBN", "出版社", "來源", "單價",
+                 "購入日期", "保管人", "確認", "盤點日期", "報廢日期", "備註"], rows,
+                base="圖書清單")
+        if kind == "checked-out":
+            rows = []
+            for r in conn.execute(
+                "SELECT barcode, title, asset_id, status, loaned_to, loan_class, due_at FROM books "
+                "WHERE status = '借出' ORDER BY barcode"
+            ):
+                rows.append([r[k] or "" for k in (
+                    "barcode", "title", "asset_id", "status", "loaned_to", "loan_class", "due_at")])
+            return self._send_table_export("csv", "已借出圖書清單", [],
+                ["條碼", "書名", "財產編號", "狀態", "借閱人", "班級", "應還日期"], rows,
+                base="已借出圖書清單")
+        raise ApiError(400, "kind 必須是 members、books 或 checked-out")
+
+    def api_manual_backup_import(self, conn, token):
+        """匯入三份 CSV 解析後的資料；不刪除歷史紀錄，只更新目前館藏狀態。"""
+        data = self.read_json()
+        members = data.get("members") or []
+        books = data.get("books") or []
+        checked_out = data.get("checkedOut") or []
+        if not all(isinstance(v, list) for v in (members, books, checked_out)):
+            raise ApiError(400, "三份備份資料都必須是陣列")
+        imported_members = imported_books = imported_loans = 0
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            for item in members:
+                if not isinstance(item, dict):
+                    continue
+                username = _clean_text(item.get("username") or item.get("帳號") or "", "帳號", 50)
+                name = _clean_text(item.get("name") or item.get("姓名") or "", "姓名", 50)
+                role = _clean_text(item.get("role") or item.get("角色") or "student", "角色", 20)
+                class_name = _clean_text(item.get("className") or item.get("class") or item.get("班級") or "", "班級", 50)
+                if not name:
+                    continue
+                if role == "student" and class_name:
+                    cls = conn.execute("SELECT id FROM classes WHERE name = ? AND active = 1", (class_name,)).fetchone()
+                    if not cls:
+                        conn.execute("INSERT INTO classes (name, sort_order, active) VALUES (?, 999, 1)", (class_name,))
+                        cls = conn.execute("SELECT id FROM classes WHERE name = ?", (class_name,)).fetchone()
+                    user_id = ensure_member_user(conn, cls["id"], name, flags=(0, 0, 0, 0, 0),
+                                                 barcode=_clean_text(item.get("barcode") or item.get("條碼") or username, "條碼", 128) or None)
+                    conn.execute("UPDATE users SET school_year = ?, email = ? WHERE id = ?",
+                                 (_clean_text(item.get("schoolYear") or item.get("學年") or "115", "學年", 10),
+                                  _clean_text(item.get("email") or item.get("Email") or "", "Email", 254), user_id))
+                elif username:
+                    row = conn.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
+                    if row:
+                        conn.execute("UPDATE users SET name = ?, email = ?, school_year = ?, active = 1 WHERE id = ?",
+                                     (name, _clean_text(item.get("email") or item.get("Email") or "", "Email", 254),
+                                      _clean_text(item.get("schoolYear") or item.get("學年") or "115", "學年", 10), row["id"]))
+                    else:
+                        conn.execute(
+                            "INSERT INTO users (username, name, password, role, class_id, email, active, school_year, "
+                            "can_loan, can_member, can_book, can_config, can_report) VALUES (?, ?, ?, ?, NULL, ?, 1, ?, 1, 0, 0, 0, 0)",
+                            (username, name, hash_password(DEFAULT_PASSWORD), role,
+                             _clean_text(item.get("email") or item.get("Email") or "", "Email", 254),
+                             _clean_text(item.get("schoolYear") or item.get("學年") or "115", "學年", 10)))
+                imported_members += 1
+
+            for item in books:
+                if not isinstance(item, dict):
+                    continue
+                barcode = _clean_text(item.get("barcode") or item.get("條碼") or "", "條碼", 128)
+                title = _clean_text(item.get("title") or item.get("書名") or "", "書名", 200)
+                if not barcode or not title:
+                    continue
+                status = _clean_text(item.get("status") or item.get("狀態") or "在館", "狀態", 20)
+                if status not in ("在館", "借出", "遺失", "修繕中", "爭議中", "報廢"):
+                    raise ApiError(400, "狀態不合法")
+                try:
+                    price = int(item.get("price") or item.get("單價") or 0)
+                except (TypeError, ValueError):
+                    raise ApiError(400, "單價必須是數字")
+                if price < 0:
+                    raise ApiError(400, "單價不可小於 0")
+                conn.execute(
+                    "INSERT INTO books (barcode, title, asset_id, status, isbn, publisher, source, price, purchase_date, keeper, confirm_note, inventory_date, scrap_date, remarks, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(barcode) DO UPDATE SET title=excluded.title, asset_id=excluded.asset_id, status=excluded.status, isbn=excluded.isbn, publisher=excluded.publisher, source=excluded.source, price=excluded.price, purchase_date=excluded.purchase_date, keeper=excluded.keeper, confirm_note=excluded.confirm_note, inventory_date=excluded.inventory_date, scrap_date=excluded.scrap_date, remarks=excluded.remarks, updated_at=excluded.updated_at",
+                    (barcode, title, _clean_text(item.get("assetId") or item.get("財產編號") or "", "財產編號", 64),
+                     status,
+                     _clean_text(item.get("isbn") or item.get("ISBN") or "", "ISBN", 32),
+                     _clean_text(item.get("publisher") or item.get("出版社") or "", "出版社", 100),
+                     _clean_text(item.get("source") or item.get("來源") or "", "來源", 20),
+                     price,
+                     _clean_text(item.get("purchaseDate") or item.get("購入日期") or "", "購入日期", 20),
+                     _clean_text(item.get("keeper") or item.get("保管人") or "", "保管人", 50),
+                     _clean_text(item.get("confirmNote") or item.get("確認") or "", "確認", 200),
+                     _clean_text(item.get("inventoryDate") or item.get("盤點日期") or "", "盤點日期", 20),
+                     _clean_text(item.get("scrapDate") or item.get("報廢日期") or "", "報廢日期", 20),
+                     _clean_text(item.get("remarks") or item.get("備註") or "", "備註", 500), now_display(), now_display()))
+                imported_books += 1
+
+            for item in checked_out:
+                if not isinstance(item, dict):
+                    continue
+                barcode = _clean_text(item.get("barcode") or item.get("條碼") or "", "條碼", 128)
+                borrower = _clean_text(item.get("loanedTo") or item.get("借閱人") or "", "借閱人", 50)
+                if not barcode or not borrower:
+                    continue
+                conn.execute("UPDATE books SET status = '借出', loaned_to = ?, loan_class = ?, due_at = ?, updated_at = ? WHERE barcode = ?",
+                             (borrower, _clean_text(item.get("loanClass") or item.get("班級") or "", "班級", 50),
+                              _clean_text(item.get("dueAt") or item.get("應還日期") or "", "應還日期", 30), now_display(), barcode))
+                imported_loans += 1
+            conn.execute("COMMIT")
+        except Exception:
+            safe_rollback(conn)
+            raise
+        self._audit(conn, token, "匯入三份手動備份", detail="使用者 {}、圖書 {}、已借出 {}".format(imported_members, imported_books, imported_loans))
+        return self.send_json({"ok": True, "members": imported_members, "books": imported_books, "checkedOut": imported_loans})
 
     def api_logs(self, conn, query):
         try:
@@ -4118,7 +4326,7 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def api_loan(self, conn):
+    def api_loan(self, conn, token=None):
         data = self.read_json()
         barcode = _clean_text(data.get("barcode"), "條碼", 128, required=True)
         action = data.get("action")
@@ -4130,6 +4338,42 @@ class Handler(SimpleHTTPRequestHandler):
         member_type = (data.get("memberType") or "student").strip()
         if member_type not in ("student", "teacher"):
             raise ApiError(400, "memberType must be student or teacher")
+
+        # 借閱權限依規格綁定登入者：學生只能借自己；老師可借自己或協助學生，
+        # 不能冒用另一位老師。共用管理員／Root／日常管理員維持全權限。
+        actor = conn.execute(
+            "SELECT u.id, u.username, u.name, u.role, u.class_id, c.name AS class_name "
+            "FROM sessions s LEFT JOIN users u ON u.id = s.user_id "
+            "LEFT JOIN classes c ON c.id = u.class_id WHERE s.token = ?",
+            (token,),
+        ).fetchone() if token else None
+        if action == "借書" and actor and actor["id"] is not None and actor["role"] not in ("admin", "root"):
+            target = None
+            if class_name and not class_name.startswith("教職員"):
+                target = conn.execute(
+                    "SELECT u.id, u.username, u.name, u.role, c.name AS class_name "
+                    "FROM users u JOIN classes c ON c.id = u.class_id "
+                    "WHERE u.active = 1 AND c.name = ? AND (u.name = ? OR u.username = ? OR u.barcode = ?) "
+                    "ORDER BY u.id LIMIT 1",
+                    (class_name, user_name, user_name, user_name),
+                ).fetchone()
+            else:
+                target = conn.execute(
+                    "SELECT id, username, name, role, '' AS class_name FROM users "
+                    "WHERE active = 1 AND (name = ? OR username = ? OR barcode = ?) ORDER BY id LIMIT 1",
+                    (user_name, user_name, user_name),
+                ).fetchone()
+            if not target:
+                raise ApiError(400, "借閱人不存在或已停用")
+            if actor["role"] == "student":
+                if target["id"] != actor["id"]:
+                    raise ApiError(403, "學生帳號只能替自己借書")
+            elif target["role"] == "teacher" and target["id"] != actor["id"]:
+                raise ApiError(403, "老師帳號不能替另一位老師借書")
+            member_type = "teacher" if target["role"] == "teacher" else "student"
+            user_name = target["name"] or target["username"]
+            if target["class_name"]:
+                class_name = target["class_name"]
         if member_type == "teacher":
             limit = int(get_setting(conn, "loan_limit_teacher", "90"))
             teacher_term_end = get_setting(conn, "term_teacher_end", "")
@@ -5734,6 +5978,8 @@ class Handler(SimpleHTTPRequestHandler):
     # 離線安全提問（3.3）：無 Email/SMTP 時的密碼救援備援機制
     # ------------------------------------------------------------------
     DEFAULT_SECURITY_QUESTIONS = [
+        "開園日期是哪一天？",
+        "園長姓名是什麼？",
         "你國小就讀的學校名稱是什麼？",
         "你寵物的名字是什麼？",
         "你母親的娘家姓氏是什麼？",
@@ -5754,7 +6000,7 @@ class Handler(SimpleHTTPRequestHandler):
         if sess and sess["user_id"] is not None:
             user_id = sess["user_id"]
             user = conn.execute(
-                "SELECT security_question FROM users WHERE id = ? AND active = 1",
+                "SELECT security_question, security_question_2 FROM users WHERE id = ? AND active = 1",
                 (user_id,),
             ).fetchone()
         elif sess and sess["user_id"] is None:
@@ -5765,7 +6011,7 @@ class Handler(SimpleHTTPRequestHandler):
             if not username:
                 raise ApiError(400, "請提供帳號")
             user = conn.execute(
-                "SELECT security_question FROM users WHERE (username = ? OR name = ?) AND active = 1 ORDER BY id LIMIT 1",
+                "SELECT security_question, security_question_2 FROM users WHERE (username = ? OR name = ?) AND active = 1 ORDER BY id LIMIT 1",
                 (username, username),
             ).fetchone()
         if not user:
@@ -5773,6 +6019,8 @@ class Handler(SimpleHTTPRequestHandler):
         return self.send_json({
             "hasQuestion": bool(user["security_question"]),
             "question": user["security_question"] or "",
+            "hasQuestion2": bool(user["security_question_2"]),
+            "question2": user["security_question_2"] or "",
         })
 
     def api_security_question_put(self, conn):
@@ -5789,13 +6037,17 @@ class Handler(SimpleHTTPRequestHandler):
         data = self.read_json()
         question = _clean_text(data.get("securityQuestion") or "", "安全提問", 200)
         answer = _clean_text(data.get("securityAnswer") or "", "安全提問答案", 100)
-        if not question or not answer:
-            raise ApiError(400, "提問與答案皆不可空白")
-        if question not in self.DEFAULT_SECURITY_QUESTIONS:
+        question2 = _clean_text(data.get("securityQuestion2") or "", "第二個安全提問", 200)
+        answer2 = _clean_text(data.get("securityAnswer2") or "", "第二個安全提問答案", 100)
+        if not question or not answer or not question2 or not answer2:
+            raise ApiError(400, "兩個提問與答案皆不可空白")
+        if question not in self.DEFAULT_SECURITY_QUESTIONS or question2 not in self.DEFAULT_SECURITY_QUESTIONS:
             raise ApiError(400, "請從系統提供的提問中選擇")
+        if question == question2:
+            raise ApiError(400, "兩個安全提問不可相同")
         conn.execute(
-            "UPDATE users SET security_question = ?, security_answer_hash = ?, updated_at = datetime('now', 'localtime') WHERE id = ?",
-            (question, hash_password(answer), user_id),
+            "UPDATE users SET security_question = ?, security_answer_hash = ?, security_question_2 = ?, security_answer_hash_2 = ?, updated_at = datetime('now', 'localtime') WHERE id = ?",
+            (question, hash_password(answer), question2, hash_password(answer2), user_id),
         )
         self._audit(conn, token, "設定安全提問", target=str(user_id),
                     detail="已設定離線安全提問救援")
@@ -5809,11 +6061,13 @@ class Handler(SimpleHTTPRequestHandler):
         username = _clean_text(data.get("username") or "", "帳號", 50)
         question = _clean_text(data.get("securityQuestion") or "", "安全提問", 200)
         answer = _clean_text(data.get("securityAnswer") or "", "安全提問答案", 100)
+        question2 = _clean_text(data.get("securityQuestion2") or "", "第二個安全提問", 200)
+        answer2 = _clean_text(data.get("securityAnswer2") or "", "第二個安全提問答案", 100)
         new_password = data.get("newPassword") or data.get("password")
         if not username:
             raise ApiError(400, "請輸入帳號")
-        if not question or not answer:
-            raise ApiError(400, "提問與答案皆不可空白")
+        if not question or not answer or not question2 or not answer2:
+            raise ApiError(400, "兩個提問與答案皆不可空白")
         if not isinstance(new_password, str) or len(new_password) < 4:
             raise ApiError(400, "新密碼至少需 4 個字元")
         if len(new_password) > 128:
@@ -5825,11 +6079,12 @@ class Handler(SimpleHTTPRequestHandler):
         ).fetchone()
         if not user:
             raise ApiError(400, "查無此啟用中的使用者")
-        if not user["security_question"]:
-            raise ApiError(400, "此帳號尚未設定安全提問，請先登入後設定，或改用其他救援方式")
-        if user["security_question"] != question:
+        if not user["security_question"] or not user["security_question_2"]:
+            raise ApiError(400, "此帳號尚未設定兩個安全提問，請先登入後設定，或改用其他救援方式")
+        if user["security_question"] != question or user["security_question_2"] != question2:
             raise ApiError(400, "安全提問題目不符，請確認後再試")
-        if not verify_password(answer, user["security_answer_hash"]):
+        if (not verify_password(answer, user["security_answer_hash"])
+                or not verify_password(answer2, user["security_answer_hash_2"])):
             raise ApiError(400, "安全提問答案錯誤")
 
         hashed = hash_password(new_password)
@@ -6264,6 +6519,7 @@ class Handler(SimpleHTTPRequestHandler):
         try:
             conn.execute("DELETE FROM books")
             conn.execute("DELETE FROM loan_logs")
+            conn.execute("DELETE FROM loan_logs_archive")
             conn.execute("DELETE FROM reservations")
 
             # 不刪除 users / classes，避免遺失帳號密碼與 Email。
@@ -6382,9 +6638,10 @@ class Handler(SimpleHTTPRequestHandler):
                 )
 
             for log in logs:
+                target_table = "loan_logs_archive" if log["archived"] else "loan_logs"
                 conn.execute(
-                    "INSERT INTO loan_logs (occurred_at, barcode, title, asset_id, class_name, user_name, action, "
-                    "was_overdue, due_at, archived) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO {} (occurred_at, barcode, title, asset_id, class_name, user_name, action, "
+                    "was_overdue, due_at, archived) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)".format(target_table),
                     (
                         log["date"], log["barcode"], log["title"], log["assetId"],
                         log["className"], log["userName"], log["action"], log["wasOverdue"],

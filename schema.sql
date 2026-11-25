@@ -102,6 +102,24 @@ CREATE TABLE IF NOT EXISTS loan_logs (
 CREATE INDEX IF NOT EXISTS idx_loan_logs_created ON loan_logs (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_loan_logs_barcode ON loan_logs (barcode);
 
+-- 已結算學年的借還歷史。現行 loan_logs 只保留目前學年，完整 JSON 備份仍會包含封存資料。
+CREATE TABLE IF NOT EXISTS loan_logs_archive (
+    id          INTEGER PRIMARY KEY,
+    occurred_at TEXT    NOT NULL,
+    created_at  TEXT    NOT NULL,
+    barcode     TEXT    NOT NULL,
+    title       TEXT    NOT NULL,
+    asset_id    TEXT    NOT NULL DEFAULT '',
+    class_name  TEXT    NOT NULL,
+    user_name   TEXT    NOT NULL,
+    action      TEXT    NOT NULL CHECK (action IN ('借書', '還書')),
+    was_overdue INTEGER,
+    due_at      TEXT,
+    archived    INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE INDEX IF NOT EXISTS idx_loan_logs_archive_occurred ON loan_logs_archive (occurred_at);
+
 -- 預約。成員在書被借走後可預約，同一成員日後借到該書時自動履約。
 CREATE TABLE IF NOT EXISTS reservations (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -151,6 +169,8 @@ CREATE TABLE IF NOT EXISTS users (
     can_report INTEGER NOT NULL DEFAULT 0,
     security_question TEXT NOT NULL DEFAULT '',   -- 離線安全提問題目（3.3 離線密碼救援）
     security_answer_hash TEXT NOT NULL DEFAULT '', -- 安全提問答案的雜湊值
+    security_question_2 TEXT NOT NULL DEFAULT '',
+    security_answer_hash_2 TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
