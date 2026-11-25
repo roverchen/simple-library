@@ -156,6 +156,8 @@
         .query-copies { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
         .query-copies th, .query-copies td { border: 1px solid #e5e5e5; padding: 6px 8px; text-align: left; }
         .query-copies th { background: #f7f7f7; }
+        .query-copies tbody tr { cursor: pointer; }
+        .query-copies tbody tr:hover { background: #eef3fb; }
 
         /* 報表頁籤 */
         .report-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid #e2e2e2; }
@@ -980,6 +982,18 @@
     </div>
 </div>
 
+<!-- 條碼 QR modal（館藏查詢列點擊開啟） -->
+<div class="modal-overlay" id="barcodeModal">
+    <div class="modal-box" style="max-width:320px; text-align:center;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h3 id="barcodeModalTitle" style="margin:0;">條碼</h3>
+            <button type="button" class="modal-close" onclick="closeBarcodeModal()" aria-label="關閉">✕</button>
+        </div>
+        <div id="barcodeModalBody" style="margin:16px 0;"></div>
+        <button type="button" class="btn-secondary" onclick="closeBarcodeModal()">關閉</button>
+    </div>
+</div>
+
 <!-- 圖書編輯 modal（清單點擊開啟；儲存／報廢／標籤都在內） -->
 <div class="modal-overlay" id="bookModal">
     <div class="modal-box">
@@ -1269,7 +1283,7 @@
                     </div>
                     <table class="query-copies">
                         <thead><tr><th>財產編號</th><th>書名</th><th>狀態</th><th>位置／借閱人</th></tr></thead>
-                        <tbody>${g.copies.map(c => `<tr>
+                        <tbody>${g.copies.map(c => `<tr onclick="openBarcodeModal('${escapeHtml(c.barcode)}','${escapeHtml(g.title || '')}')" style="cursor:pointer;">
                             <td>${escapeHtml(c.assetId || '—')}</td>
                             <td>${escapeHtml(g.title || '—')}</td>
                             <td>${statusBadge(c.status)}${reservationBadge(c)}</td>
@@ -2785,6 +2799,29 @@
     let inputDialogState = null;
 
     let bookModalState = null;
+
+    function openBarcodeModal(barcode, title) {
+        const modal = document.getElementById('barcodeModal');
+        const titleEl = document.getElementById('barcodeModalTitle');
+        const body = document.getElementById('barcodeModalBody');
+        if (titleEl) titleEl.textContent = title || '條碼';
+        if (body) {
+            body.innerHTML = '<div style="font-size:1.1rem; font-weight:bold; margin-bottom:10px;">' + escapeHtml(barcode) + '</div>' +
+                '<div id="barcodeModalQr" style="display:flex; justify-content:center; margin:10px 0;"></div>';
+            const qrEl = document.getElementById('barcodeModalQr');
+            if (qrEl && typeof QRCode !== 'undefined') {
+                new QRCode(qrEl, { text: barcode, width: 180, height: 180, colorDark: '#000000', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.H });
+            }
+        }
+        if (modal) modal.classList.add('open');
+    }
+
+    function closeBarcodeModal() {
+        const modal = document.getElementById('barcodeModal');
+        if (modal) modal.classList.remove('open');
+        const body = document.getElementById('barcodeModalBody');
+        if (body) body.innerHTML = '';
+    }
 
     async function openBookModal(barcode) {
         const book = await loadBookDetails(barcode);
