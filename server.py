@@ -69,7 +69,7 @@ RECOVERY_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 # 靜態檔案採白名單；同一個目錄內有名冊、照片、備份與後端原始碼，
 # 不應因為檔案剛好存在就被區網使用者下載。
 STATIC_ALLOWED_FILES = {"index.html"}
-STATIC_ALLOWED_PREFIXES = ("vendor",)
+STATIC_ALLOWED_PREFIXES = ("vendor", "docs")
 
 _lock = threading.Lock()
 _login_attempts = {}                # ip -> [count, window_start]
