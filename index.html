@@ -1378,6 +1378,16 @@
             showApp();
             await maybeMigrateLegacy();
             await loadLoanRules();
+            // 借還書頁預設帶入操作者本人為借閱人（僅個別帳號）
+            try {
+                if (currentUser && !currentUser.isSharedAdmin && currentUser.name) {
+                    const inp = document.getElementById('loanMemberInput');
+                    if (inp && !inp.value) {
+                        inp.value = currentUser.name;
+                        if (typeof onLoanMemberInput === 'function') onLoanMemberInput(currentUser.name);
+                    }
+                }
+            } catch (e) { /* 不阻斷登入 */ }
             renderScanResults();
         } catch (err) {
             if (err.status !== 401) showBackendError(err);
