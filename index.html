@@ -895,37 +895,6 @@
     </div>
 </div>
 
-<!-- 安全提問設定 modal（登入後強制設定） -->
-<div class="modal-overlay" id="securityQuestionModal">
-    <div class="modal-box">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-            <h3>🔒 設定安全提問</h3>
-            <button type="button" class="modal-close" onclick="closeSecurityQuestionModal()" aria-label="關閉">✕</button>
-        </div>
-        <p class="modal-hint">為保護您的帳號安全，請設定安全提問與答案。忘記密碼時可透過此方式重設。</p>
-        <p id="sqCurrentStatus" class="modal-hint" style="color:#555;"></p>
-        <div style="margin:16px 0;">
-            <label for="sqQuestion">安全提問</label>
-            <select id="sqQuestion" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:5px;">
-                <option value="你國小就讀的學校名稱是什麼？">你國小就讀的學校名稱是什麼？</option>
-                <option value="你寵物的名字是什麼？">你寵物的名字是什麼？</option>
-                <option value="你母親的娘家姓氏是什麼？">你母親的娘家姓氏是什麼？</option>
-                <option value="你出生的城市是哪裡？">你出生的城市是哪裡？</option>
-                <option value="你最好的朋友的名字是什麼？">你最好的朋友的名字是什麼？</option>
-            </select>
-        </div>
-        <div style="margin:16px 0;">
-            <label for="sqAnswer">安全提問答案</label>
-            <input type="text" id="sqAnswer" autocomplete="off" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:5px;">
-            <p class="modal-hint">請輸入您會記得的答案，日後忘記密碼時可用此方式重設。</p>
-        </div>
-        <div style="display:flex; gap:8px; justify-content:flex-end;">
-            <button type="button" class="btn-secondary" onclick="closeSecurityQuestionModal()">稍後設定</button>
-            <button type="button" id="sqSaveBtn" class="btn-primary" onclick="saveSecurityQuestion()">✅ 儲存</button>
-        </div>
-    </div>
-</div>
-
 <!-- 通用輸入對話框（取代 prompt） -->
 <div class="modal-overlay" id="inputDialog">
     <div class="modal-box">
@@ -2551,7 +2520,6 @@
                 isRoot: (res.user && res.user.is_root) || false,
                 isDailyAdmin: (res.user && res.user.is_daily_admin) || false,
                 isSharedAdmin: (res.user && res.user.is_shared_admin) || false,
-                needSecurityQuestion: (res.user && res.user.needSecurityQuestion) || false,
                 mustChangePassword: (res.user && res.user.mustChangePassword) || false,
                 name: (res.user && res.user.name) || '',
                 email: (res.user && res.user.email) || '',
@@ -2565,10 +2533,6 @@
             if (currentUser.mustChangePassword) {
                 alert('這是預設密碼，為保護帳號安全，請立即修改。');
                 await changeOwnPassword();
-            }
-            // 若需強制設定安全提問，先彈出設定視窗
-            if (currentUser.needSecurityQuestion) {
-                openSecurityQuestionModal();
             }
         } catch (err) {
             alert(err.message || "登入失敗");
@@ -4305,62 +4269,6 @@
             await api('PUT', '/api/settings/backup', { backupDir: dir, backupTime: time });
             alert('✅ 備份設定已儲存');
             loadBackupSettings();
-        } catch (err) { alert("❌ " + err.message); }
-    }
-
-    async function openSecurityQuestionModal() {
-        const ans = document.getElementById('sqAnswer');
-        const sel = document.getElementById('sqQuestion');
-        const status = document.getElementById('sqCurrentStatus');
-        const saveBtn = document.getElementById('sqSaveBtn');
-        if (ans) ans.value = '';
-        if (currentUser && currentUser.isSharedAdmin) {
-            if (status) status.textContent = '共用管理員沒有個人帳號，無法設定個人安全提問；請以個人帳號登入後設定。';
-            if (saveBtn) saveBtn.disabled = true;
-            if (sel) sel.disabled = true;
-        } else {
-            if (saveBtn) saveBtn.disabled = false;
-            if (sel) sel.disabled = false;
-            if (status) status.textContent = '目前尚未設定安全提問。';
-            try {
-                const data = await api('GET', '/api/security-question');
-                if (sel && data.question) sel.value = data.question;
-                if (status) {
-                    status.textContent = data.hasQuestion
-                        ? '目前已設定：' + data.question
-                        : '目前尚未設定安全提問。';
-                }
-            } catch (err) { /* 讀取失敗時仍可設定 */ }
-        }
-        document.getElementById('securityQuestionModal').classList.add('open');
-    }
-
-    function closeSecurityQuestionModal() {
-        document.getElementById('securityQuestionModal').classList.remove('open');
-    }
-
-    async function saveSecurityQuestion() {
-        if (currentUser && currentUser.isSharedAdmin) {
-            alert('❌ 共用管理員無個人安全提問，請以個人帳號登入後設定');
-            return;
-        }
-        const sel = document.getElementById('sqQuestion');
-        const answerEl = document.getElementById('sqAnswer');
-        const answer = (answerEl || {}).value.trim();
-        const question = (sel || {}).value.trim();
-        if (!question || !answer) { alert('❌ 提問與答案皆不可空白'); return; }
-        try {
-            await api('PUT', '/api/security-question', { securityQuestion: question, securityAnswer: answer });
-            alert('✅ 安全提問已儲存');
-            (answerEl || {}).value = '';
-            const status = document.getElementById('sqCurrentStatus');
-            if (status) status.textContent = '目前已設定：' + question;
-            // 若是從登入強制設定modal來的，關閉modal並標記已設定
-            const modal = document.getElementById('securityQuestionModal');
-            if (modal && modal.classList.contains('open')) {
-                closeSecurityQuestionModal();
-                currentUser.needSecurityQuestion = false;
-            }
         } catch (err) { alert("❌ " + err.message); }
     }
 
