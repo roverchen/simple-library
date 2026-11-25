@@ -96,7 +96,9 @@ CREATE TABLE IF NOT EXISTS loan_logs (
     -- 還書時的應還日期快照（僅還書紀錄有值）
     due_at      TEXT,
     -- 歸檔標記（1＝已歸檔，用於學年結算）
-    archived    INTEGER DEFAULT 0
+    archived    INTEGER DEFAULT 0,
+    -- 執行此筆借還書操作的操作者（登入帳號顯示名稱）
+    operator    TEXT    NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_loan_logs_created ON loan_logs (created_at DESC);
