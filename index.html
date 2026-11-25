@@ -1283,7 +1283,7 @@
                     </div>
                     <table class="query-copies">
                         <thead><tr><th>財產編號</th><th>書名</th><th>狀態</th><th>位置／借閱人</th></tr></thead>
-                        <tbody>${g.copies.map(c => `<tr onclick="openBarcodeModal('${escapeHtml(c.barcode)}','${escapeHtml(g.title || '')}')" style="cursor:pointer;">
+                        <tbody>${g.copies.map(c => `<tr onclick="openBarcodeModal('${escapeHtml(c.barcode)}','${escapeHtml(g.title || '')}','${escapeHtml(c.status)}','${escapeHtml(c.loanedTo || '')}','${escapeHtml(c.loanClass || '')}')" style="cursor:pointer;">
                             <td>${escapeHtml(c.assetId || '—')}</td>
                             <td>${escapeHtml(g.title || '—')}</td>
                             <td>${statusBadge(c.status)}${reservationBadge(c)}</td>
@@ -2800,20 +2800,83 @@
 
     let bookModalState = null;
 
-    function openBarcodeModal(barcode, title) {
+    async function ensureCurrentLoanMember() {
+        if (currentLoanMember) return currentLoanMember;
+        if (!currentUser || currentUser.isSharedAdmin || !currentUser.name) return null;
+        try {
+            const data = await api('GET', '/api/member/search?q=' + encodeURIComponent(currentUser.name));
+            const matches = data.matches || [];
+            if (matches.length) {
+                const m = matches[0];
+                currentLoanMember = {
+                    className: m.className || '',
+                    userName: m.name || currentUser.name,
+                    memberType: m.memberType || 'student'
+                };
+            }
+        } catch (e) { /* 忽略 */ }
+        return currentLoanMember;
+    }
+
+    async function openBarcodeModal(barcode, title, status, loanedTo, loanClass) {
         const modal = document.getElementById('barcodeModal');
         const titleEl = document.getElementById('barcodeModalTitle');
         const body = document.getElementById('barcodeModalBody');
         if (titleEl) titleEl.textContent = title || '條碼';
+        const p = currentUser && currentUser.permissions ? currentUser.permissions : {};
+        const canLoan = !!(p.canLoan);
+        const member = await ensureCurrentLoanMember();
+        let actionHtml = '';
+        if (canLoan) {
+            if (status === '在館') {
+                actionHtml = '<button type="button" onclick="barcodeModalAction(\'' + escapeHtml(barcode) + '\',\'borrow\')" style="margin-top:10px; padding:8px 16px; background:var(--primary); color:white; border:none; border-radius:5px;">📤 借書</button>';
+            } else if (status === '借出' && loanedTo && member && loanedTo === member.userName) {
+                actionHtml = '<button type="button" onclick="barcodeModalAction(\'' + escapeHtml(barcode) + '\',\'return\')" style="margin-top:10px; padding:8px 16px; background:var(--secondary); color:white; border:none; border-radius:5px;">📥 還書</button>';
+            } else if (status === '借出') {
+                actionHtml = '<button type="button" onclick="barcodeModalAction(\'' + escapeHtml(barcode) + '\',\'reserve\')" style="margin-top:10px; padding:8px 16px; background:#8e24aa; color:white; border:none; border-radius:5px;">📌 預約</button>';
+            }
+        }
         if (body) {
             body.innerHTML = '<div style="font-size:1.1rem; font-weight:bold; margin-bottom:10px;">' + escapeHtml(barcode) + '</div>' +
-                '<div id="barcodeModalQr" style="display:flex; justify-content:center; margin:10px 0;"></div>';
+                '<div id="barcodeModalQr" style="display:flex; justify-content:center; margin:10px 0;"></div>' +
+                (status ? '<div style="color:#666; font-size:0.9rem; margin-top:6px;">狀態：' + escapeHtml(status) + (loanedTo ? '（' + escapeHtml(loanedTo) + '）' : '') + '</div>' : '') +
+                actionHtml;
             const qrEl = document.getElementById('barcodeModalQr');
             if (qrEl && typeof QRCode !== 'undefined') {
                 new QRCode(qrEl, { text: barcode, width: 180, height: 180, colorDark: '#000000', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.H });
             }
         }
         if (modal) modal.classList.add('open');
+    }
+
+    async function barcodeModalAction(barcode, mode) {
+        closeBarcodeModal();
+        if (!currentLoanMember) {
+            const m = await ensureCurrentLoanMember();
+            if (!m && (mode === 'borrow' || mode === 'reserve')) {
+                alert('⚠️ 請先在借還書頁選擇成員');
+                return;
+            }
+        }
+        const userName = currentLoanMember ? currentLoanMember.userName : '';
+        const className = currentLoanMember ? currentLoanMember.className : '';
+        const memberType = currentLoanMember ? currentLoanMember.memberType : 'student';
+        const action = mode === 'borrow' ? '借書' : (mode === 'return' ? '還書' : '預約');
+        if (mode === 'reserve') {
+            await reserveBook(barcode);
+            await runBookQuery();
+            return;
+        }
+        const book = bookDatabase[barcode];
+        try {
+            const res = await api('POST', '/api/loan', { barcode, className, userName, action, memberType });
+            if (bookDatabase[barcode]) bookDatabase[barcode] = res.book;
+            await runBookQuery();
+            if (action === '借書') showScanStatus(`✅ 已借出《${res.book.title}》→ ${userName}`, 'ok');
+            else showScanStatus(`✅ 已歸還《${res.book.title}》`, 'ok');
+        } catch (err) {
+            showScanStatus(`❌ ${err.message}`, 'warn');
+        }
     }
 
     function closeBarcodeModal() {
