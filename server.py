@@ -859,6 +859,9 @@ def book_json(row):
         "confirmNote": row["confirm_note"] or "",
         "inventoryDate": row["inventory_date"] or "",
         "scrapDate": row["scrap_date"] or "",
+        "source": row["source"] or "",
+        "totalAmount": (row["total_amount"] if "total_amount" in row.keys() and row["total_amount"] is not None else 0),
+        "barcode": row["barcode"] or "",
     }
 
 
@@ -1224,13 +1227,60 @@ def validate_import(payload):
             else:
                 status = "在館"
                 loaned_to = None
+        loan_class = book.get("loanClass", book.get("loan_class"))
+        if loan_class is not None:
+            loan_class = _clean_text(loan_class, "班級", 50)
+        due_at = book.get("dueAt", book.get("due_at"))
+        if due_at is not None:
+            due_at = _clean_text(due_at, "應還日期", 64)
+        price = book.get("price", 0)
+        try:
+            price = int(price or 0)
+        except (TypeError, ValueError):
+            price = 0
+        quantity = book.get("quantity", 1)
+        try:
+            quantity = int(quantity or 1)
+        except (TypeError, ValueError):
+            quantity = 1
+        total_amount = book.get("totalAmount", book.get("total_amount"))
+        if total_amount is None:
+            total_amount = price * quantity
+        try:
+            total_amount = int(total_amount or 0)
+        except (TypeError, ValueError):
+            total_amount = price * quantity
+        useful_life = book.get("usefulLife", book.get("useful_life", 1))
+        try:
+            useful_life = int(useful_life if useful_life is not None else 1)
+        except (TypeError, ValueError):
+            useful_life = 1
+        if useful_life < 0 or useful_life > 100:
+            useful_life = 1
         books[code] = {
             "title": title,
             "asset_id": asset,
             "isbn": isbn,
             "status": status,
             "loaned_to": loaned_to,
+            "loan_class": loan_class,
+            "due_at": due_at,
             "count": int(book.get("count") or 0),
+            "call_no": _clean_text(book.get("callNo", book.get("call_no", "")), "存放櫃位", 50),
+            "category": _clean_text(book.get("category", ""), "主題分類", 20),
+            "publisher": _clean_text(book.get("publisher", ""), "出版社", 100),
+            "price": price,
+            "quantity": quantity,
+            "total_amount": total_amount,
+            "source": _clean_text(book.get("source", ""), "來源", 50),
+            "purchase_date": _clean_text(book.get("purchaseDate", book.get("purchase_date", "")), "書籍購入日期", 20),
+            "keeper": _clean_text(book.get("keeper", ""), "保管人", 50),
+            "confirm_note": _clean_text(book.get("confirmNote", book.get("confirm_note", "")), "確認", 200),
+            "inventory_date": _clean_text(book.get("inventoryDate", book.get("inventory_date", "")), "盤點日期", 20),
+            "scrap_date": _clean_text(book.get("scrapDate", book.get("scrap_date", "")), "報廢日期", 20),
+            "remarks": _clean_text(book.get("remarks", ""), "備註", 500),
+            "useful_life": useful_life,
+            "barcode": code,
         }
 
     raw_logs = payload.get("loanLogs") or []
@@ -6316,12 +6366,18 @@ class Handler(SimpleHTTPRequestHandler):
 
             for barcode, book in books.items():
                 conn.execute(
-                    "INSERT INTO books (barcode, title, asset_id, isbn, status, loaned_to, "
-                    "borrow_count, created_at, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO books (barcode, title, asset_id, status, remarks, call_no, category, isbn, "
+                    "publisher, price, quantity, total_amount, source, purchase_date, keeper, confirm_note, "
+                    "inventory_date, scrap_date, useful_life, loaned_to, loan_class, due_at, borrow_count, "
+                    "created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
-                        barcode, book["title"], book["asset_id"], book["isbn"], book["status"],
-                        book["loaned_to"], book["count"], now_display(), now_display(),
+                        barcode, book["title"], book["asset_id"], book["status"], book["remarks"],
+                        book["call_no"], book["category"], book["isbn"], book["publisher"], book["price"],
+                        book["quantity"], book["total_amount"], book["source"], book["purchase_date"],
+                        book["keeper"], book["confirm_note"], book["inventory_date"], book["scrap_date"],
+                        book["useful_life"], book["loaned_to"], book["loan_class"], book["due_at"],
+                        book["count"], now_display(), now_display(),
                     ),
                 )
 
