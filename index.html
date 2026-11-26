@@ -1181,6 +1181,16 @@
             queryHistoryInitialized = true;
             populateQueryHistoryClasses();
         }
+        // 事件委派：點擊查詢結果列開啟條碼視窗
+        const qrBox = document.getElementById('queryResults');
+        if (qrBox && !qrBox.dataset.clickBound) {
+            qrBox.dataset.clickBound = '1';
+            qrBox.addEventListener('click', function (e) {
+                const tr = e.target && e.target.closest ? e.target.closest('tr[data-barcode]') : null;
+                if (!tr) return;
+                openBarcodeModal(tr.dataset.barcode || '', tr.dataset.title || '', tr.dataset.status || '', tr.dataset.loanedto || '', tr.dataset.loanclass || '');
+            });
+        }
         if (!document.getElementById('queryResults').dataset.loaded) runBookQuery();
     }
 
@@ -1289,7 +1299,7 @@
                     </div>
                     <table class="query-copies">
                         <thead><tr><th>財產編號</th><th>書名</th><th>狀態</th><th>位置／借閱人</th></tr></thead>
-                        <tbody>${g.copies.map(c => `<tr onclick="try{openBarcodeModal('${escapeHtml(c.barcode)}','${escapeHtml(g.title || '')}','${escapeHtml(c.status)}','${escapeHtml(c.loanedTo || '')}','${escapeHtml(c.loanClass || '')}');}catch(e){alert('開啟失敗：'+e.message);}" style="cursor:pointer;">
+                        <tbody>${g.copies.map(c => `<tr data-barcode="${escapeHtml(c.barcode)}" data-title="${escapeHtml(g.title || '')}" data-status="${escapeHtml(c.status)}" data-loanedto="${escapeHtml(c.loanedTo || '')}" data-loanclass="${escapeHtml(c.loanClass || '')}" style="cursor:pointer;">
                             <td>${escapeHtml(c.assetId || '—')}</td>
                             <td>${escapeHtml(g.title || '—')}</td>
                             <td>${statusBadge(c.status)}${reservationBadge(c)}</td>
