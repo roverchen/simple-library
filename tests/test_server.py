@@ -90,6 +90,15 @@ class ServerDataTests(unittest.TestCase):
         self.assertEqual(len(payload), 2)
         self.assertTrue(any(item["archived"] for item in payload))
 
+    def test_inventory_qr_pdf_keeps_all_pages(self):
+        handler = server.Handler.__new__(server.Handler)
+        pdf = handler._make_qr_label_pdf(
+            [("B{:04d}".format(i), "書{}".format(i)) for i in range(40)],
+            "測試", "測試.pdf"
+        )
+        # PDF 目錄會為每一頁建立一個 /Type /Page 物件。
+        self.assertGreater(pdf.count(b"/Type /Page"), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -16,6 +16,10 @@ Python 標準函式庫加 SQLite；不需 npm、pip 或資料庫伺服器，可�
 |---|---|
 | `index.html` | **主要版本**，老師在電腦上使用。含登入、班級成員管理、財產編號、報廢復原、報表、QR 標籤列印、備份匯出 |
 | `server.py` | 後端：靜態檔案、REST API、登入、SQLite（僅用 Python 標準函式庫） |
+| `install.sh` | macOS／Linux 安裝與資料庫初始化腳本 |
+| `start.sh` | macOS／Linux 啟動腳本，可用環境變數指定主機與連接埠 |
+| `install.bat` | Windows 安裝與資料庫初始化腳本 |
+| `start.bat` | Windows 啟動腳本 |
 | `pdf_report.py` | PDF 報表產生器（僅用 Python 標準函式庫） |
 | `schema.sql` | 資料庫結構（啟動時自動建立，勿手動刪除） |
 | `vendor/` | 離線版 `html5-qrcode`、`qrcodejs`；PDF 用的 Noto Sans TC 子集字型與 OFL 授權 |
@@ -30,6 +34,17 @@ Python 標準函式庫加 SQLite；不需 npm、pip 或資料庫伺服器，可�
 
 啟動方式（重要）
 ----------------
+
+首次交付或換電腦時，可在程式資料夾執行安裝／初始化腳本：
+
+    ./install.sh
+
+完成後以 `./start.sh` 啟動系統；也可在 macOS／Linux 終端機直接執行
+`python3 server.py`。`install.sh` 只會建立資料目錄並初始化資料庫，既有資料不會被覆蓋。
+
+Windows 使用者請先安裝 Python 3.8 以上（安裝時勾選 **Add Python to PATH**），
+再雙擊 `install.bat` 初始化，之後雙擊 `start.bat` 啟動。系統啟動後開啟
+<http://localhost:8000/index.html>；若要讓同一區網其他電腦使用，請以 Windows 防火牆允許 Python 的 8000 連接埠。
 
 在 `server.py` 所在資料夾開啟終端機：
 
