@@ -1224,9 +1224,7 @@
     }
 
     async function startQueryScan() {
-        if (!currentLoanMember && currentUser && !currentUser.isSharedAdmin) {
-            await ensureCurrentLoanMember();
-        }
+        if (!currentLoanMember) await ensureCurrentLoanMember();
         if (!currentLoanMember) {
             alert('⚠️ 請先在借還書頁選擇成員，或以個別帳號登入');
             return;
@@ -2809,19 +2807,30 @@
 
     async function ensureCurrentLoanMember() {
         if (currentLoanMember) return currentLoanMember;
-        if (!currentUser || currentUser.isSharedAdmin || !currentUser.name) return null;
-        try {
-            const data = await api('GET', '/api/member/search?q=' + encodeURIComponent(currentUser.name));
-            const matches = data.matches || [];
-            if (matches.length) {
-                const m = matches[0];
-                currentLoanMember = {
-                    className: m.className || '',
-                    userName: m.name || currentUser.name,
-                    memberType: m.memberType || 'student'
-                };
-            }
-        } catch (e) { /* 忽略 */ }
+        if (!currentUser) return null;
+        const selfName = (currentUser.name || currentUser.username || '').trim();
+        if (!selfName) return null;
+        if (!currentUser.isSharedAdmin) {
+            try {
+                const data = await api('GET', '/api/member/search?q=' + encodeURIComponent(selfName));
+                const matches = data.matches || [];
+                if (matches.length) {
+                    const m = matches[0];
+                    currentLoanMember = {
+                        className: m.className || '',
+                        userName: m.name || selfName,
+                        memberType: m.memberType || 'student'
+                    };
+                }
+            } catch (e) { /* 改用登入帳號作為本人 */ }
+        }
+        if (!currentLoanMember) {
+            currentLoanMember = {
+                className: '',
+                userName: selfName,
+                memberType: currentUser.role === 'teacher' ? 'teacher' : 'student'
+            };
+        }
         return currentLoanMember;
     }
 
@@ -3566,6 +3575,7 @@
 
     function showScanStatus(message, type) {
         const el = document.getElementById('scanStatus');
+        if (!el) return;
         el.textContent = message;
         el.className = 'scan-' + type;
         clearTimeout(scanStatusTimer);
@@ -3577,6 +3587,14 @@
         if (el) { el.textContent = ''; el.className = ''; }
     }
     let scanStatusTimer;
+
+    function reportScanError(error, code) {
+        const message = (error && error.message) ? error.message : String(error || '未知錯誤');
+        showScanStatus(`❌ 掃描處理失敗：${message}`, 'err');
+        try {
+            recordScanResult('掃描錯誤', code || '', '', message, false);
+        } catch (_) { /* 錯誤回報不可再中斷掃描流程 */ }
+    }
 
     function startScanner() {
         // 先確保前一個掃描器完全停止，避免共用同一個 #reader 元素造成衝突
@@ -3591,7 +3609,9 @@
 
     function launchScanner() {
         html5QrCode = new Html5Qrcode("reader");
-        html5QrCode.start({ facingMode: "environment" }, { fps: 20, qrbox: 320, aspectRatio: 1.0 }, handleScanSuccess)
+        html5QrCode.start({ facingMode: "environment" }, { fps: 20, qrbox: 320, aspectRatio: 1.0 }, code => {
+            Promise.resolve(handleScanSuccess(code)).catch(err => reportScanError(err, code));
+        })
             .catch(() => {
                 alert("📷 相機啟動失敗\n\n請確認：\n1. 瀏覽器是否已允許此網頁使用相機\n2. 是否透過 https:// 或 localhost 開啟（直接雙擊 HTML 檔會被瀏覽器阻擋）\n3. 是否有其他程式正在佔用相機");
                 stopScanner();
@@ -5023,7 +5043,7 @@
                 if (!code) return;
                 currentMode = resolveMode();
                 el.value = '';
-                handleScanSuccess(code);   // 與相機掃描共用同一套流程
+                Promise.resolve(handleScanSuccess(code)).catch(err => reportScanError(err, code)); // 與相機掃描共用同一套流程
                 el.focus();                 // 準備下一次掃描
             });
         };
