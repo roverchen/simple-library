@@ -881,7 +881,7 @@
         </div>
 
         <div id="recoverySecurityPane" style="display:none;">
-            <p class="modal-hint">無 Email 時可用「安全提問」重設密碼。請先登入系統於個人頁面設定安全提問與答案。</p>
+            <p class="modal-hint">無 Email 時可用一個離線安全提問重設密碼。請先登入後設定答案。</p>
             <div id="securityStep1" style="display:block;">
                 <label for="secUsername">帳號／姓名</label>
                 <input type="text" id="secUsername" autocomplete="username">
@@ -889,12 +889,8 @@
                 <p class="modal-hint" id="secHint"></p>
             </div>
             <div id="securityStep2" style="display:none;">
-                <p class="modal-hint" id="secQuestionText"></p>
-                <label for="secAnswer">安全提問答案</label>
+                <label for="secAnswer" id="secQuestionLabel1">安全提問</label>
                 <input type="text" id="secAnswer" autocomplete="off">
-                <p class="modal-hint" id="secQuestionText2"></p>
-                <label for="secAnswer2">第二個安全提問答案</label>
-                <input type="text" id="secAnswer2" autocomplete="off">
                 <label for="secNewPwd">新密碼（至少 4 碼）</label>
                 <input type="password" id="secNewPwd" autocomplete="new-password">
                 <label for="secNewPwd2">再次輸入新密碼</label>
@@ -915,31 +911,19 @@
             <h3>🔒 設定安全提問</h3>
             <button type="button" class="modal-close" onclick="closeSecurityQuestionModal()" aria-label="關閉">✕</button>
         </div>
-        <p class="modal-hint">為保護您的帳號安全，請設定安全提問與答案。忘記密碼時可透過此方式重設。</p>
+        <p class="modal-hint">請選擇一個離線安全提問並設定答案。忘記密碼時必須答對此問題。</p>
         <p id="sqCurrentStatus" class="modal-hint" style="color:#555;"></p>
         <div style="margin:16px 0;">
             <label for="sqQuestion">安全提問</label>
             <select id="sqQuestion" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:5px;">
                 <option value="開園日期是哪一天？">開園日期是哪一天？</option>
+                <option value="園長姓名是什麼？">園長姓名是什麼？</option>
             </select>
         </div>
         <div style="margin:16px 0;">
             <label for="sqAnswer">安全提問答案</label>
             <input type="text" id="sqAnswer" autocomplete="off" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:5px;">
             <p class="modal-hint">請輸入您會記得的答案，日後忘記密碼時可用此方式重設。</p>
-        </div>
-        <div style="margin:16px 0;">
-            <label for="sqQuestion2">第二個安全提問</label>
-            <select id="sqQuestion2" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:5px;">
-                <option value="園長姓名是什麼？">園長姓名是什麼？</option>
-                <option value="你寵物的名字是什麼？">你寵物的名字是什麼？</option>
-                <option value="你出生的城市是哪裡？">你出生的城市是哪裡？</option>
-                <option value="你最好的朋友的名字是什麼？">你最好的朋友的名字是什麼？</option>
-                <option value="你母親的娘家姓氏是什麼？">你母親的娘家姓氏是什麼？</option>
-                <option value="你國小就讀的學校名稱是什麼？">你國小就讀的學校名稱是什麼？</option>
-            </select>
-            <label for="sqAnswer2">第二個安全提問答案</label>
-            <input type="text" id="sqAnswer2" autocomplete="off" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:5px;">
         </div>
         <div style="display:flex; gap:8px; justify-content:flex-end;">
             <button type="button" class="btn-secondary" onclick="closeSecurityQuestionModal()">稍後設定</button>
@@ -2672,8 +2656,11 @@
         if (!username) { setRecoveryError('請輸入帳號'); return; }
         try {
             const info = await api('GET', '/api/security-question?username=' + encodeURIComponent(username));
-            document.getElementById('secQuestionText').textContent = info.question || '此帳號尚未設定安全提問';
-            document.getElementById('secQuestionText2').textContent = info.question2 || '此帳號尚未設定第二個安全提問';
+            if (!info.hasQuestion) {
+                throw new Error('此帳號尚未設定安全提問');
+            }
+            document.getElementById('secQuestionLabel1').textContent = '安全提問：' + info.question;
+            document.getElementById('secAnswer').dataset.question = info.question;
             document.getElementById('securityStep1').style.display = 'none';
             document.getElementById('securityStep2').style.display = 'block';
             document.getElementById('secAnswer').focus();
@@ -2687,7 +2674,7 @@
         document.getElementById('securityStep2').style.display = 'none';
         document.getElementById('securityStep1').style.display = 'block';
         document.getElementById('secAnswer').value = '';
-        document.getElementById('secAnswer2').value = '';
+        document.getElementById('secAnswer').dataset.question = '';
         document.getElementById('secNewPwd').value = '';
         document.getElementById('secNewPwd2').value = '';
     }
@@ -2695,20 +2682,16 @@
     async function verifySecurityAnswer() {
         setRecoveryError('');
         const username = document.getElementById('secUsername').value.trim();
-        const question = document.getElementById('secQuestionText').textContent;
         const answer = document.getElementById('secAnswer').value.trim();
-        const question2 = document.getElementById('secQuestionText2').textContent;
-        const answer2 = document.getElementById('secAnswer2').value.trim();
+        const question = document.getElementById('secAnswer').dataset.question || '開園日期是哪一天？';
         const pwd = document.getElementById('secNewPwd').value;
         const pwd2 = document.getElementById('secNewPwd2').value;
-        if (!question || question.startsWith('此帳號尚未設定')) { setRecoveryError('請先取得有效的提問題目'); return; }
-        if (!answer || !answer2) { setRecoveryError('請輸入兩個安全提問答案'); return; }
+        if (!answer) { setRecoveryError('請輸入安全提問答案'); return; }
         if (pwd.length < 4) { setRecoveryError('新密碼至少需 4 個字元'); return; }
         if (pwd !== pwd2) { setRecoveryError('兩次輸入的新密碼不一致'); return; }
         try {
             await api('POST', '/api/password/forgot/security-verify', {
-                username, securityQuestion: question, securityAnswer: answer,
-                securityQuestion2: question2, securityAnswer2: answer2, newPassword: pwd
+                username, securityQuestion: question, securityAnswer: answer, newPassword: pwd
             });
             alert('✅ 密碼已重設，請使用新密碼登入');
             closeForgotModal();
@@ -2823,6 +2806,21 @@
         const p = currentUser && currentUser.permissions ? currentUser.permissions : {};
         const canLoan = !!(p.canLoan);
         const member = await ensureCurrentLoanMember();
+        // 依狀態產生對應操作的 QR Code 內容
+        let qrText = barcode;
+        let actionLabel = '';
+        if (canLoan) {
+            if (status === '在館') {
+                qrText = 'borrow:' + barcode;
+                actionLabel = '掃描後將執行「借書」';
+            } else if (status === '借出' && loanedTo && member && loanedTo === member.userName) {
+                qrText = 'return:' + barcode;
+                actionLabel = '掃描後將執行「還書」';
+            } else if (status === '借出') {
+                qrText = 'reserve:' + barcode;
+                actionLabel = '掃描後將執行「預約」';
+            }
+        }
         let actionHtml = '';
         if (canLoan) {
             if (status === '在館') {
@@ -2836,11 +2834,12 @@
         if (body) {
             body.innerHTML = '<div style="font-size:1.1rem; font-weight:bold; margin-bottom:10px;">' + escapeHtml(barcode) + '</div>' +
                 '<div id="barcodeModalQr" style="display:flex; justify-content:center; margin:10px 0;"></div>' +
+                (actionLabel ? '<div style="color:#666; font-size:0.85rem; margin:6px 0;">' + escapeHtml(actionLabel) + '</div>' : '') +
                 (status ? '<div style="color:#666; font-size:0.9rem; margin-top:6px;">狀態：' + escapeHtml(status) + (loanedTo ? '（' + escapeHtml(loanedTo) + '）' : '') + '</div>' : '') +
                 actionHtml;
             const qrEl = document.getElementById('barcodeModalQr');
             if (qrEl && typeof QRCode !== 'undefined') {
-                new QRCode(qrEl, { text: barcode, width: 180, height: 180, colorDark: '#000000', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.H });
+                new QRCode(qrEl, { text: qrText, width: 180, height: 180, colorDark: '#000000', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.H });
             }
         }
         if (modal) modal.classList.add('open');
@@ -3588,6 +3587,7 @@
         // 借書/還書指令條碼（v2.1 5.2）：支援 "borrow:<條碼>" 與 "return:<條碼>" 開頭的指令 QR
         if (code.startsWith('borrow:')) { mode = 'borrow'; barcode = code.slice('borrow:'.length).trim(); currentMode = 'borrow'; const gm = document.getElementById('gunMode'); if (gm) gm.value = 'borrow'; }
         else if (code.startsWith('return:')) { mode = 'return'; barcode = code.slice('return:'.length).trim(); currentMode = 'return'; const gm = document.getElementById('gunMode'); if (gm) gm.value = 'return'; }
+        else if (code.startsWith('reserve:')) { mode = 'reserve'; barcode = code.slice('reserve:'.length).trim(); currentMode = 'reserve'; const gm = document.getElementById('gunMode'); if (gm) gm.value = 'reserve'; }
         if (!barcode) {
             showScanStatus('❌ 指令條碼缺少條碼', 'err');
             recordScanResult('指令', code, '', '指令條碼缺少條碼', false);
@@ -4196,21 +4196,11 @@
             } catch (err) { alert('❌ ' + err.message); }
             return;
         }
-        const sqQuestions = ['開園日期是哪一天？'];
-        const sqQuestions2 = [
-            '園長姓名是什麼？',
-            '你寵物的名字是什麼？',
-            '你出生的城市是哪裡？',
-            '你最好的朋友的名字是什麼？',
-            '你母親的娘家姓氏是什麼？',
-            '你國小就讀的學校名稱是什麼？'
-        ];
+        const sqQuestions = ['開園日期是哪一天？', '園長姓名是什麼？'];
         let currentSq = '';
-        let currentSq2 = '';
         try {
             const sq = await api('GET', '/api/security-question');
             currentSq = sq.question || '';
-            currentSq2 = sq.question2 || '';
         } catch (err) { /* 讀取失敗時仍可設定 */ }
 
         const result = await showInputDialog({
@@ -4219,10 +4209,8 @@
             fields: [
                 { name: 'name', label: '姓名', type: 'text', value: (currentUser && currentUser.name) || '' },
                 { name: 'email', label: 'Email', type: 'email', value: (currentUser && currentUser.email) || '' },
-                { name: 'securityQuestion', label: '第一個安全提問', type: 'select', value: '開園日期是哪一天？', options: sqQuestions.map(function (q) { return { value: q, label: q }; }) },
-                { name: 'securityAnswer', label: '第一個安全提問答案（留空＝不變更）', type: 'text', placeholder: '輸入新答案才會更新' },
-                { name: 'securityQuestion2', label: '第二個安全提問', type: 'select', value: '園長姓名是什麼？', options: sqQuestions2.map(function (q) { return { value: q, label: q }; }) },
-                { name: 'securityAnswer2', label: '第二個安全提問答案（留空＝不變更）', type: 'text', placeholder: '輸入新答案才會更新' },
+                { name: 'securityQuestion', label: '安全提問', type: 'select', value: sqQuestions.includes(currentSq) ? currentSq : '開園日期是哪一天？', options: sqQuestions.map(function (q) { return { value: q, label: q }; }) },
+                { name: 'securityAnswer', label: '安全提問答案（留空＝不變更）', type: 'text', placeholder: '輸入新答案才會更新' },
                 { name: 'password', label: '新密碼（至少 4 字）', type: 'password', placeholder: '留空＝不變更' },
                 { name: 'confirm', label: '確認新密碼', type: 'password' },
             ],
@@ -4235,9 +4223,7 @@
                     if (v.password !== v.confirm) return '兩次輸入的密碼不一致';
                 }
                 if ((v.securityAnswer || '').trim() && !(v.securityQuestion || '').trim()) return '請選擇安全提問';
-                if ((v.securityAnswer2 || '').trim() && !(v.securityQuestion2 || '').trim()) return '請選擇第二個安全提問';
                 if ((v.securityQuestion || '').trim() !== currentSq && !(v.securityAnswer || '').trim()) return '變更安全提問時請一併輸入答案';
-                if ((v.securityQuestion2 || '').trim() !== currentSq2 && !(v.securityAnswer2 || '').trim()) return '變更第二個安全提問時請一併輸入答案';
                 return '';
             }
         });
@@ -4257,21 +4243,13 @@
             // 安全提問：只有輸入答案時才更新
             const newAnswer = (result.securityAnswer || '').trim();
             const newQuestion = (result.securityQuestion || '').trim();
-            const newAnswer2 = (result.securityAnswer2 || '').trim();
-            const newQuestion2 = (result.securityQuestion2 || '').trim();
-            if (newAnswer || newAnswer2) {
-                if (!newAnswer || !newAnswer2) {
-                    alert('❌ 請同時輸入兩個安全提問的答案');
-                    return;
-                }
+            if (newAnswer) {
                 await api('PUT', '/api/security-question', {
                     securityQuestion: newQuestion,
                     securityAnswer: newAnswer,
-                    securityQuestion2: newQuestion2,
-                    securityAnswer2: newAnswer2,
                 });
             }
-            alert('✅ 個人資料已更新' + (res.passwordChanged ? '（密碼已變更）' : '') + ((newAnswer || newAnswer2) ? '（安全提問已更新）' : ''));
+            alert('✅ 個人資料已更新' + (res.passwordChanged ? '（密碼已變更）' : '') + (newAnswer ? '（安全提問已更新）' : ''));
         } catch (err) { alert('❌ ' + err.message); }
     }
 
@@ -4464,31 +4442,25 @@
 
     async function openSecurityQuestionModal() {
         const ans = document.getElementById('sqAnswer');
-        const ans2 = document.getElementById('sqAnswer2');
         const sel = document.getElementById('sqQuestion');
-        const sel2 = document.getElementById('sqQuestion2');
         const status = document.getElementById('sqCurrentStatus');
         const saveBtn = document.getElementById('sqSaveBtn');
         if (ans) ans.value = '';
-        if (ans2) ans2.value = '';
         if (currentUser && currentUser.isSharedAdmin) {
             if (status) status.textContent = '共用管理員沒有個人帳號，無法設定個人安全提問；請以個人帳號登入後設定。';
             if (saveBtn) saveBtn.disabled = true;
             if (sel) sel.disabled = true;
-            if (sel2) sel2.disabled = true;
         } else {
             if (saveBtn) saveBtn.disabled = false;
             if (sel) sel.disabled = false;
-            if (sel2) sel2.disabled = false;
             if (status) status.textContent = '目前尚未設定安全提問。';
             try {
                 const data = await api('GET', '/api/security-question');
                 if (sel && data.question) sel.value = data.question;
-                if (sel2 && data.question2) sel2.value = data.question2;
                 if (status) {
-                    status.textContent = data.hasQuestion && data.hasQuestion2
-                        ? '目前已設定兩個安全提問'
-                        : '目前尚未設定安全提問。';
+                    status.textContent = data.hasQuestion
+                        ? '目前已設定一個安全提問；如需更新，請重新輸入答案。'
+                        : '尚未設定安全提問。';
                 }
             } catch (err) { /* 讀取失敗時仍可設定 */ }
         }
@@ -4506,16 +4478,12 @@
         }
         const sel = document.getElementById('sqQuestion');
         const answerEl = document.getElementById('sqAnswer');
-        const sel2 = document.getElementById('sqQuestion2');
-        const answerEl2 = document.getElementById('sqAnswer2');
         const answer = (answerEl || {}).value.trim();
         const question = (sel || {}).value.trim();
-        const answer2 = (answerEl2 || {}).value.trim();
-        const question2 = (sel2 || {}).value.trim();
-        if (!question || !answer || !question2 || !answer2) { alert('❌ 兩個提問與答案皆不可空白'); return; }
+        if (!question || !answer) { alert('❌ 提問與答案皆不可空白'); return; }
         try {
-            await api('PUT', '/api/security-question', { securityQuestion: question, securityAnswer: answer, securityQuestion2: question2, securityAnswer2: answer2 });
-            alert('✅ 兩個安全提問已儲存');
+            await api('PUT', '/api/security-question', { securityQuestion: question, securityAnswer: answer });
+            alert('✅ 安全提問已儲存');
             (answerEl || {}).value = '';
             const status = document.getElementById('sqCurrentStatus');
             if (status) status.textContent = '目前已設定：' + question;
