@@ -413,7 +413,7 @@
         <div id="commandQRSection" style="margin-top:16px;">
             <h3>🔀 功能指令 QR（5.2）</h3>
             <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-                <input type="text" id="cmdQRBarcode" placeholder="borrow:條碼 或 return:條碼">
+                <input type="text" id="cmdQRBarcode" placeholder="borrow:、return: 或 reserve:條碼">
                 <button onclick="generateCommandQR()" style="padding:10px; background:var(--secondary); color:white; border:none; border-radius:5px;">📱 產生指令 QR</button>
             </div>
             <div id="commandQRPreview" style="margin-top:12px; text-align:center; color:#666;">尚未產生</div>
@@ -1017,6 +1017,8 @@
     let scanQueue = Promise.resolve();
     let currentUser = { username: 'admin', role: 'admin', permissions: {} };
     let currentLoanMember = null; // { className, userName, memberType }
+    let barcodeModalRefreshTimer = null;
+    let barcodeModalSnapshot = null;
 
     // --- 後端 API ---
     async function api(method, path, body) {
@@ -2855,13 +2857,50 @@
             body.innerHTML = '<div style="font-size:1.1rem; font-weight:bold; margin-bottom:10px;">' + escapeHtml(barcode) + '</div>' +
                 '<div id="barcodeModalQr" style="display:flex; justify-content:center; margin:10px 0;"></div>' +
                 (status ? '<div style="color:#666; font-size:0.9rem; margin-top:6px;">狀態：' + escapeHtml(status) + (loanedTo ? '（' + escapeHtml(loanedTo) + '）' : '') + '</div>' : '') +
-                (actionLabel ? '<div style="color:#666; font-size:0.85rem; margin:6px 0;">' + escapeHtml(actionLabel) + '</div>' : '');
+                (actionLabel ? '<div style="color:#666; font-size:0.85rem; margin:6px 0;">' + escapeHtml(actionLabel) + '</div>' : '') +
+                actionHtml;
             const qrEl = document.getElementById('barcodeModalQr');
             if (qrEl && typeof QRCode !== 'undefined') {
                 new QRCode(qrEl, { text: qrText, width: 180, height: 180, colorDark: '#000000', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.H });
             }
         }
+        barcodeModalSnapshot = { status: status || '', loanedTo: loanedTo || '', loanClass: loanClass || '' };
         if (modal) modal.classList.add('open');
+        startBarcodeModalRefresh(barcode);
+    }
+
+    function startBarcodeModalRefresh(barcode) {
+        if (barcodeModalRefreshTimer) clearInterval(barcodeModalRefreshTimer);
+        barcodeModalRefreshTimer = setInterval(async () => {
+            if (!document.getElementById('barcodeModal').classList.contains('open')) return;
+            try {
+                const data = await api('GET', '/api/query/books?q=' + encodeURIComponent(barcode));
+                const copy = (data.items || []).flatMap(item => item.copies || []).find(c => c.barcode === barcode);
+                if (!copy) return;
+                const next = {
+                    status: copy.status || '',
+                    loanedTo: copy.loanedTo || '',
+                    loanClass: copy.loanClass || '',
+                    reservationCount: Number(copy.reservationCount || 0),
+                    reservationReady: !!copy.reservationReady,
+                };
+                const previous = barcodeModalSnapshot || {};
+                if (!Object.prototype.hasOwnProperty.call(previous, 'reservationCount')) {
+                    barcodeModalSnapshot = next;
+                    return;
+                }
+                const changed = next.status !== previous.status ||
+                    next.loanedTo !== previous.loanedTo ||
+                    next.loanClass !== previous.loanClass ||
+                    next.reservationCount !== Number(previous.reservationCount || 0) ||
+                    next.reservationReady !== !!previous.reservationReady;
+                if (changed) {
+                    closeBarcodeModal();
+                    await runBookQuery();
+                    showScanStatus('✅ QR Code 動作完成，館藏狀態已更新', 'ok');
+                }
+            } catch (_) { /* 短暫查詢失敗不關閉 QR 視窗 */ }
+        }, 2500);
     }
 
     async function barcodeModalAction(barcode, mode) {
@@ -2895,6 +2934,11 @@
     }
 
     function closeBarcodeModal() {
+        if (barcodeModalRefreshTimer) {
+            clearInterval(barcodeModalRefreshTimer);
+            barcodeModalRefreshTimer = null;
+        }
+        barcodeModalSnapshot = null;
         const modal = document.getElementById('barcodeModal');
         if (modal) modal.classList.remove('open');
         const body = document.getElementById('barcodeModalBody');
@@ -3509,6 +3553,28 @@
             box.innerHTML = '<div style="color:#666;">尚未掃描，結果會顯示在這裡。</div>';
             return;
         }
+
+        // 預約模式：必須先選擇成員，再掃描／輸入圖書條碼。
+        if (mode === 'reserve') {
+            if (!currentLoanMember) {
+                showScanStatus('⚠️ 請先選擇預約者！', 'err');
+                recordScanResult('預約', barcode, '', '請先選擇預約者', false);
+                return;
+            }
+            if (!bookDatabase[barcode]) {
+                showScanStatus('❌ 無此圖書條碼', 'err');
+                recordScanResult('預約', barcode, '', '無此圖書條碼', false);
+                return;
+            }
+            scanQueue = scanQueue
+                .then(() => processScan(barcode, 'reserve'))
+                .catch(err => {
+                    const msg = err.message || '處理失敗';
+                    showScanStatus(`❌ ${msg}`, 'err');
+                    recordScanResult('預約', barcode, '', msg, false);
+                });
+            return;
+        }
         box.innerHTML = scanResults.map(r => `
             <div style="border:1px solid #ddd; border-left:4px solid ${r.ok ? '#2e7d32' : '#c62828'}; background:${r.ok ? '#f6fff7' : '#fff7f7'}; border-radius:6px; padding:8px; margin-bottom:6px;">
                 <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
@@ -3625,7 +3691,7 @@
             recordScanResult('指令', code, '', '指令條碼缺少條碼', false);
             return;
         }
-        if (!(code.startsWith('borrow:') || code.startsWith('return:') || code.startsWith('member:')) && isDuplicateScan(barcode)) return;
+        if (!(code.startsWith('borrow:') || code.startsWith('return:') || code.startsWith('reserve:') || code.startsWith('member:')) && isDuplicateScan(barcode)) return;
         
         // 借書模式：必須先選會員，再掃書籍條碼
         if (mode === 'borrow') {
@@ -3714,12 +3780,13 @@
         // 借書／還書指令條碼（如未在此分支處理）
         if (code.startsWith('borrow:')) { mode = 'borrow'; barcode = code.slice('borrow:'.length).trim(); currentMode = 'borrow'; const gm = document.getElementById('gunMode'); if (gm) gm.value = 'borrow'; }
         else if (code.startsWith('return:')) { mode = 'return'; barcode = code.slice('return:'.length).trim(); currentMode = 'return'; const gm = document.getElementById('gunMode'); if (gm) gm.value = 'return'; }
+        else if (code.startsWith('reserve:')) { mode = 'reserve'; barcode = code.slice('reserve:'.length).trim(); currentMode = 'reserve'; const gm = document.getElementById('gunMode'); if (gm) gm.value = 'reserve'; }
         if (!barcode) {
             showScanStatus('❌ 指令條碼缺少條碼', 'err');
             recordScanResult('指令', code, '', '指令條碼缺少條碼', false);
             return;
         }
-        if (!(code.startsWith('borrow:') || code.startsWith('return:') || code.startsWith('member:')) && isDuplicateScan(barcode)) return;
+        if (!(code.startsWith('borrow:') || code.startsWith('return:') || code.startsWith('reserve:') || code.startsWith('member:')) && isDuplicateScan(barcode)) return;
         scanQueue = scanQueue
             .then(() => processScan(barcode, mode))
             .catch(err => {
@@ -4674,7 +4741,7 @@
         const barcodeInput = document.getElementById('cmdQRBarcode');
         const barcode = (barcodeInput && barcodeInput.value) || '';
         if (!barcode) { showScanStatus('❌ 請先輸入欲執行的條碼（如 borrow:12345）', 'err'); return; }
-        const text = barcode.startsWith('borrow:') || barcode.startsWith('return:') ? barcode : 'borrow:' + barcode;
+        const text = /^(borrow|return|reserve):/.test(barcode) ? barcode : 'borrow:' + barcode;
         const box = document.getElementById('commandQRPreview');
         box.innerHTML = '<div id="cmdQRCanvas" style="display:inline-block;"></div>';
         const el = document.getElementById('cmdQRCanvas');
