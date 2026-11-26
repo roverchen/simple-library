@@ -3812,6 +3812,7 @@
         }
         if (navigator.vibrate) navigator.vibrate(80);
         if (document.getElementById('queryPage') && document.getElementById('queryPage').classList.contains('active')) {
+            try { closeBarcodeModal(); } catch (e) {}
             setTimeout(() => { try { runBookQuery(); } catch (e) {} }, 300);
         }
     }
