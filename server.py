@@ -2024,7 +2024,6 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.api_reservations(conn, query)
 
             if method == "POST" and path == "/api/reservations":
-                require_permission(conn, token, "loan")
                 return self.api_reservation_add(conn, token)
 
             if method == "POST" and path.startswith("/api/reservations/"):
@@ -2410,7 +2409,6 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.api_member_delete(conn, query, token)
 
             if path == "/api/loan" and method == "POST":
-                require_permission(conn, token, "loan")
                 return self.api_loan(conn, token)
 
             if path == "/api/loan/batch-return" and method == "POST":
@@ -4341,6 +4339,24 @@ class Handler(SimpleHTTPRequestHandler):
         if member_type not in ("student", "teacher"):
             raise ApiError(400, "memberType must be student or teacher")
 
+        # 權限：共用管理員/admin/root 全允許；個別帳號僅能在替自己借還書時使用（不需 can_loan）
+        _actor = None
+        if token:
+            _actor = conn.execute(
+                "SELECT s.user_id, u.name, u.username, u.role FROM sessions s "
+                "LEFT JOIN users u ON u.id = s.user_id WHERE s.token = ?", (token,)
+            ).fetchone()
+        _privileged = (_actor is None) or (_actor and _actor["user_id"] is None) or (_actor and (_actor["role"] or "") in ("admin", "root"))
+        _self_action = False
+        if _actor and _actor["user_id"] is not None and not _privileged:
+            _aname = (_actor["name"] or _actor["username"] or "").strip()
+            if action == "借書" and user_name and user_name == _aname:
+                _self_action = True
+            elif action == "還書" and (not user_name or user_name == _aname):
+                _self_action = True
+        if not (_privileged or _self_action):
+            raise ApiError(403, "此帳號僅能為自己借還書／預約，或需開通「借還書」功能")
+
         # 借閱權限依規格綁定登入者：學生只能借自己；老師可借自己或協助學生，
         # 不能冒用另一位老師。共用管理員／Root／日常管理員維持全權限。
         actor = conn.execute(
@@ -4463,6 +4479,11 @@ class Handler(SimpleHTTPRequestHandler):
             else:
                 if row["status"] != "借出" and not row["loaned_to"]:
                     raise ApiError(409, "《{}》目前在館內，無需歸還".format(row["title"]))
+            if action == "還書" and _self_action and not user_name:
+                _loaned = (row["loaned_to"] or "").strip()
+                _aname2 = (_actor["name"] or _actor["username"] or "").strip() if _actor and _actor["user_id"] is not None else ""
+                if _loaned and _loaned != _aname2:
+                    raise ApiError(403, "此帳號僅能歸還自己借出的書籍，或需開通「借還書」功能")
                 # 還書時間與逾期快照：交付「逾期已還紀錄清冊」使用
                 returned_at = datetime.now()
                 overdue_at_return = False
@@ -4695,6 +4716,21 @@ class Handler(SimpleHTTPRequestHandler):
         member_type = (data.get("memberType") or "student").strip()
         if member_type not in ("student", "teacher"):
             raise ApiError(400, "memberType must be student or teacher")
+
+        # 權限：共用管理員/admin/root 全允許；個別帳號僅能在替自己預約時使用（不需 can_loan）
+        _actor = conn.execute(
+            "SELECT s.user_id, u.name, u.username, u.role FROM sessions s "
+            "LEFT JOIN users u ON u.id = s.user_id WHERE s.token = ?", (token,),
+        ).fetchone() if token else None
+        _privileged = (_actor is None) or (_actor and _actor["user_id"] is None) or (_actor and (_actor["role"] or "") in ("admin", "root"))
+        _self = False
+        if _actor and _actor["user_id"] is not None and not _privileged:
+            _aname = (_actor["name"] or _actor["username"] or "").strip()
+            if user_name == _aname:
+                _self = True
+        if not (_privileged or _self):
+            raise ApiError(403, "此帳號僅能為自己預約，或需開通「借還書」功能")
+
         expires_days = int(get_setting(conn, "loan_days_teacher" if member_type == "teacher" else "loan_days_student", "7"))
 
         conn.execute("BEGIN IMMEDIATE")
