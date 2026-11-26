@@ -2859,20 +2859,20 @@
         if (canLoan) {
             if (status === '在館') {
                 qrText = 'borrow:' + barcode;
-                actionHtml = '<button type="button" onclick="barcodeModalAction(\'' + escapeHtml(barcode) + '\',\'borrow\')" style="margin-top:10px; padding:8px 16px; background:var(--primary); color:white; border:none; border-radius:5px;">📤 借書</button>';
+                actionHtml = '<button type="button" onclick="barcodeModalAction(\'' + escapeHtml(barcode) + '\',\'borrow\')" style="padding:8px 16px; background:var(--primary); color:white; border:none; border-radius:5px;">📤 借書</button>';
             } else if (status === '借出' && loanedTo && member && loanedTo === member.userName) {
                 qrText = 'return:' + barcode;
-                actionHtml = '<button type="button" onclick="barcodeModalAction(\'' + escapeHtml(barcode) + '\',\'return\')" style="margin-top:10px; padding:8px 16px; background:var(--secondary); color:white; border:none; border-radius:5px;">📥 還書</button>';
+                actionHtml = '<button type="button" onclick="barcodeModalAction(\'' + escapeHtml(barcode) + '\',\'return\')" style="padding:8px 16px; background:var(--secondary); color:white; border:none; border-radius:5px;">📥 還書</button>';
             } else if (status === '借出') {
                 qrText = 'reserve:' + barcode;
-                actionHtml = '<button type="button" onclick="barcodeModalAction(\'' + escapeHtml(barcode) + '\',\'reserve\')" style="margin-top:10px; padding:8px 16px; background:#8e24aa; color:white; border:none; border-radius:5px;">📌 預約</button>';
+                actionHtml = '<button type="button" onclick="barcodeModalAction(\'' + escapeHtml(barcode) + '\',\'reserve\')" style="padding:8px 16px; background:#8e24aa; color:white; border:none; border-radius:5px;">📌 預約</button>';
             }
         }
         if (body) {
             body.innerHTML = '<div style="font-size:1.1rem; font-weight:bold; margin-bottom:10px;">' + escapeHtml(barcode) + '</div>' +
                 (status ? '<div style="color:#666; font-size:0.9rem; margin-top:6px;">狀態：' + escapeHtml(status) + (loanedTo ? '（' + escapeHtml(loanedTo) + '）' : '') + '</div>' : '') +
-                '<div style="display:flex; gap:8px; justify-content:center; margin-top:12px; flex-wrap:wrap;">' + actionHtml +
-                '<button type="button" class="btn-secondary" onclick="closeBarcodeModal()">關閉</button></div>';
+                '<div style="display:flex; gap:8px; justify-content:center; margin-top:12px; flex-wrap:nowrap;">' + actionHtml +
+                '<button type="button" class="btn-secondary" onclick="closeBarcodeModal()" style="margin-top:0; width:auto; min-width:60px;">關閉</button></div>';
         }
         barcodeModalSnapshot = { status: status || '', loanedTo: loanedTo || '', loanClass: loanClass || '' };
         if (modal) modal.classList.add('open');
