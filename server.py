@@ -3932,16 +3932,13 @@ class Handler(SimpleHTTPRequestHandler):
                               name, font=font, fill="black")
                     idx += 1
 
-            buf = io.BytesIO()
-            img.save(buf, format="PDF")
-            pages.append(buf.getvalue())
+            pages.append(img)
 
-        # 合併多頁 PDF（PIL 不支援多頁 PDF 合併，這裡只回傳第一頁，或全部串聯）
-        if len(pages) == 1:
-            return pages[0]
-        # 多頁：用 PIL 逐頁寫入同一個 PDF 流（append_images 需要 Image 列表）
-        # 這裡簡化：只回傳第一頁，實際可擴展
-        return pages[0]
+        # PIL 可直接以 append_images 寫出真正的多頁 PDF，不能只回傳第一頁。
+        buf = io.BytesIO()
+        first, rest = pages[0], pages[1:]
+        first.save(buf, format="PDF", save_all=True, append_images=rest, resolution=72.0)
+        return buf.getvalue()
 
     def api_report_inventory_qr_pdf(self, conn, query):
         """書籍財產清單條碼名冊（QR）：從資料庫 books 讀取，依加入系統日期篩選。"""
@@ -5989,6 +5986,11 @@ class Handler(SimpleHTTPRequestHandler):
     DEFAULT_SECURITY_QUESTIONS = [
         "開園日期是哪一天？",
         "園長姓名是什麼？",
+        "你寵物的名字是什麼？",
+        "你出生的城市是哪裡？",
+        "你最好的朋友的名字是什麼？",
+        "你母親的娘家姓氏是什麼？",
+        "你國小就讀的學校名稱是什麼？",
     ]
 
     def api_security_question_get(self, conn, query):

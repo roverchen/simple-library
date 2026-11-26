@@ -932,6 +932,11 @@
             <label for="sqQuestion2">第二個安全提問</label>
             <select id="sqQuestion2" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:5px;">
                 <option value="園長姓名是什麼？">園長姓名是什麼？</option>
+                <option value="你寵物的名字是什麼？">你寵物的名字是什麼？</option>
+                <option value="你出生的城市是哪裡？">你出生的城市是哪裡？</option>
+                <option value="你最好的朋友的名字是什麼？">你最好的朋友的名字是什麼？</option>
+                <option value="你母親的娘家姓氏是什麼？">你母親的娘家姓氏是什麼？</option>
+                <option value="你國小就讀的學校名稱是什麼？">你國小就讀的學校名稱是什麼？</option>
             </select>
             <label for="sqAnswer2">第二個安全提問答案</label>
             <input type="text" id="sqAnswer2" autocomplete="off" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:5px;">
@@ -4192,7 +4197,14 @@
             return;
         }
         const sqQuestions = ['開園日期是哪一天？'];
-        const sqQuestions2 = ['園長姓名是什麼？'];
+        const sqQuestions2 = [
+            '園長姓名是什麼？',
+            '你寵物的名字是什麼？',
+            '你出生的城市是哪裡？',
+            '你最好的朋友的名字是什麼？',
+            '你母親的娘家姓氏是什麼？',
+            '你國小就讀的學校名稱是什麼？'
+        ];
         let currentSq = '';
         let currentSq2 = '';
         try {
