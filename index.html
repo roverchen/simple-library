@@ -1386,8 +1386,13 @@
             if (session.user) {
                 currentUser = {
                     username: session.user.username || currentUser.username,
+                    name: session.user.name || '',
+                    email: session.user.email || '',
                     role: session.user.role || currentUser.role,
                     permissions: session.user.permissions || currentUser.permissions || {},
+                    isRoot: !!session.user.is_root,
+                    isDailyAdmin: !!session.user.is_daily_admin,
+                    isSharedAdmin: !!session.user.is_shared_admin,
                 };
             }
             const state = await api('GET', '/api/state');
@@ -3543,27 +3548,6 @@
             return;
         }
 
-        // 預約模式：必須先選擇成員，再掃描／輸入圖書條碼。
-        if (mode === 'reserve') {
-            if (!currentLoanMember) {
-                showScanStatus('⚠️ 請先選擇預約者！', 'err');
-                recordScanResult('預約', barcode, '', '請先選擇預約者', false);
-                return;
-            }
-            if (!bookDatabase[barcode]) {
-                showScanStatus('❌ 無此圖書條碼', 'err');
-                recordScanResult('預約', barcode, '', '無此圖書條碼', false);
-                return;
-            }
-            scanQueue = scanQueue
-                .then(() => processScan(barcode, 'reserve'))
-                .catch(err => {
-                    const msg = err.message || '處理失敗';
-                    showScanStatus(`❌ ${msg}`, 'err');
-                    recordScanResult('預約', barcode, '', msg, false);
-                });
-            return;
-        }
         box.innerHTML = scanResults.map(r => `
             <div style="border:1px solid #ddd; border-left:4px solid ${r.ok ? '#2e7d32' : '#c62828'}; background:${r.ok ? '#f6fff7' : '#fff7f7'}; border-radius:6px; padding:8px; margin-bottom:6px;">
                 <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
