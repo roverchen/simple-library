@@ -971,12 +971,8 @@
 <!-- 條碼 QR modal（館藏查詢列點擊開啟） -->
 <div class="modal-overlay" id="barcodeModal">
     <div class="modal-box" style="max-width:320px; text-align:center;">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-            <h3 id="barcodeModalTitle" style="margin:0;">條碼</h3>
-            <button type="button" class="modal-close" onclick="closeBarcodeModal()" aria-label="關閉">✕</button>
-        </div>
+        <h3 id="barcodeModalTitle" style="margin:0 0 12px;">條碼</h3>
         <div id="barcodeModalBody" style="margin:16px 0;"></div>
-        <button type="button" class="btn-secondary" onclick="closeBarcodeModal()">關閉</button>
     </div>
 </div>
 
@@ -2875,7 +2871,8 @@
         if (body) {
             body.innerHTML = '<div style="font-size:1.1rem; font-weight:bold; margin-bottom:10px;">' + escapeHtml(barcode) + '</div>' +
                 (status ? '<div style="color:#666; font-size:0.9rem; margin-top:6px;">狀態：' + escapeHtml(status) + (loanedTo ? '（' + escapeHtml(loanedTo) + '）' : '') + '</div>' : '') +
-                actionHtml;
+                '<div style="display:flex; gap:8px; justify-content:center; margin-top:12px; flex-wrap:wrap;">' + actionHtml +
+                '<button type="button" class="btn-secondary" onclick="closeBarcodeModal()">關閉</button></div>';
         }
         barcodeModalSnapshot = { status: status || '', loanedTo: loanedTo || '', loanClass: loanClass || '' };
         if (modal) modal.classList.add('open');
