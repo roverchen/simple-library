@@ -1224,15 +1224,21 @@
     }
 
     async function startQueryScan() {
-        if (!currentLoanMember) await ensureCurrentLoanMember();
-        if (!currentLoanMember) {
-            alert('⚠️ 請先在借還書頁選擇成員，或以個別帳號登入');
-            return;
+        if (!currentLoanMember && currentUser && !currentUser.isSharedAdmin) {
+            await ensureCurrentLoanMember();
         }
         currentMode = 'borrow';
         const gm = document.getElementById('gunMode');
         if (gm) gm.value = 'borrow';
-        setMode('borrow');
+        // 直接啟動相機，不強制要求成員（借書時若無成員會由後端/前端提示）
+        document.getElementById('mainContainer').classList.add('scanning-active');
+        const wrapper = document.getElementById('reader-wrapper');
+        const activePage = document.querySelector('.page.active');
+        if (activePage && wrapper) activePage.prepend(wrapper);
+        if (wrapper) wrapper.style.display = 'block';
+        const title = document.getElementById('scanModeTitle');
+        if (title) title.innerHTML = '<span style="color:var(--primary)">🔍 館藏查詢掃描中...</span>';
+        if (typeof startScanner === 'function') startScanner();
     }
 
     async function runBookQuery() {
