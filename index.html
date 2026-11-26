@@ -918,6 +918,11 @@
             <select id="sqQuestion" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:5px;">
                 <option value="開園日期是哪一天？">開園日期是哪一天？</option>
                 <option value="園長姓名是什麼？">園長姓名是什麼？</option>
+                <option value="你寵物的名字是什麼？">你寵物的名字是什麼？</option>
+                <option value="你出生的城市是哪裡？">你出生的城市是哪裡？</option>
+                <option value="你最好的朋友的名字是什麼？">你最好的朋友的名字是什麼？</option>
+                <option value="你母親的娘家姓氏是什麼？">你母親的娘家姓氏是什麼？</option>
+                <option value="你國小就讀的學校名稱是什麼？">你國小就讀的學校名稱是什麼？</option>
             </select>
         </div>
         <div style="margin:16px 0;">
@@ -4196,7 +4201,15 @@
             } catch (err) { alert('❌ ' + err.message); }
             return;
         }
-        const sqQuestions = ['開園日期是哪一天？', '園長姓名是什麼？'];
+        const sqQuestions = [
+            '開園日期是哪一天？',
+            '園長姓名是什麼？',
+            '你寵物的名字是什麼？',
+            '你出生的城市是哪裡？',
+            '你最好的朋友的名字是什麼？',
+            '你母親的娘家姓氏是什麼？',
+            '你國小就讀的學校名稱是什麼？'
+        ];
         let currentSq = '';
         try {
             const sq = await api('GET', '/api/security-question');

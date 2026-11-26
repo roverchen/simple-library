@@ -2872,7 +2872,7 @@ class Handler(SimpleHTTPRequestHandler):
                     "SELECT security_question, security_question_2 FROM users WHERE id = ?",
                     (user_id,),
                 ).fetchone()
-                if sq_row and (not sq_row["security_question"] or not sq_row["security_question_2"]):
+                if sq_row and not sq_row["security_question"]:
                     need_security_question = True
 
             return self.send_json(
@@ -6006,7 +6006,7 @@ class Handler(SimpleHTTPRequestHandler):
         if sess and sess["user_id"] is not None:
             user_id = sess["user_id"]
             user = conn.execute(
-                "SELECT security_question, security_question_2 FROM users WHERE id = ? AND active = 1",
+                "SELECT security_question FROM users WHERE id = ? AND active = 1",
                 (user_id,),
             ).fetchone()
         elif sess and sess["user_id"] is None:
@@ -6017,7 +6017,7 @@ class Handler(SimpleHTTPRequestHandler):
             if not username:
                 raise ApiError(400, "請提供帳號")
             user = conn.execute(
-                "SELECT security_question, security_question_2 FROM users WHERE (username = ? OR name = ?) AND active = 1 ORDER BY id LIMIT 1",
+                "SELECT security_question FROM users WHERE (username = ? OR name = ?) AND active = 1 ORDER BY id LIMIT 1",
                 (username, username),
             ).fetchone()
         if not user:
@@ -6025,8 +6025,6 @@ class Handler(SimpleHTTPRequestHandler):
         return self.send_json({
             "hasQuestion": bool(user["security_question"]),
             "question": user["security_question"] or "",
-            "hasQuestion2": bool(user["security_question_2"]),
-            "question2": user["security_question_2"] or "",
         })
 
     def api_security_question_put(self, conn):
@@ -6043,17 +6041,13 @@ class Handler(SimpleHTTPRequestHandler):
         data = self.read_json()
         question = _clean_text(data.get("securityQuestion") or "", "安全提問", 200)
         answer = _clean_text(data.get("securityAnswer") or "", "安全提問答案", 100)
-        question2 = _clean_text(data.get("securityQuestion2") or "", "第二個安全提問", 200)
-        answer2 = _clean_text(data.get("securityAnswer2") or "", "第二個安全提問答案", 100)
-        if not question or not answer or not question2 or not answer2:
-            raise ApiError(400, "兩個提問與答案皆不可空白")
-        if question not in self.DEFAULT_SECURITY_QUESTIONS or question2 not in self.DEFAULT_SECURITY_QUESTIONS:
+        if not question or not answer:
+            raise ApiError(400, "提問與答案皆不可空白")
+        if question not in self.DEFAULT_SECURITY_QUESTIONS:
             raise ApiError(400, "請從系統提供的提問中選擇")
-        if question == question2:
-            raise ApiError(400, "兩個安全提問不可相同")
         conn.execute(
-            "UPDATE users SET security_question = ?, security_answer_hash = ?, security_question_2 = ?, security_answer_hash_2 = ?, updated_at = datetime('now', 'localtime') WHERE id = ?",
-            (question, hash_password(answer), question2, hash_password(answer2), user_id),
+            "UPDATE users SET security_question = ?, security_answer_hash = ?, security_question_2 = '', security_answer_hash_2 = '', updated_at = datetime('now', 'localtime') WHERE id = ?",
+            (question, hash_password(answer), user_id),
         )
         self._audit(conn, token, "設定安全提問", target=str(user_id),
                     detail="已設定離線安全提問救援")
@@ -6067,13 +6061,11 @@ class Handler(SimpleHTTPRequestHandler):
         username = _clean_text(data.get("username") or "", "帳號", 50)
         question = _clean_text(data.get("securityQuestion") or "", "安全提問", 200)
         answer = _clean_text(data.get("securityAnswer") or "", "安全提問答案", 100)
-        question2 = _clean_text(data.get("securityQuestion2") or "", "第二個安全提問", 200)
-        answer2 = _clean_text(data.get("securityAnswer2") or "", "第二個安全提問答案", 100)
         new_password = data.get("newPassword") or data.get("password")
         if not username:
             raise ApiError(400, "請輸入帳號")
-        if not question or not answer or not question2 or not answer2:
-            raise ApiError(400, "兩個提問與答案皆不可空白")
+        if not question or not answer:
+            raise ApiError(400, "提問與答案皆不可空白")
         if not isinstance(new_password, str) or len(new_password) < 4:
             raise ApiError(400, "新密碼至少需 4 個字元")
         if len(new_password) > 128:
@@ -6085,12 +6077,11 @@ class Handler(SimpleHTTPRequestHandler):
         ).fetchone()
         if not user:
             raise ApiError(400, "查無此啟用中的使用者")
-        if not user["security_question"] or not user["security_question_2"]:
-            raise ApiError(400, "此帳號尚未設定兩個安全提問，請先登入後設定，或改用其他救援方式")
-        if user["security_question"] != question or user["security_question_2"] != question2:
+        if not user["security_question"]:
+            raise ApiError(400, "此帳號尚未設定安全提問，請先登入後設定，或改用其他救援方式")
+        if user["security_question"] != question:
             raise ApiError(400, "安全提問題目不符，請確認後再試")
-        if (not verify_password(answer, user["security_answer_hash"])
-                or not verify_password(answer2, user["security_answer_hash_2"])):
+        if not verify_password(answer, user["security_answer_hash"]):
             raise ApiError(400, "安全提問答案錯誤")
 
         hashed = hash_password(new_password)
