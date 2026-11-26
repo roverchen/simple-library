@@ -322,6 +322,7 @@
                 <input type="text" id="queryKeyword" placeholder="輸入書名／ISBN／財產編號／存放櫃位" autocomplete="off"
                        style="flex:1; min-width:220px;" oninput="scheduleBookQuery()">
                 <select id="queryPublisher" style="min-width:140px;" onchange="scheduleBookQuery()"><option value="">全部出版社</option></select>
+                <button onclick="startQueryScan()" style="padding:8px 14px; background:var(--secondary); color:white; border:none; border-radius:5px;">📷 掃描借還書</button>
             </div>
             <small style="color:#666;">輸入關鍵字或選擇出版社即自動查詢；支援直接掃描 ISBN 條碼；相同 ISBN（或書名）的多本實體書會自動彙整。</small>
             <div id="queryExportRow" style="display:flex; gap:8px; align-items:center; margin-top:8px; flex-wrap:wrap;">
@@ -1218,6 +1219,20 @@
     function scheduleBookQuery() {
         if (queryTimer) clearTimeout(queryTimer);
         queryTimer = setTimeout(() => { runBookQuery(); }, 300);
+    }
+
+    async function startQueryScan() {
+        if (!currentLoanMember && currentUser && !currentUser.isSharedAdmin) {
+            await ensureCurrentLoanMember();
+        }
+        if (!currentLoanMember) {
+            alert('⚠️ 請先在借還書頁選擇成員，或以個別帳號登入');
+            return;
+        }
+        currentMode = 'borrow';
+        const gm = document.getElementById('gunMode');
+        if (gm) gm.value = 'borrow';
+        setMode('borrow');
     }
 
     async function runBookQuery() {
@@ -3783,6 +3798,9 @@
             recordScanResult(action, barcode, book.title, err.message, false);
         }
         if (navigator.vibrate) navigator.vibrate(80);
+        if (document.getElementById('queryPage') && document.getElementById('queryPage').classList.contains('active')) {
+            setTimeout(() => { try { runBookQuery(); } catch (e) {} }, 300);
+        }
     }
 
     async function refreshManageBooks() {
