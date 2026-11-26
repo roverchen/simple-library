@@ -74,6 +74,14 @@ class ServerDataTests(unittest.TestCase):
         self.assertTrue(all(r["can_config"] for r in rows))
         self.assertTrue(all(r["security_question_2"] == "" for r in rows))
 
+    def test_security_questions_match_specification(self):
+        self.assertEqual(server.Handler.DEFAULT_SECURITY_QUESTIONS, [
+            "開園日期是哪一天？", "園長姓名是什麼？",
+            "你寵物的名字是什麼？", "你出生的城市是哪裡？",
+            "你最好的朋友的名字是什麼？", "你母親的娘家姓氏是什麼？",
+            "你國小就讀的學校名稱是什麼？",
+        ])
+
     def test_archived_logs_are_separate_and_included_in_backup(self):
         self.conn.execute(
             "INSERT INTO loan_logs (occurred_at, barcode, title, class_name, user_name, action) "
