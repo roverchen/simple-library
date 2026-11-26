@@ -3842,6 +3842,7 @@
         // 若狀態不符，伺服器會回 409 並由下方 catch 顯示訊息。
 
 
+        let scanOk = true;
         try {
             // 以伺服器為準：多人同時掃描時，由資料庫決定誰先借到
             const res = await api('POST', '/api/loan', { barcode, className, userName, action, memberType });
@@ -3866,14 +3867,22 @@
             // 掃描發生時報表頁不可能是前景，無須每次都重繪報表
             if (document.getElementById('reportPage').classList.contains('active') && !isLabelMode) renderReportTable();
         } catch (err) {
+            scanOk = false;
             if (err.data && err.data.book) bookDatabase[barcode] = err.data.book;
             showScanStatus(`❌ ${err.message}`, 'warn');
             recordScanResult(action, barcode, book.title, err.message, false);
+            const bm = document.getElementById('barcodeModal');
+            if (bm && bm.classList.contains('open')) {
+                const body = document.getElementById('barcodeModalBody');
+                if (body) body.innerHTML = '<div style="color:#c62828; margin:10px 0;">❌ ' + escapeHtml(err.message) + '</div>';
+            }
         }
         if (navigator.vibrate) navigator.vibrate(80);
         if (document.getElementById('queryPage') && document.getElementById('queryPage').classList.contains('active')) {
-            try { closeBarcodeModal(); } catch (e) {}
-            setTimeout(() => { try { runBookQuery(); } catch (e) {} }, 300);
+            if (scanOk) {
+                try { closeBarcodeModal(); } catch (e) {}
+                setTimeout(() => { try { runBookQuery(); } catch (e) {} }, 300);
+            }
         }
     }
 
