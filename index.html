@@ -2875,8 +2875,7 @@
         if (body) {
             body.innerHTML = '<div style="font-size:1.1rem; font-weight:bold; margin-bottom:10px;">' + escapeHtml(barcode) + '</div>' +
                 (status ? '<div style="color:#666; font-size:0.9rem; margin-top:6px;">狀態：' + escapeHtml(status) + (loanedTo ? '（' + escapeHtml(loanedTo) + '）' : '') + '</div>' : '') +
-                (actionLabel ? '<div style="color:#666; font-size:0.85rem; margin:6px 0;">' + escapeHtml(actionLabel) + '</div>' : '') +
-                actionHtml;
+                (actionLabel ? '<div style="color:#666; font-size:0.85rem; margin:6px 0;">' + escapeHtml(actionLabel) + '</div>' : '');
         }
         barcodeModalSnapshot = { status: status || '', loanedTo: loanedTo || '', loanClass: loanClass || '' };
         if (modal) modal.classList.add('open');
