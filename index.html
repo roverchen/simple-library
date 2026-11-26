@@ -2851,7 +2851,8 @@
         const body = document.getElementById('barcodeModalBody');
         if (titleEl) titleEl.textContent = title || '條碼';
         const p = currentUser && currentUser.permissions ? currentUser.permissions : {};
-        const canLoan = !!(p.canLoan);
+        // 館藏查詢頁：只要有個人帳號（非共用管理員），即可為自己借還書／預約
+        const canLoan = !!(p.canLoan) || (currentUser && !currentUser.isSharedAdmin);
         const member = await ensureCurrentLoanMember();
         // 依狀態產生對應操作的 QR Code 內容
         let qrText = barcode;
