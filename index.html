@@ -3607,6 +3607,19 @@
         if (code.startsWith('borrow:')) { mode = 'borrow'; barcode = code.slice('borrow:'.length).trim(); currentMode = 'borrow'; const gm = document.getElementById('gunMode'); if (gm) gm.value = 'borrow'; }
         else if (code.startsWith('return:')) { mode = 'return'; barcode = code.slice('return:'.length).trim(); currentMode = 'return'; const gm = document.getElementById('gunMode'); if (gm) gm.value = 'return'; }
         else if (code.startsWith('reserve:')) { mode = 'reserve'; barcode = code.slice('reserve:'.length).trim(); currentMode = 'reserve'; const gm = document.getElementById('gunMode'); if (gm) gm.value = 'reserve'; }
+        // 館藏查詢頁：依書籍狀態與當前成員自動判斷操作類型
+        else if (document.getElementById('queryPage') && document.getElementById('queryPage').classList.contains('active')) {
+            const book = bookDatabase[barcode];
+            if (book) {
+                if (book.status === '在館') { mode = 'borrow'; }
+                else if (book.status === '借出') {
+                    if (currentLoanMember && book.loanedTo === currentLoanMember.userName) { mode = 'return'; }
+                    else { mode = 'reserve'; }
+                }
+            }
+            currentMode = mode;
+            const gm = document.getElementById('gunMode'); if (gm) gm.value = mode;
+        }
         if (!barcode) {
             showScanStatus('❌ 指令條碼缺少條碼', 'err');
             recordScanResult('指令', code, '', '指令條碼缺少條碼', false);
