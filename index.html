@@ -1289,7 +1289,7 @@
                     </div>
                     <table class="query-copies">
                         <thead><tr><th>財產編號</th><th>書名</th><th>狀態</th><th>位置／借閱人</th></tr></thead>
-                        <tbody>${g.copies.map(c => `<tr onclick="openBarcodeModal('${escapeHtml(c.barcode)}','${escapeHtml(g.title || '')}','${escapeHtml(c.status)}','${escapeHtml(c.loanedTo || '')}','${escapeHtml(c.loanClass || '')}')" style="cursor:pointer;">
+                        <tbody>${g.copies.map(c => `<tr onclick="try{openBarcodeModal('${escapeHtml(c.barcode)}','${escapeHtml(g.title || '')}','${escapeHtml(c.status)}','${escapeHtml(c.loanedTo || '')}','${escapeHtml(c.loanClass || '')}');}catch(e){alert('開啟失敗：'+e.message);}" style="cursor:pointer;">
                             <td>${escapeHtml(c.assetId || '—')}</td>
                             <td>${escapeHtml(g.title || '—')}</td>
                             <td>${statusBadge(c.status)}${reservationBadge(c)}</td>
