@@ -322,7 +322,6 @@
                 <input type="text" id="queryKeyword" placeholder="輸入書名／ISBN／財產編號／存放櫃位" autocomplete="off"
                        style="flex:1; min-width:220px;" oninput="scheduleBookQuery()">
                 <select id="queryPublisher" style="min-width:140px;" onchange="scheduleBookQuery()"><option value="">全部出版社</option></select>
-                <button onclick="startQueryScan()" style="padding:8px 14px; background:var(--secondary); color:white; border:none; border-radius:5px;">📷 掃描借還書</button>
             </div>
             <small style="color:#666;">輸入關鍵字或選擇出版社即自動查詢；支援直接掃描 ISBN 條碼；相同 ISBN（或書名）的多本實體書會自動彙整。</small>
             <div id="queryExportRow" style="display:flex; gap:8px; align-items:center; margin-top:8px; flex-wrap:wrap;">
@@ -2865,13 +2864,9 @@
         }
         if (body) {
             body.innerHTML = '<div style="font-size:1.1rem; font-weight:bold; margin-bottom:10px;">' + escapeHtml(barcode) + '</div>' +
-                '<div id="barcodeModalQr" style="display:flex; justify-content:center; margin:10px 0;"></div>' +
                 (status ? '<div style="color:#666; font-size:0.9rem; margin-top:6px;">狀態：' + escapeHtml(status) + (loanedTo ? '（' + escapeHtml(loanedTo) + '）' : '') + '</div>' : '') +
-                (actionLabel ? '<div style="color:#666; font-size:0.85rem; margin:6px 0;">' + escapeHtml(actionLabel) + '</div>' : '');
-            const qrEl = document.getElementById('barcodeModalQr');
-            if (qrEl && typeof QRCode !== 'undefined') {
-                new QRCode(qrEl, { text: qrText, width: 180, height: 180, colorDark: '#000000', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.H });
-            }
+                (actionLabel ? '<div style="color:#666; font-size:0.85rem; margin:6px 0;">' + escapeHtml(actionLabel) + '</div>' : '') +
+                actionHtml;
         }
         barcodeModalSnapshot = { status: status || '', loanedTo: loanedTo || '', loanClass: loanClass || '' };
         if (modal) modal.classList.add('open');
