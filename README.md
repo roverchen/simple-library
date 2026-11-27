@@ -25,7 +25,7 @@ Python 標準函式庫加 SQLite；不需 npm、pip 或資料庫伺服器，可�
 | `vendor/` | 離線版 `html5-qrcode`、`qrcodejs`；PDF 用的 Noto Sans TC 子集字型與 OFL 授權 |
 | `data/library.db` | SQLite 資料庫（自動建立，**含幼兒姓名，不進版控**） |
 | `docs/資料庫設計.md` | ER 模型、資料表、API、併發與安全設計 |
-| `docs/操作手冊.md` | 給老師的操作手冊 |
+| `docs/操作手冊.html` | 給老師的操作手冊（瀏覽器開啟） |
 | `docs/修訂紀錄.md` | 版本修訂與問題修正紀錄 |
 | `docs/功能規格.md` | 功能規格對照 |
 | `docs/交付與驗收清單.md` | 上線前檢查、驗收指令與已知限制 |
